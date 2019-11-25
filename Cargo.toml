@@ -1,0 +1,12 @@
+[package]
+name = "status"
+version = "0.0.0"
+authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+anyhow = ""
+tempfile = ""
+memmap = ""
+wayland-protocols = { version = "", features = ["unstable_protocols","client"] }
+wayland-client = ""
