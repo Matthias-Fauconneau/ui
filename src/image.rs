@@ -1,5 +1,5 @@
-#[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug)] pub struct uint2 { pub x: u32, pub y : u32 }
-impl From<(u32,u32)> for uint2 { fn from(o : (u32, u32)) -> Self { Self{x:o.0,y:o.1} } }
+#[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug, parse_display::Display)] #[display("{x}, {y}")] pub struct uint2 { pub x: u32, pub y : u32 }
+impl From<(u32,u32)> for uint2 { fn from(v : (u32, u32)) -> Self { Self{x:v.0,y:v.1} } }
 #[allow(non_camel_case_types)] pub type size2 = uint2;
 #[allow(non_camel_case_types)] pub type offset2 = uint2;
 
@@ -126,4 +126,5 @@ impl<T0, T1> IntoPixelIterator for (Image<T0>, Image<T1>) where Image<T0> : Into
     }
 }
 
-#[allow(non_camel_case_types, dead_code)] #[derive(Clone, Copy)] pub struct argb8 { pub a: u8, pub r : u8, pub g : u8, pub b : u8 }
+//#[allow(non_camel_case_types, dead_code)] #[derive(Clone, Copy)] pub struct argb8 { pub a: u8, pub r : u8, pub g : u8, pub b : u8 }
+#[allow(non_camel_case_types, dead_code)] #[derive(Clone, Copy)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
