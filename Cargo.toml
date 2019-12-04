@@ -10,3 +10,5 @@ tempfile = ""
 memmap = ""
 wayland-protocols = { version = "", features = ["unstable_protocols","client"] }
 wayland-client = ""
+stb_truetype = ""
+fontdue = { version = "", path = "fontdue" }
