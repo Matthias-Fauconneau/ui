@@ -1,6 +1,6 @@
 use crate::ensure;
 use crate::core::Result;
-#[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug, parse_display::Display)] #[display("{x}, {y}")] pub struct uint2 { pub x: u32, pub y : u32 }
+#[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug, parse_display::Display)] #[display("{x} {y}")] pub struct uint2 { pub x: u32, pub y : u32 }
 impl From<(u32,u32)> for uint2 { fn from(v : (u32, u32)) -> Self { Self{x:v.0,y:v.1} } }
 #[allow(non_camel_case_types)] pub type size2 = uint2;
 #[allow(non_camel_case_types)] pub type offset2 = uint2;
@@ -47,9 +47,10 @@ impl<T> std::ops::IndexMut<u32> for Rows<*mut T> { fn index_mut(&mut self, x: u3
 pub trait IntoRows {
     type ConstPtr : Eq+Copy;
     fn end(&self) -> Self::ConstPtr;
+    fn rows(&self) -> Rows<Self::ConstPtr>;
 
     type Ptr : Offset+Copy;
-    fn rows(&mut self) -> Rows<Self::Ptr>;
+    fn rows_mut(&mut self) -> Rows<Self::Ptr>;
     fn eq(ptr : Self::Ptr, end : Self::ConstPtr) -> bool;
 
     type Element : Sized;
@@ -59,9 +60,10 @@ pub trait IntoRows {
 impl<'t, T> IntoRows for Image<&'t [T]> {
     type ConstPtr = *const T;
     fn end(&self) -> Self::ConstPtr { unsafe{(self.buffer as *const [T] as Self::ConstPtr).offset((self.size.y*self.stride) as isize)} }
+    fn rows(&self) -> Rows<Self::ConstPtr> { Rows::<Self::ConstPtr>{ptr: self.buffer as *const [T] as Self::ConstPtr, stride: self.stride as isize} }
 
     type Ptr = *const T;
-    fn rows(&mut self) -> Rows<Self::Ptr> { Rows::<Self::Ptr>{ptr: self.buffer as *const [T] as Self::Ptr, stride: self.stride as isize} }
+    fn rows_mut(&mut self) -> Rows<Self::Ptr> { Rows::<Self::Ptr>{ptr: self.buffer as *const [T] as Self::Ptr, stride: self.stride as isize} }
     fn eq(ptr : Self::Ptr, end : Self::ConstPtr) -> bool { ptr == end }
 
     type Element = &'t T;
@@ -71,9 +73,10 @@ impl<'t, T> IntoRows for Image<&'t [T]> {
 impl<'t, T> IntoRows for Image<&'t mut [T]> {
     type ConstPtr = *const T;
     fn end(&self) -> Self::ConstPtr { unsafe{(self.buffer as *const [T] as Self::ConstPtr).offset((self.size.y*self.stride) as isize)} }
+    fn rows(&self) -> Rows<Self::ConstPtr> { Rows::<Self::ConstPtr>{ptr: self.buffer as *const [T] as Self::ConstPtr, stride: self.stride as isize} }
 
     type Ptr = *mut T;
-    fn rows(&mut self) -> Rows<Self::Ptr> { Rows::<Self::Ptr>{ptr: self.buffer as *mut [T] as Self::Ptr, stride: self.stride as isize} }
+    fn rows_mut(&mut self) -> Rows<Self::Ptr> { Rows::<Self::Ptr>{ptr: self.buffer as *mut [T] as Self::Ptr, stride: self.stride as isize} }
     fn eq(ptr : Self::Ptr, end : Self::ConstPtr) -> bool { ptr as *const T == end }
 
     type Element = &'t mut T;
@@ -129,7 +132,7 @@ impl<T> IntoPixelIterator for Image<T> where Image<T> : IntoRows {
         Self::PixelIterator{
             width : self.size.x as usize,
             end: self.end(),
-            rows: self.rows(),
+            rows: self.rows_mut(),
             x: 0
         }
     }
@@ -140,7 +143,7 @@ impl<T0, T1> IntoPixelIterator for (Image<T0>, Image<T1>) where Image<T0> : Into
         Self::PixelIterator{
             width : self.0.size.x as usize,
             end: self.0.end(),
-            rows: (self.0.rows(), self.1.rows()), // (self.rows()...)
+            rows: (self.0.rows_mut(), self.1.rows_mut()), // (self.rows_mut()...)
             x: 0
         }
     }
