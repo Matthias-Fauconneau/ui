@@ -1,15 +1,18 @@
-use crate::ensure;
-use crate::core::Result;
-#[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug, parse_display::Display)] #[display("{x} {y}")] pub struct uint2 { pub x: u32, pub y : u32 }
-impl From<(u32,u32)> for uint2 { fn from(v : (u32, u32)) -> Self { Self{x:v.0,y:v.1} } }
-#[allow(non_camel_case_types)] pub type size2 = uint2;
-#[allow(non_camel_case_types)] pub type offset2 = uint2;
+use crate::ensure; use crate::core::{Result, size2, offset2};
 
 pub struct Image<T> {
     pub stride : u32,
     pub size : size2,
     pub buffer : T,
 }
+
+impl<T:Copy> Image<&[T]> {
+    pub fn get(&self, x : u32, y: u32) -> T { self.buffer[(y*self.stride+x) as usize] }
+}
+impl<T:Copy> Image<&mut [T]> {
+    pub fn set(&mut self, x : u32, y: u32, v: T) { self.buffer[(y*self.stride+x) as usize] = v; }
+}
+
 pub trait IntoImage {
     type Image;
     fn image(self, size : size2) -> Option<Self::Image>;
@@ -152,8 +155,9 @@ impl<T0, T1> IntoPixelIterator for (Image<T0>, Image<T1>) where Image<T0> : Into
 #[allow(non_camel_case_types, dead_code)] #[derive(Clone, Copy)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
 
 impl<T : Default+Clone> Image<Vec<T>> {
-    pub fn new(size: size2) -> Self { Self{stride:size.x, size, buffer: vec![T::default(); (size.x*size.y) as usize]} }
-    pub fn uninitialized(size: size2) -> Self {
+    pub fn new(size: size2, buffer: Vec<T>) -> Self { Self{stride:size.x, size, buffer} }
+    #[allow(dead_code)] pub fn zero(size: size2) -> Self { Self::new(size, vec![T::default(); (size.x*size.y) as usize]) }
+    #[allow(dead_code)] pub fn uninitialized(size: size2) -> Self {
         let len = (size.x * size.y) as usize;
         let mut buffer = Vec::with_capacity(len);
         unsafe{ buffer.set_len(len) };

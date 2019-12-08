@@ -1,13 +1,8 @@
-use crate::assert;
-use crate::core::{floor, sq, fract, abs};
-use crate::image::{size2, Image, IntoRows};
+use crate::assert; use crate::core::size2;
+use crate::image::Image;
 
-impl<T:Copy> Image<&[T]> {
-    pub fn get(&self, x : u32, y: u32) -> T { self.buffer[(y*self.stride+x) as usize] }
-}
-impl<T:Copy> Image<&mut [T]> {
-    pub fn set(&mut self, x : u32, y: u32, v: T) { self.buffer[(y*self.stride+x) as usize] = v; }
-}
+/*use crate::core::{floor, sq, fract, abs};
+use crate::image::IntoRows;
 
 // Rasterize polygon with analytical coverage
 pub fn line(target : &mut Image<&mut [f32]>, x0: f32, y0: f32, x1: f32, y1: f32) {
@@ -109,4 +104,54 @@ pub fn fill(edges : &Image<&[f32]>) -> Image<Vec<f32>> {
         }
     }
     target
+}*/
+
+pub fn line(target : &mut Image<&mut [f32]>, x0: f32, y0: f32, x1: f32, y1: f32) {
+    if y0 == y1 { return; }
+    let (dir, x0, y0, x1, y1) = if y0 < y1 { (1., x0, y0, x1, y1) } else { (-1., x1, y1, x0, y0) };
+    let dxdy = (x1-x0)/(y1-y0);
+    let mut x = x0;
+    // http://www.apache.org/licenses/LICENSE-2.0. Modified from https://github.com/raphlinus/font-rs
+    for y in y0 as usize..y1.ceil() as usize {
+        let line = &mut target.buffer[((y as u32)*target.stride) as usize..];
+        let dy = ((y + 1) as f32).min(y1) - (y as f32).max(y0);
+        let xnext = x + dxdy * dy;
+        let d = dy * dir;
+        let (x0, x1) = if x < xnext { (x, xnext) } else { (xnext, x) };
+        let x0floor = x0.floor();
+        let x0i = x0floor as i32;
+        let x1ceil = x1.ceil();
+        let x1i = x1ceil as i32;
+        if x1i <= x0i + 1 {
+            let xmf = 0.5 * (x + xnext) - x0floor;
+            line[x0i as usize] += d - d * xmf;
+            line[(x0i + 1) as usize] += d * xmf;
+        } else {
+            assert!(x0 >= 0. && x0i >= 0, (x0, x1, x, xnext, x0floor, x0i, x1ceil, x1i));
+            let s = 1./(x1 - x0);
+            let x0f = x0 - x0floor;
+            let a0 = 0.5 * s * (1.0 - x0f) * (1.0 - x0f);
+            let x1f = x1 - x1ceil + 1.0;
+            let am = 0.5 * s * x1f * x1f;
+            line[x0i as usize] += d * a0;
+            if x1i == x0i + 2 {
+                line[(x0i + 1) as usize] += d * (1.0 - a0 - am);
+            } else {
+                let a1 = s * (1.5 - x0f);
+                line[(x0i + 1) as usize] += d * (a1 - a0);
+                for xi in x0i + 2..x1i - 1 {
+                    line[xi as usize] += d * s;
+                }
+                let a2 = a1 + (x1i - x0i - 3) as f32 * s;
+                line[(x1i - 1) as usize] += d * (1.0 - a2 - am);
+            }
+            line[x1i as usize] += d * am;
+        }
+        x = xnext;
+    }
+}
+
+pub fn fill(edges : &Image<&[f32]>) -> Image<Vec<f32>> {
+    let mut acc = 0.0;
+    Image::new(size2{x: edges.size.x, y: edges.size.y-1}, edges.buffer[0..((edges.size.y-1)*edges.size.x) as usize].iter().map(|&a| { acc += a; acc.abs().min(1.0) }).collect())
 }
