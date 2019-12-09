@@ -5,12 +5,11 @@ pub struct MessageError<M>(pub M);
 impl<M:std::fmt::Debug> std::fmt::Debug for MessageError<M> { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { std::fmt::Debug::fmt(&self.0, f) } }
 impl<M:std::fmt::Display> std::fmt::Display for MessageError<M> { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { std::fmt::Display::fmt(&self.0, f) } }
 impl<M:std::fmt::Debug+std::fmt::Display> std::error::Error for MessageError<M> {}
+//impl std::convert::From<std::option::NoneError> for MessageError<&str> { fn from(_: std::option::NoneError) -> Self { MessageError("None") } }
+pub trait Ok<T> { fn ok(self) -> Result<T>; }
+impl<T> Ok<T> for Option<T> { fn ok(self) -> Result<T> { Ok(self.ok_or(MessageError("None"))?) } }
 
 #[derive(Debug)] pub struct Error(Box<dyn std::error::Error>);
-/*impl std::error::Error for BoxedError {
-    fn backtrace(&self) -> Option<&Backtrace> { self.0.backtrace() }
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> { self.0.source() }
-}*/
 pub type Result<T=(), E=Error> = std::result::Result<T, E>;
 impl<E:std::error::Error+'static/*Send+Sync*/> From<E> for Error { fn from(error: E) -> Self { Error(Box::new(error)) } }
 #[macro_export] macro_rules! ensure { ($cond:expr, $val:expr) => { if $cond { Ok(())} else { Err(crate::core::MessageError(format!("{} = {:?}",stringify!($val),$val))) } } }
