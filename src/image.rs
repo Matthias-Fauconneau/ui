@@ -32,7 +32,7 @@ impl<'t, T> IntoImage for &'t mut [T] {
 
 impl<T> Image<&mut [T]> {
     pub fn slice_mut(&mut self, offset : offset2, size : size2) -> Result<Image<&mut[T]>> {
-        ensure!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, (self.size, offset, size));
+        ensure!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, (self.size, offset, size))?;
         Ok(Image{size, stride: self.stride, buffer: &mut self.buffer[(offset.y*self.stride+offset.x) as usize..] })
     }
 }
@@ -166,3 +166,36 @@ impl<T : Default+Clone> Image<Vec<T>> {
     pub fn as_ref(&self) -> Image<&[T]> { Image{stride:self.stride, size:self.size, buffer: self.buffer.as_ref()} }
     pub fn as_mut(&mut self) -> Image<&mut [T]> { Image{stride:self.stride, size:self.size, buffer: self.buffer.as_mut()} }
 }
+
+macro_rules! lazy_static { ($name:ident : $T:ty = $e:expr;) => {
+    #[allow(non_camel_case_types)] struct $name {}
+    #[allow(non_upper_case_globals)] static $name : $name = $name{};
+    impl std::ops::Deref for $name {
+        type Target = $T;
+        fn deref(&self) -> &Self::Target {
+            #[allow(non_upper_case_globals)] static mut array : std::mem::MaybeUninit::<$T> = std::mem::MaybeUninit::<$T>::uninit();
+            static INIT: std::sync::Once = std::sync::Once::new();
+            unsafe{
+                INIT.call_once(|| { array.write($e); });
+                &array.get_ref()
+            }
+        }
+    }
+}}
+
+fn array_init<T, const N : usize>(f: fn(usize) -> T) -> [T; N] {
+    let mut array : [std::mem::MaybeUninit<T>; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+    for (i, e) in array.iter_mut().enumerate() { *e = std::mem::MaybeUninit::new(f(i)); }
+    //unsafe { std::mem::transmute::<_, [T; N]>(array) } // cannot transmute between generic types
+    let ptr = &mut array as *mut _ as *mut [T; N];
+    let array_as_initialized = unsafe { ptr.read() };
+    core::mem::forget(array);
+    array_as_initialized
+}
+
+lazy_static! { sRGB_forward12 : [u8; 0x1000] = array_init(|i| {
+    let linear = i as f64 / 0xFFF as f64;
+    (0xFF as f64 * if linear > 0.0031308 {1.055*linear.powf(1./2.4)-0.055} else {12.92*linear}).round() as u8
+}); }
+
+#[allow(non_snake_case)] pub fn sRGB(v : f32) -> u8 { sRGB_forward12[(0xFFF as f32*v) as usize] } // 4K (fixme: interpolation of a smaller table might be faster)

@@ -1,4 +1,4 @@
-#![feature(non_ascii_idents)]
+#![allow(incomplete_features)]#![feature(const_generics,maybe_uninit_extra,maybe_uninit_ref,non_ascii_idents)]
 mod core; use crate::core::Result; use std::{rc::Rc, cell::RefCell};
 mod image;
 mod window; use window::run;

@@ -47,7 +47,7 @@ pub fn run(widget : Rc<RefCell<dyn Widget>>) -> Result {
                 file.set_len((size.x*size.y*4) as u64).unwrap();
                 let bytes = &mut unsafe{memmap::MmapMut::map_mut(&file)}.unwrap()[..]; // ? unmap on drop
                 let mut target = unsafe{std::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut bgra8, bytes.len() / std::mem::size_of::<bgra8>())}.image(size).unwrap();
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(||{widget.borrow_mut().render(&mut target).unwrap_or_else(|e|println!("{}",e))})).unwrap_or_else(|_|{});
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(||{widget.borrow_mut().render(&mut target).unwrap_or_else(|e|println!("{:?}",e))})).unwrap_or_else(|_|{});
                 // Exiting before complete setup seems to crash sway soon after :/ Show partial render instead
                 // FIXME: reuse pool+buffer
                 let pool = shm.create_pool((&file as &dyn std::os::unix::io::AsRawFd).as_raw_fd(), (target.size.x*target.size.y*4) as i32);

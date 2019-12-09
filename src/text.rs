@@ -1,11 +1,11 @@
 use std::cmp::{min, max};
-use crate::{ensure, assert};
+use crate::assert;
 use crate::core::{Result, sign, abs, sq, size2, offset2};
 pub fn floor_div(n : u32, d : u32) -> u32 { n/d }
 pub fn ceil_div(n : u32, d : u32) -> u32 { (n+d-1)/d }
-use crate::image::{Image, bgra8, IntoPixelIterator};
+use crate::image::{Image, bgra8, IntoPixelIterator, sRGB};
 
-#[allow(non_camel_case_types)] #[derive(Clone,Copy,Debug, parse_display::Display)] #[display("{x} {y}")] pub struct vec2{pub x: f32, pub y: f32}
+#[allow(non_camel_case_types)] #[derive(Clone,Copy,Debug/*,parse_display::Display)] #[display("{x} {y}"*/)] pub struct vec2{pub x: f32, pub y: f32}
 impl From<(f32, f32)> for vec2 { fn from(v: (f32, f32)) -> Self { vec2{x: v.0, y: v.1} } }
 fn mul(a: f32, b: vec2) -> vec2 { vec2{x: a*b.x, y: a*b.y} }
 fn add(a: vec2, b: vec2) -> vec2 { vec2{x: a.x+b.x, y: a.y+b.y} }
@@ -135,15 +135,15 @@ pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Resul
                                                                        size2{x: coverage.size.x*N, y: coverage.size.y*N})?;
             if N==1 {
                  for (&c, target) in (coverage.as_ref(), target).pixels() {
-                    ensure!(0. <= c && c <= 1., c);
-                    let a = (f32::min(abs(c),1.)*f32::from_bits(256f32.to_bits()-1)) as u8;
+                    assert!(0. <= c && c <= 1., c);
+                    let a = sRGB(f32::min(abs(c),1.));
                     *target = bgra8{b : a, g : a, r : a, a : 0xFF};
                 }
             } else {
                 for y in 0..target.size.y { for x in 0..target.size.x {
                     let c = coverage.as_ref().get(x/N,y/N);
                     //assert!(c >= 0. && c<= 1., c);
-                    let a = (f32::min(abs(c),1.)*f32::from_bits(256f32.to_bits()-1)) as u8;
+                    let a = sRGB(f32::min(abs(c),1.));
                     target.set(x,y, if c>0. { bgra8{b : 0, g : a, r : a, a : 0xFF} } else { bgra8{b : a, g : a, r : 0, a : 0xFF} } );
                 }}
             }
