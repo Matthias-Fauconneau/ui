@@ -1,5 +1,4 @@
-use crate::assert; use crate::core::size2;
-use crate::image::Image;
+use crate::{size2, Image};
 
 /*use crate::core::{floor, sq, fract, abs};
 use crate::image::IntoRows;

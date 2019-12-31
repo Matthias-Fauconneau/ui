@@ -1,9 +1,7 @@
-use std::cmp::{min, max};
-use crate::assert;
-use crate::core::{Result, sign, abs, sq, size2, offset2};
+use std::cmp::{min, max}; use crate::{core::*,vector::*};
 pub fn floor_div(n : u32, d : u32) -> u32 { n/d }
 pub fn ceil_div(n : u32, d : u32) -> u32 { (n+d-1)/d }
-use crate::image::{Image, bgra8, IntoPixelIterator, sRGB};
+use crate::image::{Image,bgra8,IntoPixelIterator,sRGB::sRGB};
 
 pub struct Font(memmap::Mmap);
 impl Font {
@@ -52,7 +50,8 @@ impl std::ops::Mul<u32> for Scale { type Output=u32; fn mul(self, b: u32) -> Sel
 impl std::ops::Mul<u16> for Scale { type Output=u16; fn mul(self, b: u16) -> Self::Output { (self*(b as u32)) as u16 } }
 impl std::ops::Mul<f32> for Scale { type Output=f32; fn mul(self, b: f32) -> Self::Output { b*(self.0 as f32)/(self.1 as f32) } }
 
-pub fn line(target : &mut Image<&mut [f32]>, p0 : vec2, p1 : vec2) { crate::raster::line(target, p0.x, p0.y, p1.x, p1.y) }
+mod raster;
+pub fn line(target : &mut Image<&mut [f32]>, p0 : vec2, p1 : vec2) { raster::line(target, p0.x, p0.y, p1.x, p1.y) }
 
 struct Outline { scale : Scale, x_min: i16, y_max: i16, target : Image<Vec<f32>>, first : Option<vec2>, p0 : Option<vec2>}
 impl Outline {
@@ -77,7 +76,7 @@ impl ttf_parser::OutlineBuilder for Outline {
         let p0 = self.p0.unwrap();
         let p1 = self.map(x1, y1);
         let p2 = self.map(x2, y2);
-        let dev = sq(p0 - float(2.) * p1 + p2);
+        let dev = sq(p0 - 2.*p1 + p2);
         if dev < 1./3. { line(&mut self.target.as_mut(), p0, p2); }
         else {
             let tol = 3.;
@@ -113,7 +112,7 @@ pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Resul
         if let Ok(rect) = font.outline_glyph(glyph_index, &mut Builder()) {
             let mut outline = Outline::new(scale, rect);
             font.outline_glyph(glyph_index, &mut outline)?;
-            let coverage = crate::raster::fill(&outline.target.as_ref());
+            let coverage = raster::fill(&outline.target.as_ref());
             if let Some(last_glyph_index) = last_glyph_index { pen += font.glyphs_kerning(last_glyph_index, glyph_index).unwrap_or(0) as i32; }
             //let target = target.slice_mut(offset2{x: scale*((pen+metrics.left_side_bearing as i32) as u32), y: (scale*((line_metrics.ascent-rect.y_max) as u16)) as u32}, coverage.size)?;
             let mut target = target.slice_mut(offset2{x: scale*((pen+metrics.left_side_bearing as i32) as u32)*N, y: ((scale*((line_metrics.ascent-rect.y_max) as u16)) as u32)*N},

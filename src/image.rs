@@ -1,4 +1,4 @@
-use crate::ensure; use crate::core::{Result, size2, offset2};
+use crate::{Result,ensure,size2,offset2};
 
 pub struct Image<T> {
     pub stride : u32,
@@ -167,6 +167,7 @@ impl<T : Default+Clone> Image<Vec<T>> {
     pub fn as_mut(&mut self) -> Image<&mut [T]> { Image{stride:self.stride, size:self.size, buffer: self.buffer.as_mut()} }
 }
 
+#[cfg(feature="sRGB")] #[allow(non_snake_case)] pub mod sRGB {
 macro_rules! lazy_static { ($name:ident : $T:ty = $e:expr;) => {
     #[allow(non_camel_case_types)] struct $name {}
     #[allow(non_upper_case_globals)] static $name : $name = $name{};
@@ -199,3 +200,4 @@ lazy_static! { sRGB_forward12 : [u8; 0x1000] = array_init(|i| {
 }); }
 
 #[allow(non_snake_case)] pub fn sRGB(v : f32) -> u8 { sRGB_forward12[(0xFFF as f32*v) as usize] } // 4K (fixme: interpolation of a smaller table might be faster)
+}

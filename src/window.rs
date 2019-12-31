@@ -1,4 +1,4 @@
-use crate::core::{Result, size2}; use std::{cell::{Cell, RefCell}, rc::Rc}; use crate::image::{Image, bgra8, IntoImage};
+use std::{cell::{Cell, RefCell}, rc::Rc}; use crate::{core::Result, vector::size2, image::{Image, bgra8, IntoImage}};
 
 pub type Target<'t> = Image<&'t mut[bgra8]>;
 pub trait Widget {

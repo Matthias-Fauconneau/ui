@@ -4,11 +4,25 @@ version = "0.0.0"
 authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
 edition = "2018"
 
+[features]
+const_generics = []
+lazy_static = []
+compose = []
+sRGB= ["lazy_static","const_generics"]
+window = ["tempfile","memmap","wayland-protocols","wayland-client"]
+text = ["ttf-parser","sRGB"]
+default = ["compose","window","text"]
+
 [dependencies]
-serde = { version = "", features = ["derive"] }
-serde_json = ""
-tempfile = ""
-memmap = ""
-wayland-protocols = { version = "", features = ["unstable_protocols","client"] }
-wayland-client = ""
-ttf-parser = ""
+#serde = { version = "", features = ["derive"] }
+#serde_json = ""
+tempfile = { version="", optional=true }
+memmap = { version="", optional=true }
+wayland-protocols = { version = "", features = ["unstable_protocols","client"], optional=true }
+wayland-client = { version = "", optional=true }
+ttf-parser = { version="", optional=true }
+
+[[test]]
+name = "compose"
+path = "tests/compose.rs"
+required-features = ["compose"]
