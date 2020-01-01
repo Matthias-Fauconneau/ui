@@ -10,8 +10,9 @@ lazy_static = []
 compose = []
 sRGB= ["lazy_static","const_generics"]
 window = ["tempfile","memmap","wayland-protocols","wayland-client"]
-text = ["ttf-parser","sRGB"]
-default = ["compose","window","text"]
+text = ["window","ttf-parser","sRGB"]
+default = ["compose"]
+#default = ["text"]
 
 [dependencies]
 #serde = { version = "", features = ["derive"] }
@@ -26,3 +27,8 @@ ttf-parser = { version="", optional=true }
 name = "compose"
 path = "tests/compose.rs"
 required-features = ["compose"]
+
+[[example]]
+name = "text"
+path = "examples/text.rs"
+required-features = ["text"]
