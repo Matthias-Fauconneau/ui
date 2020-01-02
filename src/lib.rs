@@ -3,7 +3,7 @@
 #![cfg_attr(feature="compose", feature(unboxed_closures,fn_traits))]
 
 pub mod core; pub use crate::core::*;
-mod vector; pub use vector::*;
+pub mod vector; pub use vector::*;
 #[cfg(feature="compose")] pub mod compose;
 mod image; pub use image::Image;
 #[cfg(feature="window")] pub mod window;

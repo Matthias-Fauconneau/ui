@@ -1,6 +1,7 @@
 pub trait Zero { fn zero() -> Self; }
 impl Zero for i32 { fn zero() -> Self { 0 } }
 impl Zero for f32 { fn zero() -> Self { 0. } }
+impl<T:Zero> Zero for (T, T) { fn zero() -> Self { (Zero::zero(), Zero::zero()) } }
 
 #[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug)] pub struct xy<T> { pub x: T, pub y : T }
 impl<T> From<(T, T)> for xy<T> { fn from(v: (T, T)) -> Self { xy{x: v.0, y: v.1} } }
@@ -13,8 +14,11 @@ use std::ops::{Add,Sub,Mul};
 impl<T:Add> Add<xy<T>> for xy<T> { type Output=xy<T::Output>; fn add(self, b: xy<T>) -> Self::Output { Self::Output{x: self.x+b.x, y: self.y+b.y} } }
 impl<T:Sub> Sub<xy<T>> for xy<T> { type Output=xy<T::Output>; fn sub(self, b: xy<T>) -> Self::Output { Self::Output{x: self.x-b.x, y: self.y-b.y} } }
 fn mul<T:Copy+Mul>(a: T, b: xy<T>) -> xy<T::Output> { xy::<T::Output>{x: a*b.x, y: a*b.y} }
-fn dot<T:Mul>(a: xy<T>, b: xy<T>) -> <<T as Mul>::Output as Add<<T as Mul>::Output>>::Output  where <T as Mul>::Output:Add<<T as Mul>::Output> { a.x*b.x + a.y*b.y }
-impl<T:Mul> Mul<xy<T>> for xy<T> where <T as Mul>::Output:Add<<T as Mul>::Output> { type Output=<<T as Mul>::Output as Add<<T as Mul>::Output>>::Output; fn mul(self, b: xy<T>) -> Self::Output { dot(self, b) } }
+pub fn dot<T:Mul>(a: xy<T>, b: xy<T>) -> <<T as Mul>::Output as Add<<T as Mul>::Output>>::Output  where <T as Mul>::Output:Add<<T as Mul>::Output> { a.x*b.x + a.y*b.y }
+impl<T:Mul> Mul<xy<T>> for xy<T> where <T as Mul>::Output:Add<<T as Mul>::Output> { 
+    type Output=<<T as Mul>::Output as Add<<T as Mul>::Output>>::Output; 
+    fn mul(self, b: xy<T>) -> Self::Output { dot(self, b) } 
+}
 //pub fn sq<T:Mul>(a: xy<T>) -> <<T as Mul>::Output as Add<<T as Mul>::Output>>::Output  where <T as Mul>::Output:Add<<T as Mul>::Output> { dot(a, a) }
 
 impl Mul<xy<f32>> for f32 { type Output=xy<f32>; fn mul(self, b: xy<f32>) -> Self::Output { mul(self, b) } }
