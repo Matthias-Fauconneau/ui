@@ -1,41 +1,80 @@
-#[macro_export] macro_rules! op { ($Args:ty, $Output:ty, $Op:ident $op:ident) => (
-    impl<const B : fn($Args)->$Output> std::ops::$Op<ConstFn<B>> for Box<Fn($Args)->$Output> {
-        type Output = Box<Fn($Args)->$Output>;
-        fn $op(self, _:ConstFn<B>) -> Self::Output { box move |args:$Args|->f32 { self(args).$op(B(args)) } }
+use std::rc::Rc;
+pub struct RcFn<'a,Args,Output>(pub Rc<dyn Fn<Args,Output=Output> + 'a>);
+impl<Args,Output> FnOnce<Args> for RcFn<'_,Args,Output> { 
+    type Output=Output;
+    extern "rust-call" fn call_once(self, args:Args) -> Self::Output { self.0.call(args) }
+}
+impl<Args,Output> FnMut<Args> for RcFn<'_,Args,Output> { extern "rust-call" fn call_mut(&mut self, args:Args) -> Self::Output { self.0.call(args) } }
+impl<Args,Output> Fn<Args> for RcFn<'_,Args,Output> { extern "rust-call" fn call(&self, args:Args) -> Self::Output { self.0.call(args) } }
+impl<'a,Args,Output> RcFn<'a,Args,Output> { pub fn new<F:Fn<Args,Output=Output>+'a>(f:F) -> Self { Self(Rc::new(f)) } } // type alias hides constructor
+impl<'a,Args,Output> Clone for RcFn<'a,Args,Output> { fn clone(&self) -> Self { Self(Rc::clone(&self.0)) } } // #[derive(Clone)] fails
+
+macro_rules! unary { ([$($Op:ident $op:ident),+]) => (
+mod unary {$(
+    pub struct $Op<'a,Args,A>(pub super::RcFn<'a,Args,A>);
+    impl<Args,A> FnOnce<Args> for $Op<'_,Args,A> where A:std::ops::$Op {
+        type Output = <A as std::ops::$Op>::Output;
+        extern "rust-call" fn call_once(self, args:Args) -> Self::Output { Self::call(&self, args) }
     }
-    impl<B:Fn($Args)->$Output+'static, const A : fn($Args)->$Output> std::ops::$Op<B> for ConstFn<A> {
-        type Output = Box<Fn($Args)->$Output>;
-        fn $op(self, b:B) -> Self::Output { box move |args:$Args| A(args).$op(b(args)) }
+   impl<Args,A> FnMut<Args> for $Op<'_,Args,A> where A:std::ops::$Op { extern "rust-call" fn call_mut(&mut self, args:Args) -> Self::Output { Self::call(&self, args) } }
+   impl<Args,A> Fn<Args> for $Op<'_,Args,A> where A:std::ops::$Op { extern "rust-call" fn call(&self, args:Args) -> Self::Output { self.0.call(args).$op() } }
+)+}
+$(
+    impl<'a,Args:'static,A:'static> std::ops::$Op for RcFn<'a,Args,A> where A:std::ops::$Op {
+        type Output = RcFn<'a,Args,<<Self as FnOnce<Args>>::Output as std::ops::$Op>::Output>;
+        fn $op(self) -> Self::Output { RcFn::new(unary::$Op(self)) }
     }
+)+
 )}
 
-#[macro_export] macro_rules! A_op { ($Args:ty, $Output:ty, $Op:ident $op:ident, $A:ty) => (
-   impl<const B : fn($Args)->$Output> std::ops::$Op<ConstFn<B>> for $A {
-        type Output = Box<Fn($Args)->$Output>;
-        fn $op(self, _:ConstFn<B>) -> Self::Output { box move |args:$Args|->f32 { self.$op(B(args)) } }
+macro_rules! binary { ([$($Op:ident $op:ident),+] [/*$(*/$Uniform:ty/*),+*/]) => ( // Uniform+ is possible but complicated, not needed for now
+mod binary {$(
+    pub struct $Op<'a,Args,A,B>(pub super::RcFn<'a,Args,A>, pub super::RcFn<'a,Args,B>);
+    impl<Args:Copy,A,B> FnOnce<Args> for $Op<'_,Args,A,B> where A:std::ops::$Op<B> {
+        type Output = <A as std::ops::$Op<B>>::Output;
+        extern "rust-call" fn call_once(self, args:Args) -> Self::Output { Self::call(&self, args) }
     }
+    impl<Args:Copy,A,B> FnMut<Args> for $Op<'_,Args,A,B> where A:std::ops::$Op<B> { extern "rust-call" fn call_mut(&mut self, args:Args) -> Self::Output { Self::call(&self, args) } }
+    impl<Args:Copy,A,B> Fn<Args> for $Op<'_,Args,A,B> where A:std::ops::$Op<B> { extern "rust-call" fn call(&self, args:Args) -> Self::Output { self.0.call(args).$op(self.1.call(args)) } }
+)+}
+$(
+    impl<'a,Args:Copy+'static,B:'static,A:'static> std::ops::$Op<RcFn<'a,Args,B>> for RcFn<'a,Args,A> where A:std::ops::$Op<B> {
+        type Output = RcFn<'a,Args, <binary::$Op<'a,Args,A,B> as FnOnce<Args>>::Output>;
+        fn $op(self, b:RcFn<'a,Args,B>) -> Self::Output { RcFn::new(binary::$Op(self,b)) }
+    }
+    impl<'a,Args:Copy+'static,B:'static,A:'static> std::ops::$Op<RcFn<'a,Args,B>> for &RcFn<'a,Args,A> where A:std::ops::$Op<B> {
+        type Output = RcFn<'a,Args, <binary::$Op<'a,Args,A,B> as FnOnce<Args>>::Output>;
+        fn $op(self, b:RcFn<'a,Args,B>) -> Self::Output { RcFn::new(binary::$Op(RcFn::clone(self),b)) }
+    }
+    impl<'a,Args:Copy+'static,B:'static,A:'static> std::ops::$Op<&RcFn<'a,Args,B>> for RcFn<'a,Args,A> where A:std::ops::$Op<B> {
+        type Output = RcFn<'a,Args, <binary::$Op<'a,Args,A,B> as FnOnce<Args>>::Output>;
+        fn $op(self, b:&RcFn<'a,Args,B>) -> Self::Output { RcFn::new(binary::$Op(self,RcFn::clone(&b))) }
+    }
+    impl<'a,Args:Copy+'static,B:'static,A:'static> std::ops::$Op<&RcFn<'a,Args,B>> for &RcFn<'a,Args,A> where A:std::ops::$Op<B> {
+        type Output = RcFn<'a,Args, <binary::$Op<'a,Args,A,B> as FnOnce<Args>>::Output>;
+        fn $op(self, b:&RcFn<'a,Args,B>) -> Self::Output { RcFn::new(binary::$Op(RcFn::clone(self),RcFn::clone(&b))) }
+    }
+)+
+mod uniform_binary {$(
+    pub struct $Op<'a,Args,A,B>(pub A, pub super::RcFn<'a,Args,B>);
+    impl<Args,A,B> FnOnce<Args> for $Op<'_,Args,A,B> where A:std::ops::$Op<B>+Copy {
+        type Output = <A as std::ops::$Op<B>>::Output;
+        extern "rust-call" fn call_once(self, args:Args) -> Self::Output { Self::call(&self, args) }
+    }
+    impl<Args,A,B> FnMut<Args> for $Op<'_,Args,A,B> where A:std::ops::$Op<B>+Copy { extern "rust-call" fn call_mut(&mut self, args:Args) -> Self::Output { Self::call(&self, args) } }
+    impl<Args,A,B> Fn<Args> for $Op<'_,Args,A,B> where A:std::ops::$Op<B>+Copy { extern "rust-call" fn call(&self, args:Args) -> Self::Output { (self.0).$op(self.1.call(args)) } }
+)+}
+$(//$(
+    impl<'a,Args:'static,B:'static> std::ops::$Op<RcFn<'a,Args,B>> for $Uniform where Self:std::ops::$Op<B> {
+        type Output = RcFn<'a,Args,<Self as std::ops::$Op<B>>::Output>;
+        fn $op(self, b:RcFn<'a,Args,B>) -> Self::Output { RcFn::new(uniform_binary::$Op(self,b)) }
+    }
+    impl<'a,Args:'static,B:'static> std::ops::$Op<&RcFn<'a,Args,B>> for $Uniform where Self:std::ops::$Op<B> {
+        type Output = RcFn<'a,Args,<Self as std::ops::$Op<B>>::Output>;
+        fn $op(self, b:&RcFn<'a,Args,B>) -> Self::Output { RcFn::new(uniform_binary::$Op(self,RcFn::clone(&b))) }
+    }
+)+//)+
 )}
 
-#[macro_export] macro_rules! compose { ( $Args:ty, $Output:ty, [$($Op:ident $op:ident),+] ) => (
-    #[derive(Clone,Copy)] struct ConstFn<const F:fn($Args)->$Output>();
-    $( op!($Args, $Output, $Op $op); A_op!($Args, $Output, $Op $op, $Output); )+
-)}
-
-pub type Operand<T> = std::marker::PhantomData<T>;
-#[macro_export] macro_rules! defer_op { ( $Args:ty, $Output:ty, $Op:ident $op:ident, $A:ty) => (
-        impl<const B : fn($Args)->$Output> std::ops::$Op<ConstFn<B>> for $crate::compose::Operand<$A> {
-            type Output = ConstFnA<{ |a:$A, args:$Args|->$Output { a.$op(B(args)) } }>;
-            fn $op(self, _:ConstFn<B>) -> Self::Output { ConstFnA() }
-        }
-        impl<const A : fn($Args)->$A,const B : fn($A, $Args)->$A> std::ops::$Op<ConstFnA<B>> for ConstFn<A> {
-            type Output = ConstFnA<{ |a:$A, args:$Args|->$Output { A(args).$op(B(a,args)) } }>;
-            fn $op(self, _:ConstFnA<B>) -> Self::Output { ConstFnA() }
-        }
-)}
-
-#[macro_export] macro_rules! compose_with_defer_op { ( $Args:ty, $Output:ty, [$($Op:ident $op:ident),+], $A:ty) => (
-    compose!($Args, $Output, [$($Op $op),+]);
-    #[derive(Clone,Copy)] struct ConstFnA<const F:fn($A, $Args)->$Output>();
-    impl<const F:fn($A, $Args)->$Output> std::ops::Deref for ConstFnA<F> { type Target = fn($A, $Args)->$Output; fn deref(&self) -> &Self::Target { &F }  }
-    $( defer_op!($Args, $Output, $Op $op, $A); )+
-)}
+unary!([Neg neg]);
+binary!([Add add, Sub sub, Mul mul][f32]);

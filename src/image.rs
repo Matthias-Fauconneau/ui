@@ -184,16 +184,6 @@ macro_rules! lazy_static { ($name:ident : $T:ty = $e:expr;) => {
     }
 }}
 
-fn array_init<T, const N : usize>(f: fn(usize) -> T) -> [T; N] {
-    let mut array : [std::mem::MaybeUninit<T>; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-    for (i, e) in array.iter_mut().enumerate() { *e = std::mem::MaybeUninit::new(f(i)); }
-    //unsafe { std::mem::transmute::<_, [T; N]>(array) } // cannot transmute between generic types
-    let ptr = &mut array as *mut _ as *mut [T; N];
-    let array_as_initialized = unsafe { ptr.read() };
-    core::mem::forget(array);
-    array_as_initialized
-}
-
 lazy_static! { sRGB_forward12 : [u8; 0x1000] = array_init(|i| {
     let linear = i as f64 / 0xFFF as f64;
     (0xFF as f64 * if linear > 0.0031308 {1.055*linear.powf(1./2.4)-0.055} else {12.92*linear}).round() as u8
