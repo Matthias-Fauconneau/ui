@@ -4,7 +4,9 @@ pub trait Zero { fn zero() -> Self; }
 pub fn mask<T:Zero>(m : bool, v : T) -> T { if m { v } else { Zero::zero() } }
 impl Zero for i32 { fn zero() -> Self { 0 } }
 impl Zero for f32 { fn zero() -> Self { 0. } }
-//impl<T:Zero> Zero for (T, T) { fn zero() -> Self { (Zero::zero(), Zero::zero()) } }
+
+//impl<T0:Zero> Zero for (T0,) { fn zero() -> Self { (Zero::zero(),) } }
+//impl<T0:Zero, T1:Zero> Zero for (T0, T1) { fn zero() -> Self { (Zero::zero(), Zero::zero()) } }
 
 pub trait Signed { fn signum(&self) -> Self; fn abs(&self) -> Self; }
 macro_rules! signed_impl { ($($T:ty)+) => ($( impl Signed for $T { fn signum(&self) -> Self { <$T>::signum(*self) } fn abs(&self) -> Self { <$T>::abs(*self) } } )+) }

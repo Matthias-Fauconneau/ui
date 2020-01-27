@@ -6,12 +6,13 @@ edition = "2018"
 
 [features]
 const_generics = []
+array_collect = ["const_generics"]
+const_fn = []
+const_vector = ["const_fn"]
 lazy_static = []
-compose = []
 sRGB= ["lazy_static","const_generics"]
 window = ["tempfile","memmap","wayland-protocols","wayland-client"]
 text = ["window","ttf-parser","sRGB"]
-default = ["compose"]
 #default = ["text"]
 
 [dependencies]
@@ -22,11 +23,6 @@ memmap = { version="", optional=true }
 wayland-protocols = { version = "", features = ["unstable_protocols","client"], optional=true }
 wayland-client = { version = "", optional=true }
 ttf-parser = { version="", optional=true }
-
-[[test]]
-name = "compose"
-path = "tests/compose.rs"
-required-features = ["compose"]
 
 [[example]]
 name = "text"
