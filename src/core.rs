@@ -21,7 +21,7 @@ pub fn sq<T:Copy+std::ops::Mul>(x: T) -> T::Output { x*x }
 pub fn cb<T:Copy+std::ops::Mul>(x: T) -> <T::Output as std::ops::Mul<T>>::Output where <T as std::ops::Mul>::Output : std::ops::Mul<T> { x*x*x }
 
 #[cfg(feature="const_generics")] pub mod array {
-    struct Type<T>(T);
+    /*struct Type<T>(T);
     impl<T, const N : usize> std::iter::FromIterator<T> for Type<[T; N]> {
         fn from_iter<I>(into_iter: I) -> Self where I: IntoIterator<Item=T> {
             let mut array : [std::mem::MaybeUninit<T>; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
@@ -34,7 +34,16 @@ pub fn cb<T:Copy+std::ops::Mul>(x: T) -> <T::Output as std::ops::Mul<T>>::Output
             Self(array_as_initialized)
         }
     }
-    pub fn collect<T, F : Fn(usize)->T, const N : usize>(f : F) -> [T; N] { (0..N).map(f).collect::<Type<[T;N]>>().0 }
+    // ICE traits/codegen/mod.rs:57: `Unimplemented` selecting `Binder(<std::iter::Map... as std::iter::Iterator>)` during codegen
+    pub fn collect<T, F:Fn(usize)->T, const N:usize>(f : F) -> [T; N] { (0..N).map(f).collect::<Type<[T;N]>>().0  }*/
+    pub fn collect<T, F:Fn(usize)->T, const N:usize>(f : F) -> [T; N] {
+        let mut array : [std::mem::MaybeUninit<T>; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+        for i in 0..N { array[i] = std::mem::MaybeUninit::new(f(i)) }
+        let ptr = &mut array as *mut _ as *mut [T; N];
+        let array_as_initialized = unsafe { ptr.read() };
+        core::mem::forget(array);
+        array_as_initialized
+    }
 }
 #[cfg(feature="const_generics")] impl<T:Zero, const N:usize> Zero for [T; N] { fn zero() -> Self { array::collect(|_|Zero::zero()) } }
 //#[cfg(feature="const_generics")] pub use array::collect;
