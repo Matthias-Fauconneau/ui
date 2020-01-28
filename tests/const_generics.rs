@@ -23,15 +23,15 @@ struct ConstGenericTupleStruct<const M:GenericTupleStruct<u32>> {}
 #[derive(PartialEq, Eq)] struct GenericTwoFieldStruct<T>{x:T, y:T}
 struct ConstGenericTwoFieldStruct<const M:GenericTwoFieldStruct<u32>> {}
 
-fn main() { 
-    let _ = ConstGenericOneFieldStruct::<{GenericOneFieldStruct{x:0}}>{}; 
+fn main() {
+    let _ = ConstGenericOneFieldStruct::<{GenericOneFieldStruct{x:0}}>{};
     let _ = ConstTwoParameters::<0,0>{};
-    let _ = ConstTuple::<{(0,0)}>{}; 
-    //let _ = ConstGenericTuple::<{(0,0)}>{}; 
-    let _ = ConstTwoFieldStruct::<{TwoFieldStruct{x:0,y:0}}>{}; 
-    let _ = ConstTupleStruct::<{TupleStruct(0,0)}>{}; 
-    let _ = ConstGenericTupleStruct::<{GenericTupleStruct(0,0)}>{}; 
-    let _ = ConstGenericTwoFieldStruct::<{GenericTwoFieldStruct{x:0,y:0}}>{}; 
+    let _ = ConstTuple::<{(0,0)}>{};
+    //let _ = ConstGenericTuple::<{(0,0)}>{};
+    let _ = ConstTwoFieldStruct::<{TwoFieldStruct{x:0,y:0}}>{};
+    let _ = ConstTupleStruct::<{TupleStruct(0,0)}>{};
+    let _ = ConstGenericTupleStruct::<{GenericTupleStruct(0,0)}>{};
+    let _ = ConstGenericTwoFieldStruct::<{GenericTwoFieldStruct{x:0,y:0}}>{};
 }*/
 
 /*#![allow(incomplete_features)]#![feature(const_generics)]
@@ -64,3 +64,17 @@ fn main() {
     //ConstTuple{}.method(ConstTwoParameters::<0,0>{}); // expected `{M.0}`, found `0u32`
     //ConstTuple{}.method(ConstTwoParameters::<0,0>{}); // expected `{M.0}`, found `0u32`
 }*/
+
+#![allow(incomplete_features)]
+#![feature(const_generics)]
+struct ConstGenericPrimitive<const T:u32>();
+struct ConstGenericTuple1<const T:(u32,)>();
+struct ConstGenericTuple2<const T:(u32,u32)>();
+#[derive(PartialEq,Eq)] struct Struct();
+struct ConstGenericStruct<const T:Struct>();
+fn main() {
+    let _ = ConstGenericPrimitive::<{0}>();
+    let _ = ConstGenericTuple1::<{(0,)}>();
+    let _ = ConstGenericTuple2::<{(0,0)}>();
+    let _ = ConstGenericStruct::<{Struct()}>();
+}
