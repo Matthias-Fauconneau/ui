@@ -1,11 +1,10 @@
-use std::cmp::{min, max}; use crate::{core::*,vector::*};
 pub fn floor_div(n : u32, d : u32) -> u32 { n/d }
 pub fn ceil_div(n : u32, d : u32) -> u32 { (n+d-1)/d }
-use crate::image::{Image,bgra8,IntoPixelIterator,sRGB::sRGB};
+use std::cmp::{min, max}; use crate::{core::{sign,abs,Result},vector::{uint2,size2,vec2,lerp,sq},image::{Image,bgra8,IntoPixelIterator,sRGB::sRGB}};
 
 pub struct Font(memmap::Mmap);
 impl Font {
-    pub fn map() -> Result<Self> { Ok(Font(unsafe{memmap::Mmap::map(&std::fs::File::open("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")?)}?)) }
+    pub fn map() -> Result<Self> { Ok(Font(unsafe{memmap::Mmap::map(&std::fs::File::open("/usr/share/fonts/noto/NotoSans-Regular.ttf")?)}?)) }
     pub fn parse(&self) -> Result<ttf_parser::Font> { Ok(ttf_parser::Font::from_data(&self.0, 0)?) }
 }
 
@@ -114,22 +113,24 @@ pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Resul
             font.outline_glyph(glyph_index, &mut outline)?;
             let coverage = raster::fill(&outline.target.as_ref());
             if let Some(last_glyph_index) = last_glyph_index { pen += font.glyphs_kerning(last_glyph_index, glyph_index).unwrap_or(0) as i32; }
-            //let target = target.slice_mut(offset2{x: scale*((pen+metrics.left_side_bearing as i32) as u32), y: (scale*((line_metrics.ascent-rect.y_max) as u16)) as u32}, coverage.size)?;
-            let mut target = target.slice_mut(offset2{x: scale*((pen+metrics.left_side_bearing as i32) as u32)*N, y: ((scale*((line_metrics.ascent-rect.y_max) as u16)) as u32)*N},
+            //let target = target.slice_mut(uint2{x: scale*((pen+metrics.left_side_bearing as i32) as u32), y: (scale*((line_metrics.ascent-rect.y_max) as u16)) as u32}, coverage.size)?;
+            let target = target.slice_mut(uint2{x: scale*((pen+metrics.left_side_bearing as i32) as u32)*N, y: ((scale*((line_metrics.ascent-rect.y_max) as u16)) as u32)*N},
                                                                        size2{x: coverage.size.x*N, y: coverage.size.y*N})?;
             if N==1 {
-                 for (&c, target) in (coverage.as_ref(), target).pixels() {
+                for (_, &c, target) in (coverage.as_ref(), target).pixels() {
                     assert!(0. <= c && c <= 1., c);
                     let a = sRGB(f32::min(abs(c),1.));
                     *target = bgra8{b : a, g : a, r : a, a : 0xFF};
                 }
             } else {
-                for y in 0..target.size.y { for x in 0..target.size.x {
-                    let c = coverage.as_ref().get(x/N,y/N);
+                panic!();
+                #[cfg(feature="fn_traits")]
+                for (p, target) in target.pixels() {
+                    let c = coverage(p.x/N,p.y/N);
                     //assert!(c >= 0. && c<= 1., c);
                     let a = sRGB(f32::min(abs(c),1.));
-                    target.set(x,y, if c>0. { bgra8{b : 0, g : a, r : a, a : 0xFF} } else { bgra8{b : a, g : a, r : 0, a : 0xFF} } );
-                }}
+                    *target = if c>0. { bgra8{b : 0, g : a, r : a, a : 0xFF} } else { bgra8{b : a, g : a, r : 0, a : 0xFF} };
+                }
             }
         }
         pen += metrics.advance as i32;

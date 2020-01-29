@@ -1,4 +1,4 @@
-use crate::{size2, Image};
+use crate::{vector::size2, image::Image};
 
 /*use crate::core::{floor, sq, fract, abs};
 use crate::image::IntoRows;

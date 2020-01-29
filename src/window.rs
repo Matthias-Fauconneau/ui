@@ -6,7 +6,8 @@ pub trait Widget {
     fn render(&mut self, target : &mut Target) -> Result;
 }
 
-pub fn run(widget : Rc<RefCell<dyn Widget>>) -> Result {
+pub fn run<W:Widget+'static>(widget:W) -> Result { run_rc(Rc::new(RefCell::new(widget))) }
+pub fn run_rc(widget : Rc<RefCell<dyn Widget>>) -> Result {
     std::panic::set_hook(Box::new(|info| {
         println!("{}: {}", info.location().unwrap(), match info.payload().downcast_ref::<&'static str>() {
             Some(s) => *s,

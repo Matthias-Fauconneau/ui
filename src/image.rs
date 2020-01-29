@@ -1,17 +1,31 @@
-use crate::{Result,ensure,size2,offset2};
+use crate::{core::{Zero,Result},ensure, vector::{xy,size2,uint2}};
 
-pub struct Image<T> {
+pub struct Image<Container> {
     pub stride : u32,
     pub size : size2,
-    pub buffer : T,
+    pub buffer : Container,
 }
 
-impl<T:Copy> Image<&[T]> {
-    pub fn get(&self, x : u32, y: u32) -> T { self.buffer[(y*self.stride+x) as usize] }
+impl<T,Container:std::ops::Deref<Target=[T]>> std::ops::Index<uint2> for Image<Container> {
+    type Output=T; fn index(&self, xy{x,y}:uint2) -> &Self::Output { &self.buffer[(y*self.stride+x) as usize] }
 }
-impl<T:Copy> Image<&mut [T]> {
+
+#[cfg(feature="fn_traits")]
+impl<T,Container:std::ops::Deref<Target=[T]>> FnOnce<(u32,u32)> for Image<Container> {
+    type Output=&T;  extern "rust-call" fn call_once(self, args: (u32,u32)) -> Self::Output { self.call(args) }
+}
+#[cfg(feature="fn_traits")]
+impl<T,Container:std::ops::Deref<Target=[T]>> FnMut<(u32,u32)> for Image<Container> {
+    extern "rust-call" fn call_mut(&mut self, args: (u32,u32)) -> Self::Output { self.call(args) }
+}
+#[cfg(feature="fn_traits")]
+impl<T,Container:std::ops::Deref<Target=[T]>> Fn<(u32,u32)> for Image<Container> {
+    extern "rust-call" fn call(&self, args: (u32,u32)) -> Self::Output { self[xy{x:args.0,y:args.1}] }
+}
+
+/*impl<T:Copy,Container:DerefMut<Target=[T]>> Image<Container> {
     pub fn set(&mut self, x : u32, y: u32, v: T) { self.buffer[(y*self.stride+x) as usize] = v; }
-}
+}*/
 
 pub trait IntoImage {
     type Image;
@@ -31,7 +45,7 @@ impl<'t, T> IntoImage for &'t mut [T] {
 }
 
 impl<T> Image<&mut [T]> {
-    pub fn slice_mut(&mut self, offset : offset2, size : size2) -> Result<Image<&mut[T]>> {
+    pub fn slice_mut(&mut self, offset : uint2, size : size2) -> Result<Image<&mut[T]>> {
         ensure!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, (self.size, offset, size))?;
         Ok(Image{size, stride: self.stride, buffer: &mut self.buffer[(offset.y*self.stride+offset.x) as usize..] })
     }
@@ -57,7 +71,7 @@ pub trait IntoRows {
     fn eq(ptr : Self::Ptr, end : Self::ConstPtr) -> bool;
 
     type Element : Sized;
-    fn index(ptr : Self::Ptr, x : usize) -> Self::Element;
+    fn index(ptr : Self::Ptr, x : u32) -> Self::Element;
 }
 
 impl<'t, T> IntoRows for Image<&'t [T]> {
@@ -70,7 +84,7 @@ impl<'t, T> IntoRows for Image<&'t [T]> {
     fn eq(ptr : Self::Ptr, end : Self::ConstPtr) -> bool { ptr == end }
 
     type Element = &'t T;
-    fn index(ptr : Self::Ptr, x : usize) -> Self::Element { unsafe{&*ptr.offset(x as isize)} }
+    fn index(ptr : Self::Ptr, x : u32) -> Self::Element { unsafe{&*ptr.offset(x as isize)} }
 }
 
 impl<'t, T> IntoRows for Image<&'t mut [T]> {
@@ -83,80 +97,84 @@ impl<'t, T> IntoRows for Image<&'t mut [T]> {
     fn eq(ptr : Self::Ptr, end : Self::ConstPtr) -> bool { ptr as *const T == end }
 
     type Element = &'t mut T;
-    fn index(ptr : Self::Ptr, x : usize) -> Self::Element { unsafe{&mut *ptr.offset(x as isize)} }
+    fn index(ptr : Self::Ptr, x : u32) -> Self::Element { unsafe{&mut *ptr.offset(x as isize)} }
 }
 
 pub struct PixelIterator1<T> where Image<T> : IntoRows {
-    width : usize,
+    width : u32,
     end: <Image<T> as IntoRows>::ConstPtr,
     rows: Rows<<Image<T> as IntoRows>::Ptr>,
-    x : usize,
+    position : uint2
 }
 impl<T> Iterator for PixelIterator1<T> where Image<T> : IntoRows, <Image<T> as IntoRows>::Ptr : Eq {
-    type Item = <Image<T> as IntoRows>::Element;
+    type Item = (uint2, <Image<T> as IntoRows>::Element);
     #[inline] // test mov add add test jcc (SIB) inc ~ 7
     fn next(&mut self) -> Option<Self::Item> {
-        if self.x == self.width {
-            self.x = 0;
+        if self.position.x == self.width {
+            self.position.x = 0;
+            self.position.y += 1;
             self.rows.next();
             if Image::<T>::eq(self.rows.ptr, self.end) { None? }
         }
-        let item = Some(Image::<T>::index(self.rows.ptr, self.x));
-        self.x += 1;
+        let item = Some((self.position, Image::<T>::index(self.rows.ptr, self.position.x)));
+        self.position.x += 1;
         item
     }
 }
 
 pub struct PixelIterator2<T0, T1> where Image<T0> : IntoRows, Image<T1> : IntoRows {
-    width : usize,
+    width : u32,
     end: <Image<T0> as IntoRows>::ConstPtr,
     rows: (Rows<<Image<T0> as IntoRows>::Ptr>, Rows<<Image<T1> as IntoRows>::Ptr>), // (Rows<T::Ptr>...)
-    x : usize,
+    position : uint2
 }
 impl<T0, T1> Iterator for PixelIterator2<T0, T1> where Image<T0> : IntoRows, Image<T1> : IntoRows, <Image<T0> as IntoRows>::Ptr : Eq {
-    type Item = (<Image<T0> as IntoRows>::Element, <Image<T1> as IntoRows>::Element);
+    type Item = (uint2, <Image<T0> as IntoRows>::Element, <Image<T1> as IntoRows>::Element);
     #[inline] // test mov add add test jcc (SIB) inc ~ 7
     fn next(&mut self) -> Option<Self::Item> {
-        if self.x == self.width {
-            self.x = 0;
+        if self.position.x == self.width {
+            self.position.x = 0;
+            self.position.y += 1;
             self.rows.0.next(); self.rows.1.next(); // next(self.rows)...
             if Image::<T0>::eq(self.rows.0.ptr, self.end) { None? }
         }
-        let item = Some((Image::<T0>::index(self.rows.0.ptr, self.x), Image::<T1>::index(self.rows.1.ptr, self.x))); // self.x.index(self.rows)...
-        self.x += 1;
+        let item = Some((self.position, Image::<T0>::index(self.rows.0.ptr, self.position.x), Image::<T1>::index(self.rows.1.ptr, self.position.x))); // self.x.index(self.rows)...
+        self.position.x += 1;
         item
     }
 }
 
 pub trait IntoPixelIterator { type PixelIterator; fn pixels(&mut self) -> Self::PixelIterator; }
+
 impl<T> IntoPixelIterator for Image<T> where Image<T> : IntoRows {
     type PixelIterator = PixelIterator1<T>;
     fn pixels(&mut self) -> Self::PixelIterator {
         Self::PixelIterator{
-            width : self.size.x as usize,
+            width : self.size.x,
             end: self.end(),
             rows: self.rows_mut(),
-            x: 0
+            position: Zero::zero()
         }
     }
 }
+
 impl<T0, T1> IntoPixelIterator for (Image<T0>, Image<T1>) where Image<T0> : IntoRows, Image<T1> : IntoRows {
     type PixelIterator = PixelIterator2<T0, T1>;
     fn pixels(&mut self) -> Self::PixelIterator {
         Self::PixelIterator{
-            width : self.0.size.x as usize,
+            width : self.0.size.x,
             end: self.0.end(),
             rows: (self.0.rows_mut(), self.1.rows_mut()), // (self.rows_mut()...)
-            x: 0
+            position: Zero::zero()
         }
     }
 }
 
 #[allow(non_camel_case_types, dead_code)] #[derive(Clone, Copy)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
 
-impl<T : Default+Clone> Image<Vec<T>> {
+impl<T> Image<Vec<T>> {
     pub fn new(size: size2, buffer: Vec<T>) -> Self { Self{stride:size.x, size, buffer} }
-    #[allow(dead_code)] pub fn zero(size: size2) -> Self { Self::new(size, vec![T::default(); (size.x*size.y) as usize]) }
+    //#[allow(dead_code)] pub fn zero(size: size2) -> Self { Self::new(size, vec![T::default(); (size.x*size.y) as usize]) }
     #[allow(dead_code)] pub fn uninitialized(size: size2) -> Self {
         let len = (size.x * size.y) as usize;
         let mut buffer = Vec::with_capacity(len);
@@ -184,7 +202,7 @@ macro_rules! lazy_static { ($name:ident : $T:ty = $e:expr;) => {
     }
 }}
 
-lazy_static! { sRGB_forward12 : [u8; 0x1000] = array_init(|i| {
+lazy_static! { sRGB_forward12 : [u8; 0x1000] = crate::core::array::collect(|i| {
     let linear = i as f64 / 0xFFF as f64;
     (0xFF as f64 * if linear > 0.0031308 {1.055*linear.powf(1./2.4)-0.055} else {12.92*linear}).round() as u8
 }); }

@@ -11,6 +11,7 @@ impl<T:std::ops::AddAssign> std::ops::AddAssign<xy<T>> for xy<T> { fn add_assign
 impl<T:Copy+Zero+Add<Output=T>> std::iter::Sum<xy<T>> for xy<T> { fn sum<I:Iterator<Item=xy<T>>>(iter: I) -> Self { iter.fold(Zero::zero(), Add::add) } }
 impl<T:Sub> Sub<xy<T>> for xy<T> { type Output=xy<T::Output>; fn sub(self, b: xy<T>) -> Self::Output { Self::Output{x: self.x-b.x, y: self.y-b.y} } }
 impl<T:Mul> Mul<xy<T>> for xy<T> { type Output=xy<T::Output>; fn mul(self, b: xy<T>) -> Self::Output { Self::Output{x: self.x*b.x, y: self.y*b.y} } }
+//impl<T:Mul> Mul<xy<T>> for xy<T> where T::Output:Add { type Output=<T::Output as Add>::Output; fn mul(self, b: xy<T>) -> Self::Output { self.x*b.x + self.y*b.y } }
 impl<T:Div> Div<xy<T>> for xy<T> { type Output=xy<T::Output>; fn div(self, b: xy<T>) -> Self::Output { Self::Output{x: self.x/b.x, y: self.y/b.y} } }
 
 fn mul<T:Copy+Mul>(a: T, b: xy<T>) -> xy<T::Output> { xy{x: a*b.x, y: a*b.y} }
@@ -23,10 +24,13 @@ impl Div<xy<f32>> for f32 { type Output=xy<f32>; fn div(self, b: xy<f32>) -> Sel
 impl xy<u32> { pub const fn as_f32(self) -> xy<f32> { xy{x: self.x as f32, y: self.y as f32} } }
 pub const fn div_f32(a: f32, b: xy<f32>) -> xy<f32> { xy{x: a/b.x, y: a/b.y} }
 
-#[allow(non_camel_case_types)] pub type int2 = xy<i32>;
 #[allow(non_camel_case_types)] pub type uint2 = xy<u32>;
+#[allow(non_camel_case_types)] pub type int2 = xy<i32>;
 #[allow(non_camel_case_types)] pub type size2 = xy<u32>;
-#[allow(non_camel_case_types)] pub type offset2 = xy<u32>;
+//#[allow(non_camel_case_types)] pub type offset2 = xy<u32>;
 #[allow(non_camel_case_types)] pub type vec2 = xy<f32>;
 
 pub fn lerp(t : f32, a : vec2, b : vec2) -> xy<f32> { (1.-t)*a + t*b }
+//impl<T:Mul> Mul<xy<T>> for xy<T> where T::Output:Add { type Output=<T::Output as Add>::Output; fn mul(self, b: xy<T>) -> Self::Output { self.x*b.x + self.y*b.y } }
+pub fn dot(a:vec2, b:vec2) -> f32 { a.x*b.x + a.y*b.y }
+pub fn sq(x:vec2) -> f32 { dot(x, x) }
