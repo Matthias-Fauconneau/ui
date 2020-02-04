@@ -5,6 +5,7 @@ pub fn mask<T:Zero>(m : bool, v : T) -> T { if m { v } else { Zero::zero() } }
 impl Zero for u32 { fn zero() -> Self { 0 } }
 impl Zero for i32 { fn zero() -> Self { 0 } }
 impl Zero for f32 { fn zero() -> Self { 0. } }
+impl Zero for f64 { fn zero() -> Self { 0. } }
 
 pub trait Signed { fn signum(&self) -> Self; fn abs(&self) -> Self; }
 macro_rules! signed_impl { ($($T:ty)+) => ($( impl Signed for $T { fn signum(&self) -> Self { <$T>::signum(*self) } fn abs(&self) -> Self { <$T>::abs(*self) } } )+) }
@@ -19,8 +20,13 @@ pub fn sq<T:Copy+std::ops::Mul>(x: T) -> T::Output { x*x }
 pub fn cb<T:Copy+std::ops::Mul>(x: T) -> <T::Output as std::ops::Mul<T>>::Output where <T as std::ops::Mul>::Output : std::ops::Mul<T> { x*x*x }
 
 #[cfg(feature="const_generics")] pub mod array {
-    /*struct Type<T>(T);
-    impl<T, const N : usize> std::iter::FromIterator<T> for Type<[T; N]> {
+    pub trait FromIterator<T> { //: std::iter::FromIterator<T> {
+        fn from_iter<I:IntoIterator<Item=T>>(into_iter: I) -> Self;
+    }
+    //impl<T,F:std::iter::FromIterator<T>> FromIterator<T> for F {}
+    //struct Type<T>(T);
+    //impl<T, const N : usize> std::iter::FromIterator<T> for Type<[T; N]> {
+    impl<T, const N : usize> FromIterator<T> for [T; N] {
         fn from_iter<I>(into_iter: I) -> Self where I: IntoIterator<Item=T> {
             let mut array : [std::mem::MaybeUninit<T>; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
             let mut iter = into_iter.into_iter();
@@ -29,12 +35,16 @@ pub fn cb<T:Copy+std::ops::Mul>(x: T) -> <T::Output as std::ops::Mul<T>>::Output
             let ptr = &mut array as *mut _ as *mut [T; N];
             let array_as_initialized = unsafe { ptr.read() };
             core::mem::forget(array);
-            Self(array_as_initialized)
+            array_as_initialized // Self(array_as_initialized)
         }
     }
+    pub trait Iterator : std::iter::Iterator {
+        fn collect<B: FromIterator<Self::Item>>(self) -> B where Self: Sized { FromIterator::from_iter(self) }
+    }
+    impl<I:std::iter::Iterator> Iterator for I {}
     // ICE traits/codegen/mod.rs:57: `Unimplemented` selecting `Binder(<std::iter::Map... as std::iter::Iterator>)` during codegen
-    pub fn collect<T, F:Fn(usize)->T, const N:usize>(f : F) -> [T; N] { (0..N).map(f).collect::<Type<[T;N]>>().0  }*/
-    pub fn collect<T, F:Fn(usize)->T, const N:usize>(f : F) -> [T; N] {
+    //pub fn map<T, F:Fn(usize)->T, const N:usize>(f : F) -> [T; N] { Iterator::collect((0..N).map(f)) }
+    pub fn map<T, F:Fn(usize)->T, const N:usize>(f : F) -> [T; N] {
         let mut array : [std::mem::MaybeUninit<T>; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
         for i in 0..N { array[i] = std::mem::MaybeUninit::new(f(i)) }
         let ptr = &mut array as *mut _ as *mut [T; N];
@@ -42,14 +52,33 @@ pub fn cb<T:Copy+std::ops::Mul>(x: T) -> <T::Output as std::ops::Mul<T>>::Output
         core::mem::forget(array);
         array_as_initialized
     }
+    pub struct IntoIter<T, const N: usize> {
+        data: [std::mem::MaybeUninit<T>; N],
+        alive: std::ops::Range<usize>,
+    }
+    impl<T, const N: usize> IntoIter<T,N> {
+        pub fn new(array: [T; N]) -> Self {
+            //Self{data: std::mem::transmute::<[T;N], [std::mem::MaybeUninit<T>;N]>(array), alive: 0..N }
+            Self{data: unsafe{let data = std::ptr::read(&array as *const [T; N] as *const [std::mem::MaybeUninit<T>; N]); std::mem::forget(array); data}, alive: 0..N}
+        }
+        fn as_mut_slice(&mut self) -> &mut [T] { unsafe { std::mem::transmute::<&mut [std::mem::MaybeUninit<T>], &mut [T]>(&mut self.data[self.alive.clone()]) } }
+    }
+    impl<T, const N: usize> std::iter::Iterator for IntoIter<T, N> {
+        type Item = T;
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.alive.start == self.alive.end { return None; }
+            let idx = self.alive.start;
+            self.alive.start += 1;
+            Some(unsafe { self.data.get_unchecked(idx).read() })
+        }
+    }
+    impl<T, const N: usize> Drop for IntoIter<T,N> { fn drop(&mut self) { unsafe { std::ptr::drop_in_place(self.as_mut_slice()) } } }
 }
-#[cfg(feature="const_generics")] impl<T:Zero, const N:usize> Zero for [T; N] { fn zero() -> Self { array::collect(|_|Zero::zero()) } }
-//#[cfg(feature="const_generics")] pub use array::collect;
-//pub fn default<T : Default>(len : usize) -> Vec<T> { let mut v=Vec::new(); v.resize_with(len, T::default); v }
-
-//pub trait FnRef<Args> { type Output; fn call(&self, args: Args) -> Self::Output; } // impl Fn/Mut/Once with a simpler FnRef trait
+#[cfg(feature="const_generics")] impl<T:Zero, const N:usize> Zero for [T; N] { fn zero() -> Self { array::map(|_|Zero::zero()) } }
+#[cfg(feature="const_generics")] pub use array::map;
 
 pub fn log<T:std::fmt::Debug>(v: T) { println!("{:?}", v); }
+#[macro_export] macro_rules! log { ($($A:expr),+) => ( $crate::core::log(($($A),+)) ) }
 
 pub struct MessageError<M>(pub M);
 impl<M:std::fmt::Debug> std::fmt::Debug for MessageError<M> { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { std::fmt::Debug::fmt(&self.0, f) } }
@@ -61,5 +90,5 @@ impl<T> Ok<T> for Option<T> { fn ok(self) -> Result<T> { Ok(self.ok_or(MessageEr
 #[derive(Debug)] pub struct Error(Box<dyn std::error::Error>);
 pub type Result<T=(), E=Error> = std::result::Result<T, E>;
 impl<E:std::error::Error+'static/*Send+Sync*/> From<E> for Error { fn from(error: E) -> Self { Error(Box::new(error)) } }
-#[macro_export] macro_rules! ensure { ($cond:expr, $val:expr) => { if $cond { Ok(())} else { Err(crate::core::MessageError(format!("{} = {:?}",stringify!($val),$val))) } } }
+//#[macro_export] macro_rules! ensure { ($cond:expr, $val:expr) => { (if $cond { Ok(())} else { Err(crate::core::MessageError(format!("{} = {:?}",stringify!($val),$val))) })? } }
 #[macro_export] macro_rules! assert { ($cond:expr, $($val:expr),* ) => { std::assert!($cond,"{}. {:?}", stringify!($cond), ( $( format!("{} = {:?}", stringify!($val), $val), )* ) ); } }

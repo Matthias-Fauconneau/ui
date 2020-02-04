@@ -1,6 +1,6 @@
 pub fn floor_div(n : u32, d : u32) -> u32 { n/d }
 pub fn ceil_div(n : u32, d : u32) -> u32 { (n+d-1)/d }
-use std::cmp::{min, max}; use crate::{core::{sign,abs,Result},vector::{uint2,size2,vec2,lerp,sq},image::{Image,bgra8,IntoPixelIterator,sRGB::sRGB}};
+use {std::cmp::{min, max}, crate::{core::{sign,abs,Result},vector::{uint2,size2,vec2,lerp,sq},image::{Image,bgra8,sRGB::sRGB}}};
 
 pub struct Font(memmap::Mmap);
 impl Font {
@@ -114,14 +114,14 @@ pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Resul
             let coverage = raster::fill(&outline.target.as_ref());
             if let Some(last_glyph_index) = last_glyph_index { pen += font.glyphs_kerning(last_glyph_index, glyph_index).unwrap_or(0) as i32; }
             //let target = target.slice_mut(uint2{x: scale*((pen+metrics.left_side_bearing as i32) as u32), y: (scale*((line_metrics.ascent-rect.y_max) as u16)) as u32}, coverage.size)?;
-            let target = target.slice_mut(uint2{x: scale*((pen+metrics.left_side_bearing as i32) as u32)*N, y: ((scale*((line_metrics.ascent-rect.y_max) as u16)) as u32)*N},
-                                                                       size2{x: coverage.size.x*N, y: coverage.size.y*N})?;
+            let mut target = target.slice_mut(uint2{x: scale*((pen+metrics.left_side_bearing as i32) as u32)*N, y: ((scale*((line_metrics.ascent-rect.y_max) as u16)) as u32)*N},
+                                                                       size2{x: coverage.size.x*N, y: coverage.size.y*N});
             if N==1 {
-                for (_, &c, target) in (coverage.as_ref(), target).pixels() {
+                target.map(coverage, |_,c|{
                     assert!(0. <= c && c <= 1., c);
                     let a = sRGB(f32::min(abs(c),1.));
-                    *target = bgra8{b : a, g : a, r : a, a : 0xFF};
-                }
+                    bgra8{b : a, g : a, r : a, a : 0xFF}
+                });
             } else {
                 panic!();
                 #[cfg(feature="fn_traits")]

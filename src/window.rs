@@ -1,4 +1,4 @@
-use std::{cell::{Cell, RefCell}, rc::Rc}; use crate::{core::Result, vector::size2, image::{Image, bgra8, IntoImage}};
+use {std::{cell::{Cell, RefCell}, rc::Rc}, crate::{core::Result, vector::size2, image::{Image, bgra8, IntoImage}}};
 
 pub type Target<'t> = Image<&'t mut[bgra8]>;
 pub trait Widget {
@@ -47,7 +47,7 @@ pub fn run_rc(widget : Rc<RefCell<dyn Widget>>) -> Result {
                 let file = tempfile::tempfile().unwrap();
                 file.set_len((size.x*size.y*4) as u64).unwrap();
                 let bytes = &mut unsafe{memmap::MmapMut::map_mut(&file)}.unwrap()[..]; // ? unmap on drop
-                let mut target = unsafe{std::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut bgra8, bytes.len() / std::mem::size_of::<bgra8>())}.image(size).unwrap();
+                let mut target = unsafe{std::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut bgra8, bytes.len() / std::mem::size_of::<bgra8>())}.image(size);
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(||{widget.borrow_mut().render(&mut target).unwrap_or_else(|e|println!("{:?}",e))})).unwrap_or_else(|_|{});
                 // Exiting before complete setup seems to crash sway soon after :/ Show partial render instead
                 // FIXME: reuse pool+buffer

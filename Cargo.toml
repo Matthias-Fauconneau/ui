@@ -10,10 +10,12 @@ array_collect = ["const_generics"]
 const_fn = []
 const_vector = ["const_fn"]
 lazy_static = []
+thread = []
+image = ["thread"]
 sRGB= ["lazy_static","const_generics"]
 window = ["tempfile","memmap","wayland-protocols","wayland-client"]
 text = ["window","ttf-parser","sRGB"]
-#default = ["text"]
+default = ["image"]
 
 [dependencies]
 #serde = { version = "", features = ["derive"] }

@@ -2,6 +2,8 @@
 #![cfg_attr(feature="const_generics", allow(incomplete_features),feature(const_generics))]
 #![cfg_attr(feature="const_fn", feature(const_fn))]
 #![cfg_attr(feature="fn_traits", feature(unboxed_closures,fn_traits))]
+#![cfg_attr(feature="thread", feature(thread_spawn_unchecked))]
+#![cfg_attr(all(feature="thread",feature="image"), feature(type_ascription))]
 
 pub mod core; //pub use crate::core::*;
 pub mod vector; //pub use vector::*;

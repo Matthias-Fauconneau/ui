@@ -1,4 +1,4 @@
-use crate::{core::{Zero,Result},ensure, vector::{xy,size2,uint2}};
+use {std::assert, crate::{core::array::{map,IntoIter}, vector::{xy,size2,uint2}}};
 
 pub struct Image<Container> {
     pub stride : u32,
@@ -6,167 +6,74 @@ pub struct Image<Container> {
     pub buffer : Container,
 }
 
-impl<T,Container:std::ops::Deref<Target=[T]>> std::ops::Index<uint2> for Image<Container> {
-    type Output=T; fn index(&self, xy{x,y}:uint2) -> &Self::Output { &self.buffer[(y*self.stride+x) as usize] }
-}
-
-#[cfg(feature="fn_traits")]
-impl<T,Container:std::ops::Deref<Target=[T]>> FnOnce<(u32,u32)> for Image<Container> {
-    type Output=&T;  extern "rust-call" fn call_once(self, args: (u32,u32)) -> Self::Output { self.call(args) }
-}
-#[cfg(feature="fn_traits")]
-impl<T,Container:std::ops::Deref<Target=[T]>> FnMut<(u32,u32)> for Image<Container> {
-    extern "rust-call" fn call_mut(&mut self, args: (u32,u32)) -> Self::Output { self.call(args) }
-}
-#[cfg(feature="fn_traits")]
-impl<T,Container:std::ops::Deref<Target=[T]>> Fn<(u32,u32)> for Image<Container> {
-    extern "rust-call" fn call(&self, args: (u32,u32)) -> Self::Output { self[xy{x:args.0,y:args.1}] }
-}
-
-/*impl<T:Copy,Container:DerefMut<Target=[T]>> Image<Container> {
-    pub fn set(&mut self, x : u32, y: u32, v: T) { self.buffer[(y*self.stride+x) as usize] = v; }
-}*/
-
 pub trait IntoImage {
     type Image;
-    fn image(self, size : size2) -> Option<Self::Image>;
+    fn image(self, size : size2) -> Self::Image;
 }
-impl<'t, T> IntoImage for &'t [T] {
-    type Image = Image<&'t [T]>;
-    fn image(self, size : size2) -> Option<Self::Image> {
-        if self.len() == (size.x*size.y) as usize { Some(Self::Image{stride: size.x, size, buffer: self}) } else { None }
+macro_rules! impl_into_image { ($T:ty) => {
+impl<'t, T> IntoImage for $T {
+    type Image = Image<$T>;
+    fn image(self, size : size2) -> Self::Image {
+        assert!(self.len() == (size.x*size.y) as usize);
+        Self::Image{stride: size.x, size, buffer: self}
     }
 }
-impl<'t, T> IntoImage for &'t mut [T] {
-    type Image = Image<&'t mut [T]>;
-    fn image(self, size : size2) -> Option<Self::Image> {
-        if self.len() == (size.x*size.y) as usize { Some(Self::Image{stride: size.x, size, buffer: self}) } else { None }
+}}
+impl_into_image!(&'t [T]);
+impl_into_image!(&'t mut [T]);
+
+const N : usize = 8;
+impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
+    pub fn slice_mut(&mut self, offset : uint2, size : size2) -> Image<&mut[T]> {
+        assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, (self.size, offset, size));
+        Image{size, stride: self.stride, buffer: &mut self.buffer[(offset.y*self.stride+offset.x) as usize..]}
     }
-}
-
-impl<T> Image<&mut [T]> {
-    pub fn slice_mut(&mut self, offset : uint2, size : size2) -> Result<Image<&mut[T]>> {
-        ensure!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, (self.size, offset, size))?;
-        Ok(Image{size, stride: self.stride, buffer: &mut self.buffer[(offset.y*self.stride+offset.x) as usize..] })
+    #[cfg(feature="thread")] pub fn set<F:Fn(uint2)->T+Copy+Send>(&mut self, f:F) where T:Send {
+        const N : usize = self::N;
+        let ptr = self.buffer.as_mut_ptr();
+        IntoIter::new(map::<_,_,N>(|i| {
+            let (y0,y1) = ((i as u32)*self.size.y/(N as u32), ((i as u32)+1)*self.size.y/(N as u32));
+            let (i0,i1) = ((y0*self.stride) as usize, (y1*self.stride) as usize);
+            let mut target_row = &mut unsafe{std::slice::from_raw_parts_mut(ptr, self.buffer.len())}[i0..i1];
+            let (width, stride) = (self.size.x, self.stride);
+            unsafe { std::thread::Builder::new().spawn_unchecked(move || {
+                for y in y0..y1 {
+                    for x in 0..width {
+                        target_row[x as usize] = f(xy{x,y});
+                    }
+                    target_row = &mut target_row[stride as usize..];
+                }
+            }) }.unwrap()
+        })).for_each(|t| t.join().unwrap());
     }
-}
-
-pub trait Offset { fn offset(&self, offset : isize) -> Self; }
-impl<T> Offset for *const T { fn offset(&self, offset : isize) -> Self { unsafe{(*self).offset(offset)} } }
-impl<T> Offset for *mut T { fn offset(&self, offset : isize) -> Self { unsafe{(*self).offset(offset)} } }
-
-pub struct Rows<T> { pub ptr: T, stride: isize }
-impl<T:Offset> Rows<T> { pub fn next(&mut self) { self.ptr = self.ptr.offset(self.stride); } }
-impl<T> std::ops::Index<u32> for Rows<*const T> { type Output = T; fn index(&self, x: u32) -> &T { unsafe{&*self.ptr.offset(x as isize)} } }
-impl<T> std::ops::Index<u32> for Rows<*mut T> { type Output = T; fn index(&self, x: u32) -> &T { unsafe{&*self.ptr.offset(x as isize)} } }
-impl<T> std::ops::IndexMut<u32> for Rows<*mut T> { fn index_mut(&mut self, x: u32) -> &mut T { unsafe{&mut *self.ptr.offset(x as isize)} } }
-
-pub trait IntoRows {
-    type ConstPtr : Eq+Copy;
-    fn end(&self) -> Self::ConstPtr;
-    fn rows(&self) -> Rows<Self::ConstPtr>;
-
-    type Ptr : Offset+Copy;
-    fn rows_mut(&mut self) -> Rows<Self::Ptr>;
-    fn eq(ptr : Self::Ptr, end : Self::ConstPtr) -> bool;
-
-    type Element : Sized;
-    fn index(ptr : Self::Ptr, x : u32) -> Self::Element;
-}
-
-impl<'t, T> IntoRows for Image<&'t [T]> {
-    type ConstPtr = *const T;
-    fn end(&self) -> Self::ConstPtr { unsafe{(self.buffer as *const [T] as Self::ConstPtr).offset((self.size.y*self.stride) as isize)} }
-    fn rows(&self) -> Rows<Self::ConstPtr> { Rows::<Self::ConstPtr>{ptr: self.buffer as *const [T] as Self::ConstPtr, stride: self.stride as isize} }
-
-    type Ptr = *const T;
-    fn rows_mut(&mut self) -> Rows<Self::Ptr> { Rows::<Self::Ptr>{ptr: self.buffer as *const [T] as Self::Ptr, stride: self.stride as isize} }
-    fn eq(ptr : Self::Ptr, end : Self::ConstPtr) -> bool { ptr == end }
-
-    type Element = &'t T;
-    fn index(ptr : Self::Ptr, x : u32) -> Self::Element { unsafe{&*ptr.offset(x as isize)} }
-}
-
-impl<'t, T> IntoRows for Image<&'t mut [T]> {
-    type ConstPtr = *const T;
-    fn end(&self) -> Self::ConstPtr { unsafe{(self.buffer as *const [T] as Self::ConstPtr).offset((self.size.y*self.stride) as isize)} }
-    fn rows(&self) -> Rows<Self::ConstPtr> { Rows::<Self::ConstPtr>{ptr: self.buffer as *const [T] as Self::ConstPtr, stride: self.stride as isize} }
-
-    type Ptr = *mut T;
-    fn rows_mut(&mut self) -> Rows<Self::Ptr> { Rows::<Self::Ptr>{ptr: self.buffer as *mut [T] as Self::Ptr, stride: self.stride as isize} }
-    fn eq(ptr : Self::Ptr, end : Self::ConstPtr) -> bool { ptr as *const T == end }
-
-    type Element = &'t mut T;
-    fn index(ptr : Self::Ptr, x : u32) -> Self::Element { unsafe{&mut *ptr.offset(x as isize)} }
-}
-
-pub struct PixelIterator1<T> where Image<T> : IntoRows {
-    width : u32,
-    end: <Image<T> as IntoRows>::ConstPtr,
-    rows: Rows<<Image<T> as IntoRows>::Ptr>,
-    position : uint2
-}
-impl<T> Iterator for PixelIterator1<T> where Image<T> : IntoRows, <Image<T> as IntoRows>::Ptr : Eq {
-    type Item = (uint2, <Image<T> as IntoRows>::Element);
-    #[inline] // test mov add add test jcc (SIB) inc ~ 7
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.position.x == self.width {
-            self.position.x = 0;
-            self.position.y += 1;
-            self.rows.next();
-            if Image::<T>::eq(self.rows.ptr, self.end) { None? }
-        }
-        let item = Some((self.position, Image::<T>::index(self.rows.ptr, self.position.x)));
-        self.position.x += 1;
-        item
-    }
-}
-
-pub struct PixelIterator2<T0, T1> where Image<T0> : IntoRows, Image<T1> : IntoRows {
-    width : u32,
-    end: <Image<T0> as IntoRows>::ConstPtr,
-    rows: (Rows<<Image<T0> as IntoRows>::Ptr>, Rows<<Image<T1> as IntoRows>::Ptr>), // (Rows<T::Ptr>...)
-    position : uint2
-}
-impl<T0, T1> Iterator for PixelIterator2<T0, T1> where Image<T0> : IntoRows, Image<T1> : IntoRows, <Image<T0> as IntoRows>::Ptr : Eq {
-    type Item = (uint2, <Image<T0> as IntoRows>::Element, <Image<T1> as IntoRows>::Element);
-    #[inline] // test mov add add test jcc (SIB) inc ~ 7
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.position.x == self.width {
-            self.position.x = 0;
-            self.position.y += 1;
-            self.rows.0.next(); self.rows.1.next(); // next(self.rows)...
-            if Image::<T0>::eq(self.rows.0.ptr, self.end) { None? }
-        }
-        let item = Some((self.position, Image::<T0>::index(self.rows.0.ptr, self.position.x), Image::<T1>::index(self.rows.1.ptr, self.position.x))); // self.x.index(self.rows)...
-        self.position.x += 1;
-        item
-    }
-}
-
-pub trait IntoPixelIterator { type PixelIterator; fn pixels(&mut self) -> Self::PixelIterator; }
-
-impl<T> IntoPixelIterator for Image<T> where Image<T> : IntoRows {
-    type PixelIterator = PixelIterator1<T>;
-    fn pixels(&mut self) -> Self::PixelIterator {
-        Self::PixelIterator{
-            width : self.size.x,
-            end: self.end(),
-            rows: self.rows_mut(),
-            position: Zero::zero()
-        }
-    }
-}
-
-impl<T0, T1> IntoPixelIterator for (Image<T0>, Image<T1>) where Image<T0> : IntoRows, Image<T1> : IntoRows {
-    type PixelIterator = PixelIterator2<T0, T1>;
-    fn pixels(&mut self) -> Self::PixelIterator {
-        Self::PixelIterator{
-            width : self.0.size.x,
-            end: self.0.end(),
-            rows: (self.0.rows_mut(), self.1.rows_mut()), // (self.rows_mut()...)
-            position: Zero::zero()
-        }
+    // fixme: factorize with set
+    #[cfg(feature="thread")] pub fn map<U, S:std::ops::Deref<Target=[U]>+Send, F:Fn(uint2,U)->T+Copy+Send>(&mut self, source:Image<S>, f:F)
+    where T:Send, U:Copy+Send+Sync {
+        const N : usize = self::N;
+        assert!(self.size == source.size);
+        let target_buffer = self.buffer.as_mut_ptr();
+        let source_buffer = source.buffer.as_ptr();
+        IntoIter::new(map::<_,_,N>(|i| {
+            let (y0,y1) = ((i as u32)*self.size.y/(N as u32), ((i as u32)+1)*self.size.y/(N as u32));
+            let mut target_row = {
+                let (i0,i1) = ((y0*self.stride) as usize, (y1*self.stride) as usize);
+                unsafe { std::slice::from_raw_parts_mut(target_buffer.add(i1), i1-i0) }
+            };
+            let mut source_row = {
+                let (i0,i1) = ((y0*source.stride) as usize, (y1*source.stride) as usize);
+                unsafe { std::slice::from_raw_parts(source_buffer.add(i1), i1-i0) }
+            };
+            let (width, target_stride, source_stride) = (self.size.x, self.stride, source.stride);
+            unsafe { std::thread::Builder::new().spawn_unchecked(move || {
+                for y in y0..y1 {
+                    for x in 0..width {
+                        target_row[x as usize] = f(xy{x,y}, source_row[x as usize])
+                    }
+                    target_row = &mut target_row[target_stride as usize..];
+                    source_row = &source_row[source_stride as usize..];
+                }
+            })}.unwrap()
+        })).for_each(|t| t.join().unwrap());
     }
 }
 
@@ -202,10 +109,9 @@ macro_rules! lazy_static { ($name:ident : $T:ty = $e:expr;) => {
     }
 }}
 
-lazy_static! { sRGB_forward12 : [u8; 0x1000] = crate::core::array::collect(|i| {
+lazy_static! { sRGB_forward12 : [u8; 0x1000] = crate::core::array::map(|i| {
     let linear = i as f64 / 0xFFF as f64;
     (0xFF as f64 * if linear > 0.0031308 {1.055*linear.powf(1./2.4)-0.055} else {12.92*linear}).round() as u8
 }); }
-
 #[allow(non_snake_case)] pub fn sRGB(v : f32) -> u8 { sRGB_forward12[(0xFFF as f32*v) as usize] } // 4K (fixme: interpolation of a smaller table might be faster)
 }
