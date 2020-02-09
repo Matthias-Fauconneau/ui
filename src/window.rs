@@ -33,7 +33,8 @@ use wayland_protocols::wlr::unstable::layer_shell::v1::client::{zwlr_layer_shell
             impl dyn Widget {
                 fn render_attach_commit(&mut self, target:&mut Target, surface:&surface::WlSurface, buffer:&buffer::WlBuffer) {
                     // Exiting before complete setup seems to crash sway soon after :/ Show partial render instead
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(||{self.render(target)})).unwrap_or_else(|_|{});
+                    //std::panic::catch_unwind(std::panic::AssertUnwindSafe(||{self.render(target)})).unwrap_or_else(|_|{});
+                    self.render(target);
                     surface.attach(Some(buffer), 0, 0);
                     surface.commit();
                 }

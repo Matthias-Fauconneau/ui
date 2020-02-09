@@ -28,7 +28,7 @@ impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
         assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, (self.size, offset, size));
         Image{size, stride: self.stride, buffer: &mut self.buffer[(offset.y*self.stride+offset.x) as usize..]}
     }
-    pub fn set<F:Fn(uint2)->T+Copy+Send>(&mut self, f:F) where T:Send {
+    #[cfg(feature="thread")] pub fn set<F:Fn(uint2)->T+Copy+Send>(&mut self, f:F) where T:Send {
         const N : usize = self::N;
         let ptr = self.buffer.as_mut_ptr();
         IntoIter::new(map::<_,_,N>(|i| {
@@ -38,7 +38,7 @@ impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
             let mut target_row = &mut unsafe{std::slice::from_raw_parts_mut(ptr, self.buffer.len())}[i0..i1];
             //let mut target_row = &mut self.buffer[i0..i1];
             let (width, stride) = (self.size.x, self.stride);
-            #[cfg(feature="thread")] unsafe{std::thread::Builder::new().spawn_unchecked(move || {
+            unsafe{std::thread::Builder::new().spawn_unchecked(move || {
                 for y in y0..y1 {
                     for x in 0..width {
                         target_row[x as usize] = f(xy{x,y});

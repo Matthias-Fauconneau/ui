@@ -1,8 +1,13 @@
 #[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub struct xy<T> { pub x: T, pub y : T }
 
-impl<T> From<(T, T)> for xy<T> { fn from(v: (T, T)) -> Self { xy{x: v.0, y: v.1} } }
+//impl<T> From<(T, T)> for xy<T> { fn from(v: (T, T)) -> Self { xy{x: v.0, y: v.1} } }
 impl<T:Eq> PartialEq<T> for xy<T> { fn eq(&self, b: &T) -> bool { self.x==*b && self.y==*b } }
-impl<T:Copy> From<T> for xy<T> { fn from(v: T) -> Self { (v,v).into() } }
+impl<T:Ord> PartialOrd for xy<T> { fn partial_cmp(&self, b: &xy<T>) -> Option<std::cmp::Ordering> { Some(self.cmp(b)) } }
+impl<T:Ord> Ord for xy<T> { fn cmp(&self, b: &xy<T>) -> std::cmp::Ordering { // reverse lexicographic (i.e lexicographic yx)
+    let ordering = self.y.cmp(&b.y);
+    if ordering != std::cmp::Ordering::Equal { ordering } else { self.x.cmp(&b.x) }
+} }
+impl<T:Copy> From<T> for xy<T> { fn from(v: T) -> Self { xy{x:v,y:v} } }
 
 use {crate::core::Zero, std::ops::{Add,Sub,Mul,Div}};
 impl<T:Copy+Zero> Zero for xy<T> { fn zero() -> Self { T::zero().into() } }
