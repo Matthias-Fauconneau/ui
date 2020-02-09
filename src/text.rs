@@ -151,5 +151,5 @@ impl Widget for Text {
         let metrics = metrics(&self.font, &self.text).unwrap();
         size2{x: size.x, y: ceil_div(size.x*(metrics.height()-1) as u32, metrics.width)+1}
     }
-    fn render(&mut self, target : &mut Target) -> Result { text(target, &self.font, &self.text) }
+    fn render(&mut self, target : &mut Target) /*-> Result*/ { text(target, &self.font, &self.text).unwrap() }
 }

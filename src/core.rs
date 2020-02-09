@@ -6,6 +6,8 @@ impl Zero for u32 { fn zero() -> Self { 0 } }
 impl Zero for i32 { fn zero() -> Self { 0 } }
 impl Zero for f32 { fn zero() -> Self { 0. } }
 impl Zero for f64 { fn zero() -> Self { 0. } }
+//impl<T0:Zero> Zero for (T0,) { fn zero() -> Self { (Zero::zero(),) } }
+impl<T0:Zero,T1:Zero> Zero for (T0,T1) { fn zero() -> Self { (Zero::zero(),Zero::zero()) } }
 
 pub trait Signed { fn signum(&self) -> Self; fn abs(&self) -> Self; }
 macro_rules! signed_impl { ($($T:ty)+) => ($( impl Signed for $T { fn signum(&self) -> Self { <$T>::signum(*self) } fn abs(&self) -> Self { <$T>::abs(*self) } } )+) }
@@ -27,7 +29,7 @@ pub fn cb<T:Copy+std::ops::Mul>(x: T) -> <T::Output as std::ops::Mul<T>>::Output
     //struct Type<T>(T);
     //impl<T, const N : usize> std::iter::FromIterator<T> for Type<[T; N]> {
     impl<T, const N : usize> FromIterator<T> for [T; N] {
-        fn from_iter<I>(into_iter: I) -> Self where I: IntoIterator<Item=T> {
+        fn from_iter<I>(into_iter:I) -> Self where I:IntoIterator<Item=T> {
             let mut array : [std::mem::MaybeUninit<T>; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
             let mut iter = into_iter.into_iter();
             for e in array.iter_mut() { *e = std::mem::MaybeUninit::new(iter.next().unwrap()); } // panic on short iter
@@ -39,7 +41,7 @@ pub fn cb<T:Copy+std::ops::Mul>(x: T) -> <T::Output as std::ops::Mul<T>>::Output
         }
     }
     pub trait Iterator : std::iter::Iterator {
-        fn collect<B: FromIterator<Self::Item>>(self) -> B where Self: Sized { FromIterator::from_iter(self) }
+        fn collect<B: FromIterator<Self::Item>>(self) -> B where Self:Sized { FromIterator::from_iter(self) }
     }
     impl<I:std::iter::Iterator> Iterator for I {}
     // ICE traits/codegen/mod.rs:57: `Unimplemented` selecting `Binder(<std::iter::Map... as std::iter::Iterator>)` during codegen

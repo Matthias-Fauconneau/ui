@@ -1,4 +1,4 @@
-use {std::assert, crate::{core::array::{map,IntoIter}, vector::{xy,size2,uint2}}};
+use {std::assert, crate::{core::{array::{map,IntoIter}}, vector::{xy,size2,uint2}}};
 
 pub struct Image<Container> {
     pub stride : u32,
@@ -22,31 +22,33 @@ impl<'t, T> IntoImage for $T {
 impl_into_image!(&'t [T]);
 impl_into_image!(&'t mut [T]);
 
-const N : usize = 8;
+const N : usize = 1;
 impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
     pub fn slice_mut(&mut self, offset : uint2, size : size2) -> Image<&mut[T]> {
         assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, (self.size, offset, size));
         Image{size, stride: self.stride, buffer: &mut self.buffer[(offset.y*self.stride+offset.x) as usize..]}
     }
-    #[cfg(feature="thread")] pub fn set<F:Fn(uint2)->T+Copy+Send>(&mut self, f:F) where T:Send {
+    pub fn set<F:Fn(uint2)->T+Copy+Send>(&mut self, f:F) where T:Send {
         const N : usize = self::N;
         let ptr = self.buffer.as_mut_ptr();
         IntoIter::new(map::<_,_,N>(|i| {
+        //for i in 0..N {
             let (y0,y1) = ((i as u32)*self.size.y/(N as u32), ((i as u32)+1)*self.size.y/(N as u32));
             let (i0,i1) = ((y0*self.stride) as usize, (y1*self.stride) as usize);
             let mut target_row = &mut unsafe{std::slice::from_raw_parts_mut(ptr, self.buffer.len())}[i0..i1];
+            //let mut target_row = &mut self.buffer[i0..i1];
             let (width, stride) = (self.size.x, self.stride);
-            unsafe { std::thread::Builder::new().spawn_unchecked(move || {
+            #[cfg(feature="thread")] unsafe{std::thread::Builder::new().spawn_unchecked(move || {
                 for y in y0..y1 {
                     for x in 0..width {
                         target_row[x as usize] = f(xy{x,y});
                     }
                     target_row = &mut target_row[stride as usize..];
                 }
-            }) }.unwrap()
+            })}.unwrap()
         })).for_each(|t| t.join().unwrap());
     }
-    // fixme: factorize with set
+    /*// fixme: factorize with set
     #[cfg(feature="thread")] pub fn map<U, S:std::ops::Deref<Target=[U]>+Send, F:Fn(uint2,U)->T+Copy+Send>(&mut self, source:Image<S>, f:F)
     where T:Send, U:Copy+Send+Sync {
         const N : usize = self::N;
@@ -74,7 +76,7 @@ impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
                 }
             })}.unwrap()
         })).for_each(|t| t.join().unwrap());
-    }
+    }*/
 }
 
 #[allow(non_camel_case_types, dead_code)] #[derive(Clone, Copy)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }

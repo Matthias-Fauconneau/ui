@@ -13,6 +13,7 @@ impl<T:Sub> Sub<xy<T>> for xy<T> { type Output=xy<T::Output>; fn sub(self, b: xy
 impl<T:Mul> Mul<xy<T>> for xy<T> { type Output=xy<T::Output>; fn mul(self, b: xy<T>) -> Self::Output { Self::Output{x: self.x*b.x, y: self.y*b.y} } }
 //impl<T:Mul> Mul<xy<T>> for xy<T> where T::Output:Add { type Output=<T::Output as Add>::Output; fn mul(self, b: xy<T>) -> Self::Output { self.x*b.x + self.y*b.y } }
 impl<T:Div> Div<xy<T>> for xy<T> { type Output=xy<T::Output>; fn div(self, b: xy<T>) -> Self::Output { Self::Output{x: self.x/b.x, y: self.y/b.y} } }
+impl<T:Div+Copy> Div<T> for xy<T> { type Output=xy<T::Output>; fn div(self, b: T) -> Self::Output { Self::Output{x: self.x/b, y: self.y/b} } }
 
 fn mul<T:Copy+Mul>(a: T, b: xy<T>) -> xy<T::Output> { xy{x: a*b.x, y: a*b.y} }
 fn div<T:Copy+Div>(a: T, b: xy<T>) -> xy<T::Output> { xy{x: a/b.x, y: a/b.y} }
