@@ -35,7 +35,7 @@ impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
         //for i in 0..N {
             let (y0,y1) = ((i as u32)*self.size.y/(N as u32), ((i as u32)+1)*self.size.y/(N as u32));
             let (i0,i1) = ((y0*self.stride) as usize, (y1*self.stride) as usize);
-            let mut target_row = &mut unsafe{std::slice::from_raw_parts_mut(ptr, self.buffer.len())}[i0..i1];
+            let mut target_row = &mut unsafe{std::slice::from_raw_parts_mut(ptr, self.buffer.len())}[i0..(i1+self.size.x as usize-self.stride as usize)];
             //let mut target_row = &mut self.buffer[i0..i1];
             let (width, stride) = (self.size.x, self.stride);
             unsafe{std::thread::Builder::new().spawn_unchecked(move || {
@@ -43,7 +43,8 @@ impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
                     for x in 0..width {
                         target_row[x as usize] = f(xy{x,y});
                     }
-                    target_row = &mut target_row[stride as usize..];
+                    use std::slice::SliceIndex;
+                    target_row = (stride as usize..).get_unchecked_mut(target_row);
                 }
             })}.unwrap()
         })).for_each(|t| t.join().unwrap());
@@ -79,7 +80,7 @@ impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
     }*/
 }
 
-#[allow(non_camel_case_types, dead_code)] #[derive(Clone, Copy)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
+#[allow(non_camel_case_types)] #[derive(Clone, Copy)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
 
 impl<T> Image<Vec<T>> {
     pub fn new(size: size2, buffer: Vec<T>) -> Self { Self{stride:size.x, size, buffer} }
