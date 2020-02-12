@@ -23,7 +23,7 @@ pub fn cos(x: f32) -> f32 { x.cos() }
 pub fn sin(x: f32) -> f32 { x.sin() }
 pub fn atan(y: f32, x: f32) -> f32 { y.atan2(x) }
 
-#[cfg(feature="const_generics")] pub mod array {
+#[cfg(feature="array")] pub mod array {
     pub trait FromIterator<T> { //: std::iter::FromIterator<T> {
         fn from_iter<I:IntoIterator<Item=T>>(into_iter: I) -> Self;
     }
@@ -75,11 +75,15 @@ pub fn atan(y: f32, x: f32) -> f32 { y.atan2(x) }
     }
     impl<T, const N: usize> Drop for IntoIter<T,N> { fn drop(&mut self) { unsafe { std::ptr::drop_in_place(self.as_mut_slice()) } } }
 }
-#[cfg(feature="const_generics")] impl<T:Zero, const N:usize> Zero for [T; N] { fn zero() -> Self { array::map(|_|Zero::zero()) } }
-#[cfg(feature="const_generics")] pub use array::map;
+#[cfg(feature="array")] impl<T:Zero, const N:usize> Zero for [T; N] { fn zero() -> Self { array::map(|_|Zero::zero()) } }
+#[cfg(feature="array")] pub use array::map;
 
 pub fn log<T:std::fmt::Debug>(v: T) { println!("{:?}", v); }
 #[macro_export] macro_rules! log { ($($A:expr),+) => ( $crate::core::log(($($A),+)) ) }
+
+#[derive(Debug)] pub struct Error(Box<dyn std::error::Error>);
+pub type Result<T=(), E=Error> = std::result::Result<T, E>;
+impl<E:std::error::Error+'static/*Send+Sync*/> From<E> for Error { fn from(error: E) -> Self { Error(Box::new(error)) } }
 
 pub struct MessageError<M>(pub M);
 impl<M:std::fmt::Debug> std::fmt::Debug for MessageError<M> { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { std::fmt::Debug::fmt(&self.0, f) } }
@@ -88,8 +92,6 @@ impl<M:std::fmt::Debug+std::fmt::Display> std::error::Error for MessageError<M> 
 pub trait Ok<T> { fn ok(self) -> Result<T>; }
 impl<T> Ok<T> for Option<T> { fn ok(self) -> Result<T> { Ok(self.ok_or(MessageError("None"))?) } }
 
-#[derive(Debug)] pub struct Error(Box<dyn std::error::Error>);
-pub type Result<T=(), E=Error> = std::result::Result<T, E>;
-impl<E:std::error::Error+'static/*Send+Sync*/> From<E> for Error { fn from(error: E) -> Self { Error(Box::new(error)) } }
-//#[macro_export] macro_rules! ensure { ($cond:expr, $val:expr) => { (if $cond { Ok(())} else { Err(crate::core::MessageError(format!("{} = {:?}",stringify!($val),$val))) })? } }
 #[macro_export] macro_rules! assert { ($cond:expr, $($val:expr),* ) => { std::assert!($cond,"{}. {:?}", stringify!($cond), ( $( format!("{} = {:?}", stringify!($val), $val), )* ) ); } }
+//#[macro_export] macro_rules! ensure { ($cond:expr) => { (if $cond {Ok(())} else {Err($crate::core::MessageError(""))})? } }
+

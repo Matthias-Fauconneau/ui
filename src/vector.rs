@@ -28,7 +28,7 @@ mod vec_xy {
     impl Into<xy<f32>> for xy<u32> { fn into(self) -> xy<f32> { xy{x: self.x as f32, y: self.y as f32} } }
 
     impl xy<u32> { pub const fn as_f32(self) -> xy<f32> { xy{x: self.x as f32, y: self.y as f32} } }
-    pub const fn div_f32(a: f32, b: xy<f32>) -> xy<f32> { xy{x: a/b.x, y: a/b.y} }
+    #[cfg(feature="const_fn")] pub const fn div_f32(a: f32, b: xy<f32>) -> xy<f32> { xy{x: a/b.x, y: a/b.y} }
 
     #[allow(non_camel_case_types)] pub type uint2 = xy<u32>;
     #[allow(non_camel_case_types)] pub type int2 = xy<i32>;

@@ -1,32 +1,33 @@
 [package]
-name = "framework"
-version = "0.0.0"
-authors = ["Matthias Fauconneau <matthias.fauconneau@gmail.com>"]
-edition = "2018"
+name = 'framework'
+version = '0.0.0'
+authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
+edition = '2018'
 
 [features]
-const_generics = []
-array_collect = ["const_generics"]
+type_ascription = []
 const_fn = []
-const_vector = ["const_fn"]
+array = []
 lazy_static = []
+process = []
+sRGB= ['array','lazy_static']
+vector = []
+image = ['vector']
 thread = []
-image = ["thread"]
-sRGB= ["lazy_static","const_generics"]
-window = ["tempfile","memmap","wayland-protocols","wayland-client"]
-text = ["window","ttf-parser","sRGB"]
-default = ["image"]
+window = ['image','tempfile','memmap','wayland-protocols','wayland-client']
+text = ['window','ttf-parser','sRGB']
+color = ['vector']
+color_sRGB = ['color','sRGB','type_ascription']
+#default = []
 
 [dependencies]
-#serde = { version = "", features = ["derive"] }
-#serde_json = ""
-tempfile = { version="", optional=true }
-memmap = { version="", optional=true }
-wayland-protocols = { version = "", features = ["unstable_protocols","client"], optional=true }
-wayland-client = { version = "", optional=true }
-ttf-parser = { version="", optional=true }
+tempfile = { version='', optional=true }
+memmap = { version='', optional=true }
+wayland-protocols = { version = '', features = ['unstable_protocols','client'], optional=true }
+wayland-client = { version = '', optional=true }
+ttf-parser = { version='', optional=true }
 
 [[example]]
-name = "text"
-path = "examples/text.rs"
-required-features = ["text"]
+name = 'text'
+path = 'examples/text.rs'
+required-features = ['text']

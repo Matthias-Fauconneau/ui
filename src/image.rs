@@ -1,4 +1,4 @@
-use {std::assert, crate::{core::{array::{map,IntoIter}}, vector::{xy,size2,uint2}}};
+use {std::assert, crate::vector::{size2,uint2}};
 
 pub struct Image<Container> {
     pub stride : u32,
@@ -22,15 +22,15 @@ impl<'t, T> IntoImage for $T {
 impl_into_image!(&'t [T]);
 impl_into_image!(&'t mut [T]);
 
-const N : usize = 1;
 impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
     pub fn slice_mut(&mut self, offset : uint2, size : size2) -> Image<&mut[T]> {
         assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, (self.size, offset, size));
         Image{size, stride: self.stride, buffer: &mut self.buffer[(offset.y*self.stride+offset.x) as usize..]}
     }
-    #[cfg(feature="thread")] pub fn set<F:Fn(uint2)->T+Copy+Send>(&mut self, f:F) where T:Send {
-        const N : usize = self::N;
+    #[cfg(all(feature="array",feature="thread"))] pub fn set<F:Fn(uint2)->T+Copy+Send>(&mut self, f:F) where T:Send {
+        const N : usize = 8; //const N : usize = self::N;
         let ptr = self.buffer.as_mut_ptr();
+        use crate::{core::array::{map,IntoIter}, vector::xy};
         IntoIter::new(map::<_,_,N>(|i| {
         //for i in 0..N {
             let (y0,y1) = ((i as u32)*self.size.y/(N as u32), ((i as u32)+1)*self.size.y/(N as u32));
