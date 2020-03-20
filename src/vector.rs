@@ -4,6 +4,11 @@ use {crate::core::Zero, std::ops::{Add,Sub,Mul,Div}};
 impl<T:Eq> PartialEq<T> for $v<T> { fn eq(&self, b: &T) -> bool { $( self.$c==*b )&&+ } }
 impl<T:Copy> From<T> for $v<T> { fn from(v: T) -> Self { $v{$($c:v),+} } }
 impl<T:Copy+Zero> Zero for $v<T> { fn zero() -> Self { T::zero().into() } }
+//pub fn min<T:Ord>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: a.$c .min( b.$c ) ),+} }
+//pub fn max<T:Ord>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: a.$c .max( b.$c ) ),+} }
+// Panics on unordered values (i.e NaN)
+pub fn min<T:PartialOrd>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: std::cmp::min_by(a.$c, b.$c, |a,b| a.partial_cmp(b).unwrap() ) ),+} }
+pub fn max<T:PartialOrd>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: std::cmp:: max_by(a.$c, b.$c, |a,b| a.partial_cmp(b).unwrap() ) ),+} }
 impl<T:Add> Add<$v<T>> for $v<T> { type Output=$v<T::Output>; fn add(self, b: $v<T>) -> Self::Output { Self::Output{$($c: self.$c+b.$c),+} } }
 impl<T:Sub> Sub<$v<T>> for $v<T> { type Output=$v<T::Output>; fn sub(self, b: $v<T>) -> Self::Output { Self::Output{$($c: self.$c-b.$c),+} } }
 impl<T:Mul> Mul<$v<T>> for $v<T> { type Output=$v<T::Output>; fn mul(self, b: $v<T>) -> Self::Output { Self::Output{$($c: self.$c*b.$c),+} } }
@@ -25,7 +30,8 @@ mod vec_xy {
         if ordering != std::cmp::Ordering::Equal { ordering } else { self.x.cmp(&b.x) }
     } }
 
-    impl Into<xy<f32>> for xy<u32> { fn into(self) -> xy<f32> { xy{x: self.x as f32, y: self.y as f32} } }
+    impl From<xy<u32>> for xy<f32> { fn from(f: xy<u32>) -> Self { xy{x: f.x as f32, y: f.y as f32} } }
+    impl From<xy<f32>> for xy<u32> { fn from(f: xy<f32>) -> Self { xy{x: f.x as u32, y: f.y as u32} } }
 
     impl xy<u32> { pub const fn as_f32(self) -> xy<f32> { xy{x: self.x as f32, y: self.y as f32} } }
     #[cfg(feature="const_fn")] pub const fn div_f32(a: f32, b: xy<f32>) -> xy<f32> { xy{x: a/b.x, y: a/b.y} }
@@ -43,7 +49,7 @@ mod vec_xy {
 }
 pub use vec_xy::*;
 
-mod vec_uv {
+/*mod vec_uv {
     vec!(uv u v);
 }
-pub use vec_uv::*;
+pub use vec_uv::*;*/

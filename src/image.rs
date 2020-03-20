@@ -6,13 +6,26 @@ pub struct Image<Container> {
     pub buffer : Container,
 }
 
+impl<C> Image<C> {
+    pub fn index(&self, uint2{x,y}: uint2) -> usize { assert!( x < self.size.x && y < self.size.y ); (y * self.stride + x) as usize }
+}
+
+impl<Container> std::ops::Deref for Image<Container> {
+    type Target = Container;
+    fn deref(&self) -> &Self::Target { &self.buffer }
+}
+
+impl<Container> std::ops::DerefMut for Image<Container> {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.buffer }
+}
+
 pub trait IntoImage {
     type Image;
     fn image(self, size : size2) -> Self::Image;
 }
-macro_rules! impl_into_image { ($T:ty) => {
-impl<'t, T> IntoImage for $T {
-    type Image = Image<$T>;
+macro_rules! impl_into_image { ($S:ty) => {
+impl<'t, T> IntoImage for $S {
+    type Image = Image<$S>;
     fn image(self, size : size2) -> Self::Image {
         assert!(self.len() == (size.x*size.y) as usize);
         Self::Image{stride: size.x, size, buffer: self}
@@ -21,6 +34,22 @@ impl<'t, T> IntoImage for $T {
 }}
 impl_into_image!(&'t [T]);
 impl_into_image!(&'t mut [T]);
+
+impl<T, C:std::ops::Deref<Target=[T]>> std::ops::Index<usize> for Image<C> {
+    type Output=T;
+    fn index(&self, i:usize) -> &Self::Output { &self.deref()[i] }
+}
+impl<T, C:std::ops::DerefMut<Target=[T]>> std::ops::IndexMut<usize> for Image<C> {
+    fn index_mut(&mut self, i:usize) -> &mut Self::Output { &mut self.deref_mut()[i] }
+}
+
+impl<T, C:std::ops::Deref<Target=[T]>> std::ops::Index<uint2> for Image<C> {
+    type Output=T;
+    fn index(&self, i:uint2) -> &Self::Output { &self[self.index(i)] }
+}
+impl<T, C:std::ops::DerefMut<Target=[T]>> std::ops::IndexMut<uint2> for Image<C> {
+    fn index_mut(&mut self, i:uint2) -> &mut Self::Output { let i = self.index(i); &mut self[i] }
+}
 
 impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
     pub fn slice_mut(&mut self, offset : uint2, size : size2) -> Image<&mut[T]> {
@@ -83,9 +112,18 @@ impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
 #[allow(non_camel_case_types)] #[derive(Clone, Copy)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
 
 impl<T> Image<Vec<T>> {
-    pub fn new(size: size2, buffer: Vec<T>) -> Self { Self{stride:size.x, size, buffer} }
-    //#[allow(dead_code)] pub fn zero(size: size2) -> Self { Self::new(size, vec![T::default(); (size.x*size.y) as usize]) }
-    #[allow(dead_code)] pub fn uninitialized(size: size2) -> Self {
+    pub fn new(size: size2, buffer: Vec<T>) -> Self { assert!(buffer.len() == (size.x*size.y) as usize); Self{stride:size.x, size, buffer} }
+    /*pub fn from_iter<I:IntoIterator>(size : size2, iter : I) -> Image<Vec<I::Item>> {
+        let mut buffer = Vec::with_capacity((size.y*size.x) as usize);
+        buffer.extend( iter.into_iter() );
+        Image::new(size, buffer)
+    }*/
+    pub fn from_iter<I:IntoIterator<Item=T>>(size : size2, iter : I) -> Self {
+        let mut buffer = Vec::with_capacity((size.y*size.x) as usize);
+        buffer.extend( iter.into_iter() );
+        Image::new(size, buffer)
+    }
+    pub fn uninitialized(size: size2) -> Self {
         let len = (size.x * size.y) as usize;
         let mut buffer = Vec::with_capacity(len);
         unsafe{ buffer.set_len(len) };
@@ -93,6 +131,10 @@ impl<T> Image<Vec<T>> {
     }
     pub fn as_ref(&self) -> Image<&[T]> { Image{stride:self.stride, size:self.size, buffer: self.buffer.as_ref()} }
     pub fn as_mut(&mut self) -> Image<&mut [T]> { Image{stride:self.stride, size:self.size, buffer: self.buffer.as_mut()} }
+}
+
+impl<T:Default+Clone> Image<Vec<T>> {
+    pub fn zero(size: size2) -> Self { Self::new(size, vec![T::default(); (size.x*size.y) as usize]) }
 }
 
 #[cfg(feature="sRGB")] #[allow(non_snake_case)] pub mod sRGB {

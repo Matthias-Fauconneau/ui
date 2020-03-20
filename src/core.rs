@@ -1,6 +1,8 @@
 pub trait Zero { fn zero() -> Self; }
 pub fn mask<T:Zero>(m : bool, v : T) -> T { if m { v } else { Zero::zero() } }
 impl Zero for u32 { fn zero() -> Self { 0 } }
+impl Zero for u64 { fn zero() -> Self { 0 } }
+impl Zero for usize { fn zero() -> Self { 0 } }
 impl Zero for i32 { fn zero() -> Self { 0 } }
 impl Zero for f32 { fn zero() -> Self { 0. } }
 impl Zero for f64 { fn zero() -> Self { 0. } }
@@ -106,8 +108,8 @@ pub trait TryExtend<R:Try> { fn try_extend<I:Iterator<Item=R>>(&mut self, iter: 
 }*/
 // Less generic but more convenient as nothing allows inferring a Result from the generic :Try version and so it forces user to explicitly annotate iterator to yield Result<_>
 impl<T, E> TryExtend<Result<T,E>> for Vec<T> {
-    fn try_extend<I:Iterator<Item=Result<T,E>>>(&mut self, mut iter: I) -> Result<(),E> {
-        //let mut iter = iter.into_iter();
+    fn try_extend<I:IntoIterator<Item=Result<T,E>>>(&mut self, iter: I) -> Result<(),E> {
+        let mut iter = iter.into_iter();
         //self.reserve(iter.size_hint().1.unwrap());
         iter.try_for_each(move |element| { self.push(element?); Ok(()) } ).into_result() //32155
     }
