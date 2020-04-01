@@ -8,6 +8,8 @@
 #![cfg_attr(feature="process", feature(termination_trait_lib,try_trait,try_blocks))]
 #![cfg_attr(feature="thread", feature(thread_spawn_unchecked))]
 #![cfg_attr(all(feature="thread",feature="image"), feature(slice_index_methods))]
+#![cfg_attr(feature="text", feature(box_syntax))]
+#[cfg(feature="text")] #[macro_use] extern crate rental;
 
 pub mod core; pub use crate::core::{Zero, Result, Ok, TryExtend, sqrt};
 #[cfg(feature="process")] pub mod process;

@@ -174,23 +174,7 @@ impl<T:Default+Clone> Image<Vec<T>> {
 }
 
 #[cfg(feature="sRGB")] #[allow(non_snake_case)] pub mod sRGB {
-macro_rules! lazy_static { ($name:ident : $T:ty = $e:expr;) => {
-    #[allow(non_camel_case_types)] struct $name {}
-    #[allow(non_upper_case_globals)] static $name : $name = $name{};
-    impl std::ops::Deref for $name {
-        type Target = $T;
-        fn deref(&self) -> &Self::Target {
-            #[allow(non_upper_case_globals)] static mut array : std::mem::MaybeUninit::<$T> = std::mem::MaybeUninit::<$T>::uninit();
-            static INIT: std::sync::Once = std::sync::Once::new();
-            unsafe{
-                INIT.call_once(|| { array.write($e); });
-                &array.get_ref()
-            }
-        }
-    }
-}}
-
-lazy_static! { sRGB_forward12 : [u8; 0x1000] = crate::core::array::map(|i| {
+crate::lazy_static! { sRGB_forward12 : [u8; 0x1000] = crate::core::array::map(|i| {
     let linear = i as f64 / 0xFFF as f64;
     (0xFF as f64 * if linear > 0.0031308 {1.055*linear.powf(1./2.4)-0.055} else {12.92*linear}).round() as u8
 }); }

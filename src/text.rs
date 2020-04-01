@@ -1,19 +1,12 @@
 pub fn floor_div(n : u32, d : u32) -> u32 { n/d }
 pub fn ceil_div(n : u32, d : u32) -> u32 { (n+d-1)/d }
-use {std::cmp::{min, max}, crate::{core::{sign,Result},vector::{uint2,size2,vec2,lerp,sq},image::{Image,bgra8,sRGB::sRGB}}};
+use {std::cmp::{min, max}, crate::{lazy_static, core::{sign,Result,Ok},vector::{uint2,size2,vec2,lerp,sq},image::{Image,bgra8,sRGB::sRGB}}, ttf_parser::Font};
 
-pub struct Font(memmap::Mmap);
-impl Font {
-    pub fn map() -> Result<Self> { Ok(Font(unsafe{memmap::Mmap::map(&std::fs::File::open("/usr/share/fonts/noto/NotoSans-Regular.ttf")?)}?)) }
-    pub fn parse(&self) -> Option<ttf_parser::Font> { ttf_parser::Font::from_data(&self.0, 0) }
-}
-
-pub struct Metrics {pub width: u32, pub ascent: i16, pub descent: i16}
-pub fn metrics(font : &Font, text: &str) -> Option<Metrics> {
-    let (mut line_metrics, mut pen, mut last_glyph_index) = (Metrics{width: 0, ascent:0, descent:0}, 0, None);
-    let font = font.parse()?;
+pub struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
+pub fn line_metrics(font : &Font, text: &str) -> Option<LineMetrics> {
+    let (mut line_metrics, mut pen, mut last_glyph_index) = (LineMetrics{width: 0, ascent:0, descent:0}, 0, None);
     for c in text.chars() {
-        let glyph_index = font.glyph_index(c)?;
+        let glyph_index = font.glyph_index(c).or_else(||{if c == '\n' { println!("Unexpected newline in line_metrics"); } else { panic!("{}",c); } None})?;
         if let Some(last_glyph_index) = last_glyph_index { pen += font.glyphs_kerning(last_glyph_index, glyph_index).unwrap_or(0) as i32; }
         last_glyph_index = Some(glyph_index);
         if let Some(rect) = font.glyph_bounding_box(glyph_index) {
@@ -25,7 +18,7 @@ pub fn metrics(font : &Font, text: &str) -> Option<Metrics> {
     }
     Some(line_metrics)
 }
-impl Metrics {
+impl LineMetrics {
     pub fn height(&self) -> u16 { (self.ascent-self.descent) as u16 }
 }
 
@@ -43,11 +36,6 @@ pub fn line(target : &mut Image<&mut [f32]>, p0 : vec2, p1 : vec2) { raster::lin
 
 struct Outline { scale : Scale, x_min: i16, y_max: i16, target : Image<Vec<f32>>, first : Option<vec2>, p0 : Option<vec2>}
 impl Outline {
-    /*fn new(scale : Scale, rect : ttf_parser::Rect) -> Self {
-        Self{scale, x_min: rect.x_min, y_max: rect.y_max, target: Image::zero(size2{x: scale.ceil((rect.x_max-rect.x_min) as u16) as u32 + 2,
-                                                                                                                                      y: scale.ceil((rect.y_max-rect.y_min) as u16) as u32 + 3}), first:None, p0:None}
-    }
-    fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*(x-(self.x_min as f32))+1., y: self.scale*((self.y_max as f32)-y)+1.} }*/
     fn new(scale : Scale, rect : ttf_parser::Rect) -> Self {
         let x_min = scale.floor(rect.x_min);
         let y_max = scale.ceil(rect.y_max);
@@ -87,8 +75,7 @@ impl ttf_parser::OutlineBuilder for Outline {
 }
 
 pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Option<()> {
-    let line_metrics = metrics(font, text)?;
-    let font = font.parse()?;
+    let line_metrics = line_metrics(font, text)?;
     const N: u32 = 1; //16; // undersample rasterization for debug visualization
     let scale = Scale((target.size.y/N-1) as u16, line_metrics.height()-1);
     let (mut pen, mut last_glyph_index) = (0, None);
@@ -127,21 +114,34 @@ pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Optio
     Some(())
 }
 
-use std::rc::Rc;
-//use text::{Font, metrics, ceil_div, text};
+//use text::{Font, line_metrics, ceil_div, text};
 use crate::window::{Widget, Target};
 
-pub struct Text {
-    pub font : Rc<Font>,
+pub struct Text<'t> {
+    pub font : &'t Font<'t>,
     pub text : String
 }
-impl Text {
-    pub fn new(text : impl ToString) -> Self { Self{font: Rc::new(Font::map().unwrap()), text: text.to_string()} }
+
+impl Text<'_> {
+    pub fn new(text : impl ToString) -> Self {
+        rental! { mod rent {
+            #[rental(covariant)]
+            pub struct MapFont {
+                map: Box<memmap::Mmap>,
+                font: super::Font<'map>
+            }
+        } } use rent::MapFont;
+        pub fn from_file(path: &str) -> Result<MapFont> {
+            Ok(MapFont::try_new_or_drop(box unsafe{memmap::Mmap::map(&std::fs::File::open(path)?)}?, |map| Font::from_data(map, 0).ok())?)
+        }
+        lazy_static! { default_font : MapFont = from_file("/usr/share/fonts/noto/NotoSans-Regular.ttf").unwrap(); }
+        Self{font: default_font.suffix(), text: text.to_string()}
+    }
 }
-impl Widget for Text {
+impl Widget for Text<'_> {
     fn size(&mut self, size : size2) -> size2 {
-        let metrics = metrics(&self.font, &self.text).unwrap();
-        size2{x: size.x, y: ceil_div(size.x*(metrics.height()-1) as u32, metrics.width)+1}
+        let line_metrics = line_metrics(&self.font, &self.text).unwrap();
+        size2{x: size.x, y: ceil_div(size.x*(line_metrics.height()-1) as u32, line_metrics.width)+1}
     }
     fn render(&mut self, target : &mut Target) /*-> Result*/ { text(target, &self.font, &self.text).unwrap() }
 }

@@ -125,3 +125,19 @@ impl<T, E> TryExtend<Result<T,E>> for Vec<T> {
         iter.try_for_each(move |element| { self.push(element?); Ok(()) } ).into_result() //32155
     }
 }
+
+#[macro_export] macro_rules! lazy_static { ($name:ident : $T:ty = $e:expr;) => {
+    #[allow(non_camel_case_types)] struct $name {}
+    #[allow(non_upper_case_globals)] static $name : $name = $name{};
+    impl std::ops::Deref for $name {
+        type Target = $T;
+        fn deref(&self) -> &Self::Target {
+            #[allow(non_upper_case_globals)] static mut array : std::mem::MaybeUninit::<$T> = std::mem::MaybeUninit::<$T>::uninit();
+            static INIT: std::sync::Once = std::sync::Once::new();
+            unsafe{
+                INIT.call_once(|| { array.write($e); });
+                &array.get_ref()
+            }
+        }
+    }
+}}
