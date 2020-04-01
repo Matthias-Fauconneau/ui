@@ -68,24 +68,6 @@ impl Iterator for DivideRangeIterator {
     }
 }
 
-/*trait SliceIndex<T> { type Iterator; fn slice_index(self, slice: &[T]) -> Self::Iterator; }
-impl<I:Iterator<Item=Range<usize>,T> SliceIndex<T> for I {
-    type Iterator = SliceIndexRangeIterator
-    fn slice_index(self, slice: &[T]) -> Self::Iterator { Self::Iterator{self, slice, consumed: 0} }
-}
-struct SliceIndexRangeIterator<I:Iterator<Item=Range<usize>,T> { inner: I, slice: &[T], consumed : usize }
-impl<I:Iterator<Item=Range<usize>,T> Iterator for SliceIndexRangeIterator<I,T> {
-    type Item = &[T];
-    fn next() -> Option<Self::Item> {
-        let range = self.inner.next()?;
-        let (consumed, remaining) = self.slice.split_at(range.end-self.consumed);
-        let slice = consumed[range.start-self.consumed..];
-        self.slice = remaining;
-        self.consumed = range.end;
-        Some(slice)
-    }
-}*/
-
 // Take ranges from slice. \note Only supports 'in-order' slicing to simplify implementation.
 struct TakeSliceRange<'t, T> { slice: &'t [T], consumed : usize }
 impl<'t, T> TakeSliceRange<'t, T> {

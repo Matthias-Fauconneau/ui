@@ -5,36 +5,25 @@ use {std::cmp::{min, max}, crate::{core::{sign,Result},vector::{uint2,size2,vec2
 pub struct Font(memmap::Mmap);
 impl Font {
     pub fn map() -> Result<Self> { Ok(Font(unsafe{memmap::Mmap::map(&std::fs::File::open("/usr/share/fonts/noto/NotoSans-Regular.ttf")?)}?)) }
-    pub fn parse(&self) -> Result<ttf_parser::Font> { Ok(ttf_parser::Font::from_data(&self.0, 0)?) }
-}
-
-// Dummy to get rect
-struct Builder();
-impl ttf_parser::OutlineBuilder for Builder {
-    fn move_to(&mut self, _: f32, _: f32) {}
-    fn line_to(&mut self, _: f32, _: f32) {}
-    fn quad_to(&mut self, _: f32, _: f32, _: f32, _: f32) {}
-    fn curve_to(&mut self, _: f32, _: f32, _: f32, _: f32, _: f32, _: f32) { unimplemented!(); }
-    fn close(&mut self) {}
+    pub fn parse(&self) -> Option<ttf_parser::Font> { ttf_parser::Font::from_data(&self.0, 0) }
 }
 
 pub struct Metrics {pub width: u32, pub ascent: i16, pub descent: i16}
-pub fn metrics(font : &Font, text: &str) -> Result<Metrics> {
+pub fn metrics(font : &Font, text: &str) -> Option<Metrics> {
     let (mut line_metrics, mut pen, mut last_glyph_index) = (Metrics{width: 0, ascent:0, descent:0}, 0, None);
     let font = font.parse()?;
     for c in text.chars() {
         let glyph_index = font.glyph_index(c)?;
         if let Some(last_glyph_index) = last_glyph_index { pen += font.glyphs_kerning(last_glyph_index, glyph_index).unwrap_or(0) as i32; }
         last_glyph_index = Some(glyph_index);
-        let metrics = font.glyph_hor_metrics(glyph_index)?;
-        if let Ok(rect) = font.outline_glyph(glyph_index, &mut Builder()) {
-            line_metrics.width = (pen + metrics.left_side_bearing as i32 + rect.x_max as i32) as u32;
+        if let Some(rect) = font.glyph_bounding_box(glyph_index) {
+            line_metrics.width = (pen + font.glyph_hor_side_bearing(glyph_index)? as i32 + rect.x_max as i32) as u32;
             line_metrics.ascent = max(line_metrics.ascent, rect.y_max);
             line_metrics.descent = min(line_metrics.descent, rect.y_min);
-        };
-        pen += metrics.advance as i32;
+        }
+        pen += font.glyph_hor_advance(glyph_index)? as i32;
     }
-    Ok(line_metrics)
+    Some(line_metrics)
 }
 impl Metrics {
     pub fn height(&self) -> u16 { (self.ascent-self.descent) as u16 }
@@ -97,7 +86,7 @@ impl ttf_parser::OutlineBuilder for Outline {
     fn close(&mut self) { line(&mut self.target.as_mut(), self.p0.unwrap(), self.first.unwrap()); self.first = None; self.p0 = None; }
 }
 
-pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Result<()> {
+pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Option<()> {
     let line_metrics = metrics(font, text)?;
     let font = font.parse()?;
     const N: u32 = 1; //16; // undersample rasterization for debug visualization
@@ -107,14 +96,14 @@ pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Resul
         let glyph_index = font.glyph_index(c)?;
         if let Some(last_glyph_index) = last_glyph_index { pen += font.glyphs_kerning(last_glyph_index, glyph_index).unwrap_or(0) as i32; }
         last_glyph_index = Some(glyph_index);
-        let metrics = font.glyph_hor_metrics(glyph_index)?;
-        if let Ok(rect) = font.outline_glyph(glyph_index, &mut Builder()) {
+        if let Some(rect) = font.glyph_bounding_box(glyph_index) {
             let mut outline = Outline::new(scale, rect);
             font.outline_glyph(glyph_index, &mut outline)?;
             let coverage = raster::fill(&outline.target.as_ref());
             if let Some(last_glyph_index) = last_glyph_index { pen += font.glyphs_kerning(last_glyph_index, glyph_index).unwrap_or(0) as i32; }
             //let target = target.slice_mut(uint2{x: scale*((pen+metrics.left_side_bearing as i32) as u32), y: (scale*((line_metrics.ascent-rect.y_max) as u16)) as u32}, coverage.size)?;
-            let mut target = target.slice_mut(uint2{x: scale*((pen+metrics.left_side_bearing as i32) as u32)*N, y: ((scale*((line_metrics.ascent-rect.y_max) as u16)) as u32)*N},
+            let mut target = target.slice_mut(uint2{x: scale*((pen+font.glyph_hor_side_bearing(glyph_index)? as i32) as u32)*N,
+                                                                          y: ((scale*((line_metrics.ascent-rect.y_max) as u16)) as u32)*N},
                                                                        size2{x: coverage.size.x*N, y: coverage.size.y*N});
             if N==1 {
                 target.map(coverage, |_,c|{
@@ -133,9 +122,9 @@ pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Resul
                 }
             }
         }
-        pen += metrics.advance as i32;
+        pen += font.glyph_hor_advance(glyph_index)? as i32;
     }
-    Ok(())
+    Some(())
 }
 
 use std::rc::Rc;

@@ -13,8 +13,8 @@ use wayland_client::{Display, GlobalManager, event_enum, Filter,
 use wayland_protocols::wlr::unstable::layer_shell::v1::client::{zwlr_layer_shell_v1::{ZwlrLayerShellV1, Layer}, zwlr_layer_surface_v1 as layer_surface};
     let display = Display::connect_to_env()?;
     let mut event_queue = display.create_event_queue();
-    let globals = GlobalManager::new(&(*display).clone().attach(event_queue.get_token()));
-    event_queue.sync_roundtrip(|_, _| unreachable!())?;
+    let globals = GlobalManager::new(&(*display).clone().attach(event_queue.token()));
+    event_queue.sync_roundtrip(&mut(), |_,_,_| unreachable!())?;
     let compositor = globals.instantiate_range::<compositor::WlCompositor>(1, 4)?;
     let surface = compositor.create_surface();
     surface.set_buffer_scale(3);
@@ -28,7 +28,7 @@ use wayland_protocols::wlr::unstable::layer_shell::v1::client::{zwlr_layer_shell
     let filter = Filter::new({
         let exit = Rc::downgrade(&exit);
         let mut target : Option<(_,Target)> = None;
-        move |event, filter| {
+        move |event, filter, _| {
             use Event::*;
             impl dyn Widget {
                 fn render_attach_commit(&mut self, target:&mut Target, surface:&surface::WlSurface, buffer:&buffer::WlBuffer) {
@@ -88,12 +88,12 @@ use wayland_protocols::wlr::unstable::layer_shell::v1::client::{zwlr_layer_shell
                 Pointer{event:pointer::Event::AxisSource{..}, ..} => {},
                 Pointer{event:pointer::Event::AxisStop{..}, ..} => {},
                 Pointer{event:pointer::Event::AxisDiscrete{..}, ..} => {},
-                Pointer{event:pointer::Event::__nonexhaustive{..}, ..} => {},
+                Pointer{..} => panic!("Pointer"),
             }
         }
     });
     layer_surface.assign(filter.clone());
     globals.instantiate_range::<seat::WlSeat>(1, 7)?.assign(filter);
-    while !exit.get() { event_queue.dispatch(|_, _|{})?; }
+    while !exit.get() { event_queue.dispatch(&mut(), |_,_,_|{})?; }
     Ok(())
 }
