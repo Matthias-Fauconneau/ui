@@ -1,6 +1,6 @@
 pub fn floor_div(n : u32, d : u32) -> u32 { n/d }
 pub fn ceil_div(n : u32, d : u32) -> u32 { (n+d-1)/d }
-use {std::cmp::{min, max}, crate::{core::{sign,abs,Result},vector::{uint2,size2,vec2,lerp,sq},image::{Image,bgra8,sRGB::sRGB}}};
+use {std::cmp::{min, max}, crate::{core::{sign,Result},vector::{uint2,size2,vec2,lerp,sq},image::{Image,bgra8,sRGB::sRGB}}};
 
 pub struct Font(memmap::Mmap);
 impl Font {
@@ -119,7 +119,7 @@ pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Resul
             if N==1 {
                 target.map(coverage, |_,c|{
                     assert!(0. <= c && c <= 1., c);
-                    let a = sRGB(f32::min(abs(c),1.));
+                    let a = sRGB(c); //f32::min(abs(c),1.));
                     bgra8{b : a, g : a, r : a, a : 0xFF}
                 });
             } else {
@@ -145,6 +145,9 @@ use crate::window::{Widget, Target};
 pub struct Text {
     pub font : Rc<Font>,
     pub text : String
+}
+impl Text {
+    pub fn new(text : impl ToString) -> Self { Self{font: Rc::new(Font::map().unwrap()), text: text.to_string()} }
 }
 impl Widget for Text {
     fn size(&mut self, size : size2) -> size2 {

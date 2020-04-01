@@ -2,7 +2,7 @@
 #![cfg_attr(feature="vector", feature(cmp_min_max_by))]
 #![cfg_attr(feature="type_ascription", feature(type_ascription))]
 #![cfg_attr(feature="const_fn", feature(const_fn))]
-#![cfg_attr(feature="array", allow(incomplete_features),feature(const_generics,maybe_uninit_extra))]
+#![cfg_attr(feature="array", allow(incomplete_features),feature(const_generics,maybe_uninit_extra,maybe_uninit_uninit_array))]
 #![cfg_attr(feature="lazy_static", feature(maybe_uninit_ref))]
 //#![cfg_attr(feature="fn_traits", feature(unboxed_closures,fn_traits))]
 #![cfg_attr(feature="process", feature(termination_trait_lib,try_trait,try_blocks))]

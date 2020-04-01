@@ -27,16 +27,17 @@ pub fn atan(y: f32, x: f32) -> f32 { y.atan2(x) }
 
 #[cfg(feature="array")] pub mod array {
     pub trait FromIterator<T> { //: std::iter::FromIterator<T> {
-        fn from_iter<I:IntoIterator<Item=T>>(into_iter: I) -> Self;
+        fn from_iter<I:std::iter::IntoIterator<Item=T>>(into_iter: I) -> Self;
     }
     impl<T, const N : usize> FromIterator<T> for [T; N] {
-        fn from_iter<I>(into_iter:I) -> Self where I:IntoIterator<Item=T> {
-            let mut array : [std::mem::MaybeUninit<T>; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+        fn from_iter<I>(into_iter:I) -> Self where I:std::iter::IntoIterator<Item=T> {
+            let mut array : [std::mem::MaybeUninit<T>; N] = std::mem::MaybeUninit::uninit_array();
             let mut iter = into_iter.into_iter();
-            for e in array.iter_mut() { *e = std::mem::MaybeUninit::new(iter.next().unwrap()); } // panic on short iter
+            for e in array.iter_mut() { e.write(iter.next().unwrap()); } // panic on short iter
             //unsafe { std::mem::transmute::<_, [T; N]>(array) } // cannot transmute between generic types
-            let ptr = &mut array as *mut _ as *mut [T; N];
-            let array_as_initialized = unsafe { ptr.read() };
+            //let array_as_initialized = unsafe { (&mut array as *mut _ as *mut [T; N]).read() };
+            let array_as_initialized = unsafe { (&array as *const _ as *const [T; N]).read() };
+            //let array_as_initialized = unsafe { crate::ptr::read(&array as *const _ as *const [T; N]) }
             core::mem::forget(array);
             array_as_initialized // Self(array_as_initialized)
         }
@@ -46,14 +47,24 @@ pub fn atan(y: f32, x: f32) -> f32 { y.atan2(x) }
     }
     impl<I:std::iter::Iterator> Iterator for I {}
     // ICE traits/codegen/mod.rs:57: `Unimplemented` selecting `Binder(<std::iter::Map... as std::iter::Iterator>)` during codegen
-    //pub fn map<T, F:Fn(usize)->T, const N:usize>(f : F) -> [T; N] { Iterator::collect((0..N).map(f)) }
-    pub fn map<T, F:Fn(usize)->T, const N:usize>(f : F) -> [T; N] {
+    pub fn map<T, F:Fn(usize)->T, const N:usize>(f : F) -> [T; N] { Iterator::collect((0..N).map(f)) }
+    /*pub fn map<T, F:Fn(usize)->T, const N:usize>(f : F) -> [T; N] {
         let mut array : [std::mem::MaybeUninit<T>; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
         for i in 0..N { array[i] = std::mem::MaybeUninit::new(f(i)) }
         let ptr = &mut array as *mut _ as *mut [T; N];
         let array_as_initialized = unsafe { ptr.read() };
         core::mem::forget(array);
         array_as_initialized
+    }*/
+    pub trait IntoIterator {
+        type Item;
+        type IntoIter: Iterator<Item = Self::Item>;
+        fn into_iter(self) -> Self::IntoIter;
+    }
+    impl<T, const N: usize> IntoIterator for [T;N] {
+        type Item = T;
+        type IntoIter = IntoIter<Self::Item, N>;
+        fn into_iter(self) -> Self::IntoIter { Self::IntoIter::new(self) }
     }
     pub struct IntoIter<T, const N: usize> {
         data: [std::mem::MaybeUninit<T>; N],
@@ -61,7 +72,7 @@ pub fn atan(y: f32, x: f32) -> f32 { y.atan2(x) }
     }
     impl<T, const N: usize> IntoIter<T,N> {
         pub fn new(array: [T; N]) -> Self {
-            //Self{data: std::mem::transmute::<[T;N], [std::mem::MaybeUninit<T>;N]>(array), alive: 0..N }
+            //Self{data: unsafe{std::mem::transmute::<[T;N], [std::mem::MaybeUninit<T>;N]>(array)}, alive: 0..N }
             Self{data: unsafe{let data = std::ptr::read(&array as *const [T; N] as *const [std::mem::MaybeUninit<T>; N]); std::mem::forget(array); data}, alive: 0..N}
         }
         fn as_mut_slice(&mut self) -> &mut [T] { unsafe { std::mem::transmute::<&mut [std::mem::MaybeUninit<T>], &mut [T]>(&mut self.data[self.alive.clone()]) } }
