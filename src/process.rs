@@ -1,5 +1,4 @@
 #[derive(Debug)] pub struct Status<T=std::process::ExitStatus, E=crate::core::Error>(pub Result<T, E>);
-impl<T,E> From<Result<T,E>> for Status<T,E> { fn from(o: Result<T,E>) -> Self { Self(o) } }
 impl<T,E> std::ops::Try for Status<T,E> {
     type Ok = T;
     type Error = E;
@@ -9,3 +8,4 @@ impl<T,E> std::ops::Try for Status<T,E> {
 }
 impl<E:std::fmt::Debug> std::process::Termination for Status<i32,E> { fn report(self) -> i32 { match self.0 { Ok(code) => code, Err(err) => {eprintln!("{:?}", err); 1} } } }
 impl<E:std::fmt::Debug> std::process::Termination for Status<std::process::ExitStatus,E> { fn report(self) -> i32 { Status::<_,E>(try{self?.code().unwrap()}).report() } }
+impl<T,E> From<T> for Status<T,E> { fn from(o: T) -> Self { use std::ops::Try; Self::from_ok(o) } }
