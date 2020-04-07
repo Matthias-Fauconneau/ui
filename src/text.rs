@@ -11,7 +11,7 @@ impl<'t, T> std::ops::DerefMut for FontIter<'t, T> { fn deref_mut(&mut self) -> 
 
 type GlyphIDs<'t, T> = impl 't+Iterator<Item=GlyphId>; // Map
 impl Font<'_> {
-    fn glyphs<'i:'o, 'o, Chars:'o+Iterator<Item=char>>(&'i self, iter: Chars) -> FontIter<'o, GlyphIDs<'o, Chars>> {
+    fn glyphs<'s:'t, 't, Chars:'t+Iterator<Item=char>>(&'s self, iter: Chars) -> FontIter<'t, GlyphIDs<'t, Chars>> {
         FontIter{font: self, iter: iter.map(move |c| self.glyph_index(c).unwrap_or_else(||panic!("Missing glyph for '{:?}'",c)))}
     }
 }
@@ -122,7 +122,7 @@ impl<'font, 'text> Text<'font, 'text> {
         Self{font: default_font.suffix(), text, size: None}
     }
     pub fn size(&mut self) -> size2 {
-        let &mut Self{font, text, mut size} = self;
+        let Self{font, text, ref mut size} = self;
         *size.get_or_insert_with(||{
             let (count, max_width) = text.lines().map(|line| font.glyphs(line.chars()).layout().metrics()).fold((0,0),|(count, width), line| (count+1, max(width, line.width)));
             size2{x: max_width, y: count * (font.height() as u32)}

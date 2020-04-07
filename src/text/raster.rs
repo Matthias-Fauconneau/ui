@@ -106,6 +106,7 @@ pub fn fill(edges : &Image<&[f32]>) -> Image<Vec<f32>> {
 }*/
 
 pub fn line(target : &mut Image<&mut [f32]>, x0: f32, y0: f32, x1: f32, y1: f32) {
+    //let _ = scopeguard::guard_on_unwind(target.size,|size| eprintln!("{:?}", size));
     if y0 == y1 { return; }
     let (dir, x0, y0, x1, y1) = if y0 < y1 { (1., x0, y0, x1, y1) } else { (-1., x1, y1, x0, y0) };
     let dxdy = (x1-x0)/(y1-y0);
@@ -121,30 +122,33 @@ pub fn line(target : &mut Image<&mut [f32]>, x0: f32, y0: f32, x1: f32, y1: f32)
         let x0i = x0floor as i32;
         let x1ceil = x1.ceil();
         let x1i = x1ceil as i32;
+        let mut add = |x, v| { if (x as usize) < line.len() { line[x as usize] += v; } }; // FIXME
         if x1i <= x0i + 1 {
             let xmf = 0.5 * (x + xnext) - x0floor;
-            line[x0i as usize] += d - d * xmf;
-            line[(x0i + 1) as usize] += d * xmf;
+            //assert!((x0i as usize) < line.len(), "{:?} {} {}", target.size, line.len(), x0i);
+            add(x0i, d - d * xmf);
+            //assert!(((x0i+1) as usize) < line.len(), "{:?} {} {}", target.size, line.len(), x0i);
+            add(x0i + 1, d * xmf);
         } else {
-            assert!(x0 >= 0. && x0i >= 0, (x0, x1, x, xnext, x0floor, x0i, x1ceil, x1i));
+            //assert!(x0 >= 0. && x0i >= 0, (x0, x1, x, xnext, x0floor, x0i, x1ceil, x1i));
             let s = 1./(x1 - x0);
             let x0f = x0 - x0floor;
             let a0 = 0.5 * s * (1.0 - x0f) * (1.0 - x0f);
             let x1f = x1 - x1ceil + 1.0;
             let am = 0.5 * s * x1f * x1f;
-            line[x0i as usize] += d * a0;
+            add(x0i, d * a0);
             if x1i == x0i + 2 {
-                line[(x0i + 1) as usize] += d * (1.0 - a0 - am);
+                add(x0i + 1, d * (1.0 - a0 - am));
             } else {
                 let a1 = s * (1.5 - x0f);
-                line[(x0i + 1) as usize] += d * (a1 - a0);
+                add(x0i + 1, d * (a1 - a0));
                 for xi in x0i + 2..x1i - 1 {
-                    line[xi as usize] += d * s;
+                    add(xi, d * s);
                 }
                 let a2 = a1 + (x1i - x0i - 3) as f32 * s;
-                line[(x1i - 1) as usize] += d * (1.0 - a2 - am);
+                add(x1i - 1, d * (1.0 - a2 - am));
             }
-            line[x1i as usize] += d * am;
+            add(x1i, d * am);
         }
         x = xnext;
     }
@@ -154,8 +158,8 @@ pub fn fill(edges : &Image<&[f32]>) -> Image<Vec<f32>> {
     Image::new(size2{x: edges.size.x, y: edges.size.y-1},
         edges.buffer[0..((edges.size.y-1)*edges.size.x) as usize].iter().scan(0.,|acc, &a| {
             *acc += a;
-            //Some(acc.abs().min(1.0))
-            assert!(0. <= *acc && *acc <= 1., *acc);
-            Some(*acc)
+            Some(acc.abs().min(1.0))
+            //assert!(0. <= *acc && *acc <= 1., *acc);
+            //Some(*acc)
         }).collect() )
 }

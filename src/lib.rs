@@ -9,6 +9,7 @@
 #![cfg_attr(feature="thread", feature(thread_spawn_unchecked))]
 #![cfg_attr(all(feature="thread",feature="image"), feature(slice_index_methods))]
 #![cfg_attr(feature="text", feature(type_alias_impl_trait))]
+#![cfg_attr(feature="window", feature(generic_associated_types))]
 #![cfg_attr(feature="text", feature(box_syntax))] #[cfg(feature="text")] #[macro_use] extern crate rental;
 
 pub mod core; pub use crate::core::{Zero, Result, Ok, TryExtend, sqrt};
@@ -16,5 +17,5 @@ pub mod core; pub use crate::core::{Zero, Result, Ok, TryExtend, sqrt};
 #[cfg(feature="vector")] pub mod vector; #[cfg(feature="vector")] pub use vector::{uint2, size2, vec2, min, max, sq};
 #[cfg(feature="image")] pub mod image; #[cfg(feature="image")] pub use image::Image;
 #[cfg(feature="color")] pub mod color; //pub use color::*;
-#[cfg(feature="window")] pub mod window;
-#[cfg(feature="text")] pub mod text;
+#[cfg(feature="window")] pub mod window; pub use window::window;
+#[cfg(feature="text")] pub mod text; pub use text::Text;
