@@ -1,2 +1,2 @@
-use framework::{core::Result, window::run, text::Text};
-fn main() -> Result { run(Text::new("Hello World! ⅞")) }
+use framework::*;
+fn main() -> Result { window(&mut Text::new(std::str::from_utf8(&std::fs::read("examples/text.rs")?)?)) }
