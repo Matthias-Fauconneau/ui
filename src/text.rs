@@ -31,21 +31,6 @@ impl<'t, GlyphIDs:'t+Iterator<Item=GlyphId>> FontIter<'t, GlyphIDs> {
     }
 }
 
-trait Collect {
-    type Output;
-    fn collect(self) -> Self::Output;
-}
-struct FontValue<'t, V> {font: &'t Font<'t>, value: V}
-impl<'t, I:Iterator> Collect for FontIter<'t, I> {
-    type Output = FontValue<'t, Vec<I::Item>>;
-    fn collect(self) -> Self::Output {
-        FontValue{font: self.font, value: self.iter.collect::<Vec<_>>()}
-    }
-}
-impl<T> FontValue<'_, Vec<T>> {
-    fn iter<'i:'o, 'o>(&'i self) -> FontIter<'o, std::slice::Iter<'o, T>> { FontIter{font: &self.font, iter: self.value.iter()} }
-}
-
 #[derive(Default)] pub struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
 impl LineMetrics { pub fn height(&self) -> u16 { (self.ascent-self.descent) as u16 } }
 impl<I:Iterator> FontIter<'_, I> where I::Item:std::borrow::Borrow<(i32,GlyphId,Rect)> {
@@ -63,25 +48,26 @@ impl<I:Iterator> FontIter<'_, I> where I::Item:std::borrow::Borrow<(i32,GlyphId,
     }
 }
 
-#[derive(Clone,Copy)] struct Scale(u16, u16);
+#[derive(Clone,Copy)] pub struct Scale(u32, u32);
 impl Scale {
-    fn floor(self, x: i16) -> i16 { sign(x)*floor_div(x.abs() as u32*self.0 as u32, self.1 as u32) as i16 }
-    fn ceil(self, x: i16) -> i16 { sign(x)*ceil_div(x.abs() as u32*self.0 as u32, self.1 as u32) as i16 }
+    fn floor(self, x: i32) -> i32 { sign(x)*floor_div(x.abs() as u32*self.0 as u32, self.1 as u32) as i32 }
+    fn ceil(self, x: i32) -> i32 { sign(x)*ceil_div(x.abs() as u32*self.0 as u32, self.1 as u32) as i32 }
 }
 impl std::ops::Mul<u32> for Scale { type Output=u32; fn mul(self, b: u32) -> Self::Output { floor_div(b*self.0 as u32, self.1 as u32) } }
-impl std::ops::Mul<u16> for Scale { type Output=u16; fn mul(self, b: u16) -> Self::Output { (self*(b as u32)) as u16 } }
+//impl std::ops::Mul<u16> for Scale { type Output=u16; fn mul(self, b: u16) -> Self::Output { (self*(b as u32)) as u16 } }
 impl std::ops::Mul<f32> for Scale { type Output=f32; fn mul(self, b: f32) -> Self::Output { b*(self.0 as f32)/(self.1 as f32) } }
+impl std::ops::Mul<uint2> for Scale { type Output=uint2; fn mul(self, b: uint2) -> Self::Output { uint2{x:self*b.x, y:self*b.y} } }
 
 mod raster;
 pub fn line(target : &mut Image<&mut [f32]>, p0 : vec2, p1 : vec2) { raster::line(target, p0.x, p0.y, p1.x, p1.y) }
 
-struct Outline { scale : Scale, x_min: i16, y_max: i16, target : Image<Vec<f32>>, first : Option<vec2>, p0 : Option<vec2>}
+struct Outline { scale : Scale, x_min: i32, y_max: i32, target : Image<Vec<f32>>, first : Option<vec2>, p0 : Option<vec2>}
 impl Outline {
     fn new(scale : Scale, rect : Rect) -> Self {
-        let x_min = scale.floor(rect.x_min);
-        let y_max = scale.ceil(rect.y_max);
-        let size = size2{x: (scale.ceil(rect.x_max)-x_min) as u32,
-                                   y: (y_max-scale.floor(rect.y_min)) as u32+1};
+        let x_min = scale.floor(rect.x_min as i32);
+        let y_max = scale.ceil(rect.y_max as i32);
+        let size = size2{x: (scale.ceil(rect.x_max as i32)-x_min) as u32,
+                                   y: (y_max-scale.floor(rect.y_min as i32)) as u32+1};
         Self{scale, x_min, y_max, target: Image::new(size, vec![0.; (size.x*size.y) as usize]), first:None, p0:None}
     }
     fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-(self.x_min as f32), y: (self.y_max as f32)-self.scale*y} }
@@ -115,39 +101,13 @@ impl ttf_parser::OutlineBuilder for Outline {
     fn close(&mut self) { line(&mut self.target.as_mut(), self.p0.unwrap(), self.first.unwrap()); self.first = None; self.p0 = None; }
 }
 
-pub fn text(target : &mut Image<&mut[bgra8]>, font : &Font, text: &str) -> Option<()> {
-    let layout = font.glyphs(text.chars()).layout().collect();
-    /*let layout = {//layout.collect();
-        let mut owner = Box::new_uninit().assume_init(); // Why split swaps owner with this argument instead of returning ?
-        let user = layout.split(&mut owner).collect::<Vec>();
-        SRS::create_with(*owner, |_| user)
-    }*/
-    let metrics = layout.iter().metrics();
-    let scale = Scale((target.size.y-1) as u16, metrics.height()-1);
-    layout.iter().try_for_each(|&(pen, glyph_id, bbox)| {
-        let mut outline = Outline::new(scale, bbox);
-        font.outline_glyph(glyph_id, &mut outline)?;
-        let coverage = raster::fill(&outline.target.as_ref());
-        target.slice_mut(uint2{x: scale*((pen+font.glyph_hor_side_bearing(glyph_id).unwrap() as i32) as u32), y: (scale*((metrics.ascent-bbox.y_max) as u16)) as u32}, coverage.size)
-            .map(coverage, |_,c|{
-                assert!(0. <= c && c <= 1., c);
-                let a = sRGB(c); //f32::min(abs(c),1.));
-                bgra8{b : a, g : a, r : a, a : 0xFF}
-            });
-        Some(())
-    })
+pub struct Text<'font, 'text> {
+    font : &'font Font<'font>,
+    text : &'text str,
+    size : Option<size2>
 }
-
-//use text::{Font, line_metrics, ceil_div, text};
-use crate::window::{Widget, Target};
-
-pub struct Text<'t> {
-    pub font : &'t Font<'t>,
-    pub text : String
-}
-
-impl Text<'_> {
-    pub fn new(text : impl ToString) -> Self {
+impl<'font, 'text> Text<'font, 'text> {
+    pub fn new(text : &'text str) -> Self {
         rental! { mod rent {
             #[rental(covariant)]
             pub struct MapFont {
@@ -157,16 +117,36 @@ impl Text<'_> {
         } } use rent::MapFont;
         pub fn from_file(path: &str) -> Result<MapFont> {
             Ok(MapFont::new(box unsafe{memmap::Mmap::map(&std::fs::File::open(path)?)}?, |map| Font(ttf_parser::Font::from_data(map, 0).unwrap())))
-            //Ok(MapFont::try_new_or_drop(box unsafe{memmap::Mmap::map(&std::fs::File::open(path)?)}?, |map| Ok(Font(ttf_parser::Font::from_data(map, 0).ok()?)))?)
         }
         lazy_static! { default_font : MapFont = from_file("/usr/share/fonts/noto/NotoSans-Regular.ttf").unwrap(); }
-        Self{font: default_font.suffix(), text: text.to_string()}
+        Self{font: default_font.suffix(), text, size: None}
+    }
+    pub fn size(&mut self) -> size2 {
+        let &mut Self{font, text, mut size} = self;
+        *size.get_or_insert_with(||{
+            let (count, max_width) = text.lines().map(|line| font.glyphs(line.chars()).layout().metrics()).fold((0,0),|(count, width), line| (count+1, max(width, line.width)));
+            size2{x: max_width, y: count * (font.height() as u32)}
+        })
+    }
+    pub fn render(&self, target : &mut Image<&mut[bgra8]>, scale: Scale) {
+        self.text.lines().enumerate().for_each(|(line_index,line)| self.font.glyphs(line.chars()).layout().by_ref().for_each(|(pen, glyph_id, bbox)| {
+            let mut outline = Outline::new(scale, bbox);
+            self.font.outline_glyph(glyph_id, &mut outline).unwrap();
+            let coverage = raster::fill(&outline.target.as_ref());
+            target.slice_mut(scale*uint2{x: (pen+self.font.glyph_hor_side_bearing(glyph_id).unwrap() as i32) as u32,
+                                                          y: (line_index as u32)*(self.font.height() as u32) + (self.font.ascender()-bbox.y_max) as u32}, coverage.size)
+                .map(coverage, |_,c| bgra8{a : 0xFF, ..sRGB(c).into()})
+        }))
     }
 }
-impl Widget for Text<'_> {
-    fn size(&mut self, size : size2) -> size2 {
-        let metrics = self.font.glyphs(self.text.chars()).layout().metrics();
-        size2{x: size.x, y: ceil_div(size.x*(metrics.height()-1) as u32, metrics.width)+1}
+
+fn fit_width(width: u32, from : size2) -> size2 { size2{x: width, y: ceil_div(width * from.y, from.x)} }
+
+use crate::{/*text::Text,*/window::{Widget, Target}};
+impl Widget for Text<'_,'_> {
+    fn size(&mut self, size : size2) -> size2 { fit_width(size.x, self.size()) }
+    fn render(&mut self, target : &mut Target) {
+        let scale = Scale(target.size.x-1, self.size().x-1); // todo: scroll
+        Text::render(&self, target, scale)
     }
-    fn render(&mut self, target : &mut Target) /*-> Result*/ { text(target, &self.font, &self.text).unwrap() }
 }

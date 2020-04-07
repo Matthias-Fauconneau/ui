@@ -151,6 +151,11 @@ pub fn line(target : &mut Image<&mut [f32]>, x0: f32, y0: f32, x1: f32, y1: f32)
 }
 
 pub fn fill(edges : &Image<&[f32]>) -> Image<Vec<f32>> {
-    let mut acc = 0.0;
-    Image::new(size2{x: edges.size.x, y: edges.size.y-1}, edges.buffer[0..((edges.size.y-1)*edges.size.x) as usize].iter().map(|&a| { acc += a; acc.abs().min(1.0) }).collect())
+    Image::new(size2{x: edges.size.x, y: edges.size.y-1},
+        edges.buffer[0..((edges.size.y-1)*edges.size.x) as usize].iter().scan(0.,|acc, &a| {
+            *acc += a;
+            //Some(acc.abs().min(1.0))
+            assert!(0. <= *acc && *acc <= 1., *acc);
+            Some(*acc)
+        }).collect() )
 }

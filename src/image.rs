@@ -151,6 +151,7 @@ impl<T, C:std::ops::DerefMut<Target=[T]>> Image<C> {
 }
 
 #[allow(non_camel_case_types)] #[derive(Clone, Copy)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
+impl std::convert::From<u8> for bgra8 { fn from(v: u8) -> Self { bgra8{b:v,g:v,r:v,a:v} } }
 
 impl<T> Image<Vec<T>> {
     pub fn new(size: size2, buffer: Vec<T>) -> Self { assert!(buffer.len() == (size.x*size.y) as usize); Self{stride:size.x, size, buffer} }
