@@ -11,7 +11,8 @@
 #![cfg_attr(feature="window", feature(generic_associated_types))]
 #![cfg_attr(feature="text", feature(box_syntax))] #[cfg(feature="text")] #[macro_use] extern crate rental;
 
-pub mod core; pub use crate::core::{Zero, Result, Ok, TryExtend, sqrt};
+pub mod core; pub use crate::core::{Zero, Error, Result, Ok, TryExtend, sqrt};
+#[cfg(feature="fehler")] pub use fehler::throws;
 #[cfg(feature="process")] pub mod process;
 #[cfg(feature="vector")] pub mod vector; #[cfg(feature="vector")] pub use vector::{uint2, size2, vec2, min, max, sq};
 #[cfg(feature="image")] pub mod image; #[cfg(feature="image")] pub use image::Image;

@@ -14,15 +14,15 @@ sRGB= ['array','lazy_static']
 vector = []
 image = ['vector']
 thread = []
-window = ['image','tempfile','memmap','wayland-protocols','wayland-client']
-text = ['window','ttf-parser','sRGB','thread']
+window = ['image','tempfile','memmap','wayland-protocols','wayland-client','rental']
+text = ['ttf-parser','sRGB','thread','window','rental']
 color = ['vector']
 color_sRGB = ['color','sRGB','type_ascription']
 #default = []
 
 [dependencies]
-#scopeguard = ''
-rental = ''
+fehler = { version='', optional=true }
+rental = { version='', optional=true }
 tempfile = { version='', optional=true }
 memmap = { version='', optional=true }
 wayland-protocols = { version = '', features = ['unstable_protocols','client'], optional=true }
