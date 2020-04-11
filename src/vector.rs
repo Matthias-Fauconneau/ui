@@ -1,4 +1,4 @@
-macro_rules! vec { ($v:ident $($c:ident)+) => {
+#[macro_export] macro_rules! vector { ($v:ident $($c:ident)+) => {
 use {crate::core::Zero, std::ops::{Add,Sub,Mul,Div}};
 #[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub struct $v<T> { $( pub $c: T ),+ }
 impl<T:Eq> PartialEq<T> for $v<T> { fn eq(&self, b: &T) -> bool { $( self.$c==*b )&&+ } }
@@ -22,34 +22,26 @@ impl Mul<$v<f32>> for f32 { type Output=$v<f32>; fn mul(self, b: $v<f32>) -> Sel
 impl Div<$v<f32>> for f32 { type Output=$v<f32>; fn div(self, b: $v<f32>) -> Self::Output { div(self, b) } }
 }}
 
-mod vec_xy {
-    vec!(xy x y);
-    impl<T:Ord> PartialOrd for xy<T> { fn partial_cmp(&self, b: &xy<T>) -> Option<std::cmp::Ordering> { Some(self.cmp(b)) } }
-    impl<T:Ord> Ord for xy<T> { fn cmp(&self, b: &xy<T>) -> std::cmp::Ordering { // reverse lexicographic (i.e lexicographic yx)
-        let ordering = self.y.cmp(&b.y);
-        if ordering != std::cmp::Ordering::Equal { ordering } else { self.x.cmp(&b.x) }
-    } }
+vector!(xy x y);
+impl<T:Ord> PartialOrd for xy<T> { fn partial_cmp(&self, b: &xy<T>) -> Option<std::cmp::Ordering> { Some(self.cmp(b)) } }
+impl<T:Ord> Ord for xy<T> { fn cmp(&self, b: &xy<T>) -> std::cmp::Ordering { // reverse lexicographic (i.e lexicographic yx)
+    let ordering = self.y.cmp(&b.y);
+    if ordering != std::cmp::Ordering::Equal { ordering } else { self.x.cmp(&b.x) }
+} }
 
-    impl From<xy<u32>> for xy<f32> { fn from(f: xy<u32>) -> Self { xy{x: f.x as f32, y: f.y as f32} } }
-    impl From<xy<f32>> for xy<u32> { fn from(f: xy<f32>) -> Self { xy{x: f.x as u32, y: f.y as u32} } }
+impl From<xy<u32>> for xy<f32> { fn from(f: xy<u32>) -> Self { xy{x: f.x as f32, y: f.y as f32} } }
+impl From<xy<f32>> for xy<u32> { fn from(f: xy<f32>) -> Self { xy{x: f.x as u32, y: f.y as u32} } }
 
-    impl xy<u32> { pub const fn as_f32(self) -> xy<f32> { xy{x: self.x as f32, y: self.y as f32} } }
-    #[cfg(feature="const_fn")] pub const fn div_f32(a: f32, b: xy<f32>) -> xy<f32> { xy{x: a/b.x, y: a/b.y} }
+impl xy<u32> { pub const fn as_f32(self) -> xy<f32> { xy{x: self.x as f32, y: self.y as f32} } }
+#[cfg(feature="const_fn")] pub const fn div_f32(a: f32, b: xy<f32>) -> xy<f32> { xy{x: a/b.x, y: a/b.y} }
 
-    #[allow(non_camel_case_types)] pub type uint2 = xy<u32>;
-    #[allow(non_camel_case_types)] pub type int2 = xy<i32>;
-    #[allow(non_camel_case_types)] pub type size2 = xy<u32>;
-    #[allow(non_camel_case_types)] pub type vec2 = xy<f32>;
+#[allow(non_camel_case_types)] pub type uint2 = xy<u32>;
+#[allow(non_camel_case_types)] pub type int2 = xy<i32>;
+#[allow(non_camel_case_types)] pub type size2 = xy<u32>;
+#[allow(non_camel_case_types)] pub type vec2 = xy<f32>;
 
-    pub fn lerp(t : f32, a : vec2, b : vec2) -> xy<f32> { (1.-t)*a + t*b }
-    pub fn dot(a:vec2, b:vec2) -> f32 { a.x*b.x + a.y*b.y }
-    pub fn sq(x:vec2) -> f32 { dot(x, x) }
-    pub fn norm(v:vec2) -> f32 { crate::core::sqrt(sq(v)) }
-    pub fn atan(v:vec2) -> f32 { crate::core::atan(v.y,v.x) }
-}
-pub use vec_xy::*;
-
-/*mod vec_uv {
-    vec!(uv u v);
-}
-pub use vec_uv::*;*/
+pub fn lerp(t : f32, a : vec2, b : vec2) -> xy<f32> { (1.-t)*a + t*b }
+pub fn dot(a:vec2, b:vec2) -> f32 { a.x*b.x + a.y*b.y }
+pub fn sq(x:vec2) -> f32 { dot(x, x) }
+pub fn norm(v:vec2) -> f32 { crate::core::sqrt(sq(v)) }
+pub fn atan(v:vec2) -> f32 { crate::core::atan(v.y,v.x) }

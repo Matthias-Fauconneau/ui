@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
-use crate::{core::{cos,sin,cb}, vector::{uv,xy}};
+use crate::{core::{cos,sin,cb}, vector::{xy}};
 pub struct LCh {pub L:f32,pub C:f32,pub h:f32}
+crate::vector!(uv u v);
 struct Luv {L:f32,uv:uv<f32>}
 impl From<LCh> for Luv { fn from(LCh{L,C,h}: LCh) -> Self { Self{L,uv:uv{u:C*cos(h),v:C*sin(h)}} } }
 struct XYZ {X:f32,Y:f32,Z:f32}

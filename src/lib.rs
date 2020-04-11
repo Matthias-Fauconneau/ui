@@ -15,7 +15,7 @@ pub mod core; pub use crate::core::{Zero, Error, Result, Ok, TryExtend, sqrt};
 #[cfg(feature="fehler")] pub use fehler::throws;
 #[cfg(feature="process")] pub mod process;
 #[cfg(feature="vector")] pub mod vector; #[cfg(feature="vector")] pub use vector::{uint2, size2, vec2, min, max, sq};
-#[cfg(feature="image")] pub mod image; #[cfg(feature="image")] pub use image::Image;
+#[cfg(feature="image")] pub mod image; #[cfg(feature="image")] pub use image::{Image, bgra8};
 #[cfg(feature="color")] pub mod color; //pub use color::*;
 #[cfg(feature="window")] pub mod window; #[cfg(feature="window")] pub use window::window;
 #[cfg(feature="text")] pub mod text; #[cfg(feature="text")] pub use text::Text;

@@ -94,9 +94,10 @@ pub fn atan(y: f32, x: f32) -> f32 { y.atan2(x) }
 pub fn log<T:std::fmt::Debug>(v: T) { println!("{:?}", v); }
 #[macro_export] macro_rules! log { ($($A:expr),+) => ( $crate::core::log(($($A),+)) ) }
 
-#[derive(Debug)] pub struct Error(Box<dyn std::error::Error>);
+#[cfg(feature="anyhow")] pub use anyhow::Error;
+#[cfg(not(feature="anyhow"))] #[derive(Debug)] pub struct Error(Box<dyn std::error::Error>);
+#[cfg(not(feature="anyhow"))] impl<E:std::error::Error+'static/*Send+Sync*/> From<E> for Error { fn from(error: E) -> Self { Error(Box::new(error)) } }
 pub type Result<T=(), E=Error> = std::result::Result<T, E>;
-impl<E:std::error::Error+'static/*Send+Sync*/> From<E> for Error { fn from(error: E) -> Self { Error(Box::new(error)) } }
 
 pub struct MessageError<M>(pub M);
 impl<M:std::fmt::Debug> std::fmt::Debug for MessageError<M> { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { std::fmt::Debug::fmt(&self.0, f) } }
@@ -105,8 +106,9 @@ impl<M:std::fmt::Debug+std::fmt::Display> std::error::Error for MessageError<M> 
 pub trait Ok<T> { fn ok(self) -> Result<T>; }
 impl<T> Ok<T> for Option<T> { fn ok(self) -> Result<T> { Ok(self.ok_or(MessageError("None"))?) } }
 
+#[macro_export] macro_rules! throw { ($val:expr) => { fehler::throw!(core::MessageError(format!("{:?}", $val))); } }
 //#[macro_export] macro_rules! assert { ($cond:expr, $($val:expr),* ) => { std::assert!($cond,"{}. {:?}", stringify!($cond), ( $( format!("{} = {:?}", stringify!($val), $val), )* ) ); } }
-//#[macro_export] macro_rules! ensure { ($cond:expr) => { (if $cond {Ok(())} else {Err($crate::core::MessageError(""))})? } }
+//#[macro_export] macro_rules! ensure { ($cond:expr) => { (if !$cond { throw!($crate::core::MessageError(stringify!($cond))) } } }
 
 use std::ops::Try;
 pub trait TryExtend<R:Try> { fn try_extend<I:Iterator<Item=R>>(&mut self, iter: I) -> Result<(),R::Error>; }

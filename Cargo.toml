@@ -21,6 +21,7 @@ color_sRGB = ['color','sRGB','type_ascription']
 #default = []
 
 [dependencies]
+anyhow = { version ='', optional=true }
 fehler = { version='', optional=true }
 rental = { version='', optional=true }
 tempfile = { version='', optional=true }
