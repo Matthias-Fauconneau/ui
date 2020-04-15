@@ -15,17 +15,19 @@ vector = []
 image = ['vector']
 thread = []
 window = ['image','tempfile','memmap','wayland-protocols','wayland-client','rental']
-text = ['ttf-parser','sRGB','thread','window','rental']
 color = ['vector']
 color_sRGB = ['color','sRGB','type_ascription']
+text = ['ttf-parser','derive_more','rental','color_sRGB','thread','text-size','window']
 #default = []
 
 [dependencies]
-anyhow = { version ='', optional=true }
+derive_more = { version='', optional=true }
+anyhow = { version='', optional=true }
 fehler = { version='', optional=true }
 rental = { version='', optional=true }
 tempfile = { version='', optional=true }
 memmap = { version='', optional=true }
+text-size = { git='https://github.com/rust-analyzer/text-size', optional=true }
 wayland-protocols = { version = '', features = ['unstable_protocols','client'], optional=true }
 wayland-client = { version = '', optional=true }
 ttf-parser = { version='', optional=true }

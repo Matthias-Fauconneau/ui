@@ -1,4 +1,5 @@
-use crate::{vector::size2, image::Image};
+pub(super) use crate::image::Image;
+use crate::vector::size2;
 
 /*use crate::core::{floor, sq, fract, abs};
 use crate::image::IntoRows;

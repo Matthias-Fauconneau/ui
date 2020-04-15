@@ -13,15 +13,15 @@ impl From<Luv> for XYZ{ fn from(Luv{L,uv}: Luv) -> Self {
     let Y = if L<8. {L*cb(3./29f32)} else {cb((L+16.)/116.)};
     Self{X: Y*(9.*u)/(4.*v), Y, Z: Y*(12.-3.*u-20.*v)/(4.*v)}
 }}
-#[allow(non_camel_case_types)] pub struct bgr {pub b:f32,pub g:f32,pub r:f32}
-impl From<XYZ> for bgr { fn from(XYZ{X,Y,Z}: XYZ) -> Self { Self{
+pub use crate::image::bgrf;
+impl From<XYZ> for bgrf { fn from(XYZ{X,Y,Z}: XYZ) -> Self { Self{
     b:   0.0557 * X - 0.2040 * Y + 1.0570 * Z,
     g: - 0.9689 * X + 1.8758 * Y + 0.0415 * Z,
     r:    3.2406 * X - 1.5372 * Y - 0.4986 * Z
 }}}
 #[cfg(feature="color_sRGB")] #[allow(non_snake_case)] pub mod sRGB {
-    use {super::{bgr,LCh,Luv,XYZ}, crate::image::{sRGB::sRGB, bgra8}};
+    use {super::{LCh,Luv,XYZ,bgrf}, crate::image::bgra8};
     fn clamp(x:f32) -> f32 { if x > 1. {1.} else if x < 0. {0.} else {x} }
-    impl From<bgr> for bgra8 { fn from(bgr{b,g,r}: bgr) -> Self { Self{b:sRGB(clamp(b)), g:sRGB(clamp(g)), r:sRGB(clamp(r)), a:0xFF} } }
-    impl From<LCh> for bgra8 { fn from(v: LCh) -> Self { (((v.into():Luv).into():XYZ).into():bgr).into() } }
+    impl bgrf { fn clamp(&self) -> Self { Self{b:clamp(self.b), g:clamp(self.g), r:clamp(self.r)} } }
+    impl From<LCh> for bgra8 { fn from(v: LCh) -> Self { (((v.into():Luv).into():XYZ).into():bgrf).clamp().into() } }
 }

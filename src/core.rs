@@ -16,6 +16,8 @@ pub fn abs<T:Signed>(x : T) -> T { x.abs() }
 pub fn sq<T:Copy+std::ops::Mul>(x: T) -> T::Output { x*x }
 pub fn cb<T:Copy+std::ops::Mul>(x: T) -> <T::Output as std::ops::Mul<T>>::Output where <T as std::ops::Mul>::Output : std::ops::Mul<T> { x*x*x }
 
+pub fn floor_div(n : u32, d : u32) -> u32 { n/d }
+pub fn ceil_div(n : u32, d : u32) -> u32 { (n+d-1)/d }
 pub fn div_rem(n : u32, d : u32) -> (u32, u32) { (n/d, n%d) }
 
 pub fn floor(x : f32) -> f32 { x.floor() }
@@ -24,6 +26,30 @@ pub fn sqrt(x: f32) -> f32 { x.sqrt() }
 pub fn cos(x: f32) -> f32 { x.cos() }
 pub fn sin(x: f32) -> f32 { x.sin() }
 pub fn atan(y: f32, x: f32) -> f32 { y.atan2(x) }
+
+pub trait Single: Iterator+Sized { fn single(mut self) -> Option<Self::Item> { self.next().filter(|_| self.next().is_none()) } }
+impl<I:Iterator> Single for I {}
+
+pub struct PeekingTakeWhile<'a, I:Iterator, P> { iter: &'a mut std::iter::Peekable<I>, predicate: P }
+impl<'a, I:Iterator, P: FnMut(&<I as Iterator>::Item) -> bool> Iterator for PeekingTakeWhile<'a, I, P> {
+    type Item = <I as Iterator>::Item;
+    fn next(&mut self) -> Option<Self::Item> {
+        let Self{iter, predicate} = self;
+        iter.peek().filter(|x| predicate(*x))?;
+        iter.next()
+    }
+}
+pub trait PeekableExt<'a, I:Iterator> : Iterator {
+    fn peeking_take_while<P:FnMut(&<Self as Iterator>::Item) -> bool>(&'a mut self, predicate: P) -> PeekingTakeWhile<'a, I, P>;
+}
+impl<'a, I:Iterator> PeekableExt<'a, I> for std::iter::Peekable<I> {
+    fn peeking_take_while<P:FnMut(&<Self as Iterator>::Item) -> bool>(&'a mut self, predicate: P) -> PeekingTakeWhile<I, P> { PeekingTakeWhile{iter: self, predicate} }
+}
+
+pub fn split_for_each<I:Iterator,P:Fn(&I::Item)->bool, F:FnMut(usize, &mut dyn Iterator<Item=I::Item>)>(mut iter: I, predicate: P, mut f: F) {
+    let mut run_index = 0;
+    while let Some(first) = iter.next() { f(run_index, &mut std::iter::once(first).chain(iter.by_ref()).take_while(|x| !predicate(x))); run_index+=1; }
+}
 
 #[cfg(feature="array")] pub mod array {
     pub trait FromIterator<T> { //: std::iter::FromIterator<T> {
