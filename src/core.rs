@@ -46,11 +46,6 @@ impl<'a, I:Iterator> PeekableExt<'a, I> for std::iter::Peekable<I> {
     fn peeking_take_while<P:FnMut(&<Self as Iterator>::Item) -> bool>(&'a mut self, predicate: P) -> PeekingTakeWhile<I, P> { PeekingTakeWhile{iter: self, predicate} }
 }
 
-pub fn split_for_each<I:Iterator,P:Fn(&I::Item)->bool, F:FnMut(usize, &mut dyn Iterator<Item=I::Item>)>(mut iter: I, predicate: P, mut f: F) {
-    let mut run_index = 0;
-    while let Some(first) = iter.next() { f(run_index, &mut std::iter::once(first).chain(iter.by_ref()).take_while(|x| !predicate(x))); run_index+=1; }
-}
-
 #[cfg(feature="array")] pub mod array {
     pub trait FromIterator<T> { //: std::iter::FromIterator<T> {
         fn from_iter<I:std::iter::IntoIterator<Item=T>>(into_iter: I) -> Self;
