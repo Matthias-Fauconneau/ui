@@ -18,37 +18,36 @@ impl<'t> Font<'t> {
         FontIter{font: self, iter: iter.map(move |item|{let c=item.char(); (item, self.glyph_index(c).unwrap_or_else(||panic!("Missing glyph for '{:?}'",c)))})}
     }
 }
-pub trait GlyphID { fn glyph_id(&self) -> GlyphId; }
-impl<T> GlyphID for (T, GlyphId) { fn glyph_id(&self) -> GlyphId { self.1 } }
+pub trait GlyphID { fn id(&self) -> GlyphId; }
+impl<T> GlyphID for (T, GlyphId) { fn id(&self) -> GlyphId { self.1 } }
 
-type LayoutGlyphs<'t, I:Iterator> = impl 't+Iterator<Item=(i32,I::Item,Rect)>; // FilterMap<Scan>
+pub struct Layout<T>{pub x: i32, pub glyph: T, pub bbox: Rect}
+type LayoutGlyphs<'t, I:Iterator> = impl 't+Iterator<Item=Layout<I::Item>>; // FilterMap<Scan>
 impl<'t, I:'t+Iterator<Item:GlyphID>> FontIter<'t, I> {
     pub fn layout(self) -> FontIter<'t, LayoutGlyphs<'t, I>> {
         FontIter{
             font: self.font,
-            iter: self.iter.scan((None,0),{let font = self.font; move |(last_glyph_id, pen), item| {
-                        let glyph_id = item.glyph_id();
-                        if let Some(last_glyph_id) = *last_glyph_id { *pen += font.glyphs_kerning(last_glyph_id, glyph_id).unwrap_or(0) as i32; }
-                        *last_glyph_id = Some(glyph_id);
-                        let next = (*pen, item);
-                        *pen += font.glyph_hor_advance(glyph_id)? as i32;
+            iter: self.iter.scan((None,0),{let font = self.font; move |(last_id, x), glyph| {
+                        let id = glyph.id();
+                        if let Some(last_id) = *last_id { *x += font.glyphs_kerning(last_id, id).unwrap_or(0) as i32; }
+                        *last_id = Some(id);
+                        let next = (*x, glyph);
+                        *x += font.glyph_hor_advance(id)? as i32;
                         Some(next)
                    }})
-                   .filter_map({let font = self.font; move |(pen, item)| { let id=item.glyph_id(); Some((pen, item, font.glyph_bounding_box(id)?)) }})
+                   .filter_map({let font = self.font; move |(x, glyph)| { let id=glyph.id(); Some(Layout{x, glyph, bbox: font.glyph_bounding_box(id)?}) }})
         }
     }
 }
-pub trait Layout { fn layout(&self) -> (i32, GlyphId, Rect); }
-impl<T:GlyphID> Layout for (i32, T, Rect) { fn layout(&self) -> (i32, GlyphId, Rect) { (self.0, self.1.glyph_id(), self.2) } }
 
 #[derive(Default)] pub struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
-impl<I:Iterator<Item:Layout>> FontIter<'_, I> {
+impl<T:GlyphID, I:Iterator<Item=Layout<T>>> FontIter<'_, I> {
     pub fn metrics(self) -> LineMetrics {
         let font = &self.font;
         self.iter.fold(Default::default(), |metrics:LineMetrics, item| {
-            let (pen, glyph_id, bbox) = item.layout();
+            let Layout{x, glyph, bbox} = item;
             LineMetrics{
-                width: (pen + font.glyph_hor_side_bearing(glyph_id).unwrap() as i32 + bbox.x_max as i32) as u32,
+                width: (x + font.glyph_hor_side_bearing(glyph.id()).unwrap() as i32 + bbox.x_max as i32) as u32,
                 ascent: max(metrics.ascent, bbox.y_max),
                 descent: min(metrics.descent, bbox.y_min)
             }
