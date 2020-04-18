@@ -1,4 +1,4 @@
-#![feature(try_trait)]
+#![feature(try_trait,nll)]
 #![cfg_attr(feature="vector", feature(cmp_min_max_by))]
 #![cfg_attr(feature="type_ascription", feature(type_ascription))]
 #![cfg_attr(feature="const_fn", feature(const_fn))]

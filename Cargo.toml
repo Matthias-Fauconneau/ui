@@ -14,22 +14,20 @@ sRGB= ['array','lazy_static']
 vector = []
 image = ['vector']
 thread = []
-window = ['image','tempfile','memmap','wayland-protocols','wayland-client','rental']
+window = ['smithay-client-toolkit','image','rental']
 color = ['vector']
 color_sRGB = ['color','sRGB','type_ascription']
-text = ['ttf-parser','derive_more','rental','color_sRGB','thread','text-size','window']
+text = ['memmap','ttf-parser','rental','derive_more','sRGB','text-size','window']
 #default = []
 
 [dependencies]
 derive_more = { version='', optional=true }
 anyhow = { version='', optional=true }
 fehler = { version='', optional=true }
-rental = { version='', optional=true }
-tempfile = { version='', optional=true }
 memmap = { version='', optional=true }
-text-size = { git='https://github.com/rust-analyzer/text-size', optional=true }
-wayland-protocols = { version = '', features = ['unstable_protocols','client'], optional=true }
-wayland-client = { version = '', optional=true }
+rental = { version='', optional=true }
+text-size = { version='', optional=true }
+smithay-client-toolkit = { version = '', optional = true }
 ttf-parser = { version='', optional=true }
 
 [[example]]

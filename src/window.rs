@@ -1,4 +1,4 @@
-use crate::{core::Result, vector::size2, image::{Image, bgra8, IntoImage}};
+use crate::{Error, throws, vector::size2, image::{Image, bgra8}};
 
 pub type Target<'t> = Image<&'t mut[bgra8]>;
 pub trait Widget {
@@ -6,103 +6,115 @@ pub trait Widget {
     fn render(&mut self, target : &mut Target);
 }
 
-pub fn window(widget: &mut dyn Widget) -> Result {
-    use wayland_client::{Display, GlobalManager, event_enum, Filter,
-        protocol::{wl_seat as seat, wl_keyboard as keyboard, wl_pointer as pointer, wl_compositor as compositor, wl_shm as shm, wl_buffer as buffer}};
-    let display = Display::connect_to_env()?;
-    let mut event_queue = display.create_event_queue();
-    let globals = GlobalManager::new(&(*display).clone().attach(event_queue.token()));
-    event_queue.sync_roundtrip(&mut(), |_,_,_| unreachable!())?;
-    let compositor = globals.instantiate_range::<compositor::WlCompositor>(1, 4)?;
-    let surface = compositor.create_surface();
-    surface.set_buffer_scale(3);
-    let shm = globals.instantiate_exact::<shm::WlShm>(1).expect("shm");
-    use wayland_protocols::wlr::unstable::layer_shell::v1::client::{zwlr_layer_shell_v1::{ZwlrLayerShellV1, Layer}, zwlr_layer_surface_v1 as layer_surface};
-    let layer_surface = globals.instantiate_range::<ZwlrLayerShellV1>(1, 2)?.get_layer_surface(&surface, None, Layer::Overlay, "status".to_string());
-    layer_surface.set_keyboard_interactivity(1);
-    surface.commit();
+#[throws]
+pub fn window<'t>(widget: &'t mut dyn Widget) {
+    use smithay_client_toolkit::{
+        default_environment, environment::SimpleGlobal, init_default_environment,
+        reexports::calloop::{EventLoop, LoopSignal}, WaylandSource,
+        get_surface_scale_factor, shm,
+        seat::keyboard::{self, map_keyboard, RepeatKind},
+        reexports::{
+            client::protocol::{wl_surface::WlSurface as Surface, wl_pointer as pointer},
+            protocols::wlr::unstable::layer_shell::v1::client::{
+                zwlr_layer_shell_v1::{self as layer_shell, ZwlrLayerShellV1 as LayerShell},
+                zwlr_layer_surface_v1 as layer_surface
+            },
+        },
+    };
 
-    struct State<'t> {widget: &'t mut dyn Widget, exit: bool}
-    let filter = Filter::new({
-        let mut buffer = None;
-        move |event, filter, mut state| {
-            let State{ref mut widget, ref mut exit} = state.get().unwrap();
-            event_enum!(Event | LayerSurface => layer_surface::ZwlrLayerSurfaceV1, Buffer => buffer::WlBuffer, Seat => seat::WlSeat,
-                                            Pointer => pointer::WlPointer, Keyboard => keyboard::WlKeyboard);
-            use Event::*;
-            match event {
-                LayerSurface{event:layer_surface::Event::Closed, ..} => {},
-                LayerSurface{event:layer_surface::Event::Configure{serial, width, height}, object:layer_surface} => {
-                    if !(width > 0 && height > 0) {
-                        let size = widget.size(size2{x:3840, y:2160});
-                        layer_surface.set_size(size.x/3, size.y/3);
-                        layer_surface.ack_configure(serial);
-                        surface.commit();
-                        return;
-                    }
+    default_environment!(Compositor,
+        fields = [ layer_shell: SimpleGlobal<LayerShell> ],
+        singles = [ LayerShell => layer_shell ]
+    );
+
+    let (compositor, display, queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
+
+    struct State<'t> { signal: LoopSignal, pool: shm::MemPool, widget: &'t mut dyn Widget, unscaled_size: size2 }
+
+    fn draw(pool: &mut shm::MemPool, surface: &Surface, widget: &mut dyn Widget, size: size2) {
+        let stride = size.x*4;
+        pool.resize((size.y*stride) as usize).unwrap();
+        let buffer = pool.buffer(0, size.x as i32, size.y as i32, stride as i32, shm::Format::Argb8888);
+        let mut target = Target::from_bytes(pool.mmap(), size);
+        widget.render(&mut target);
+        surface.attach(Some(&buffer), 0, 0);
+        //surface.damage_buffer(0, 0, size.x as i32, size.y as i32);
+        surface.commit();
+    }
+
+    let surface = compositor.create_surface_with_scale_callback(|scale, surface, mut state| {
+        let State{ pool, widget, unscaled_size, .. } = state.get().unwrap();
+        surface.set_buffer_scale(scale);
+        println!("{:?} {:?}", smithay_client_toolkit::get_surface_outputs(&surface).len(), scale);
+        draw(pool, &surface, *widget, (scale as u32)* *unscaled_size);
+    });
+    /*surface.quick_assign(|_, event, mut state| {
+        match event {
+            smithay_client_toolkit::reexports::client::protocol::wl_surface::Event::Enter{output} =>
+                panic!("{:?}", smithay_client_toolkit::output::with_output_info(&output, |info| info.scale_factor).unwrap()),
+            _ => panic!("{:?}", event),
+        }
+    });*/
+
+    let layer_shell = compositor.require_global::<LayerShell>();
+    let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "framework".to_string());
+    layer_surface.set_keyboard_interactivity(1);
+
+    let mut event_loop = EventLoop::<State>::new()?;
+    event_loop.handle().insert_source(WaylandSource::new(queue), |e, _| { e.unwrap(); } ).unwrap();
+
+    surface.commit();
+    layer_surface.quick_assign(/*surface*/ move |layer_surface, event, mut state| {
+        let State{ signal, pool, widget, ref mut unscaled_size, ..} = state.get().unwrap();
+        match event {
+            layer_surface::Event::Closed => signal.stop(),
+            layer_surface::Event::Configure{serial, width, height} => {
+                let scale = get_surface_scale_factor(&surface) as u32;
+                println!("{:?} {:?}", smithay_client_toolkit::get_surface_outputs(&surface).len(), scale);
+                if !(width > 0 && height > 0) {
+                    let size = widget.size(size2{x:3840, y:2160}); // FIXME: get output size
+                    layer_surface.set_size(size.x/scale, size.y/scale);
                     layer_surface.ack_configure(serial);
-                    buffer = {
-                        let file = tempfile::tempfile().unwrap();
-                        let size = size2{x:width*3, y:height*3};
-                        let pool = {
-                            let size = (size.x*size.y*4) as u64;
-                            file.set_len(size).unwrap();
-                            shm.create_pool((&file as &dyn std::os::unix::io::AsRawFd).as_raw_fd(), size as i32)
-                        };
-                        rental! { mod rent {
-                            #[rental_mut(covariant)]
-                            pub struct MapTarget {
-                                map: Box<memmap::MmapMut>,
-                                target: super::Target<'map>
-                            }
-                        } } use rent::MapTarget;
-                        let mut target = MapTarget::new(box unsafe{memmap::MmapMut::map_mut(&file)}.unwrap(),
-                                                            |map| unsafe{std::slice::from_raw_parts_mut(map.as_mut_ptr() as *mut bgra8, map.len() / std::mem::size_of::<bgra8>())}.image(size));
-                        let buffer = {
-                            let target = target.suffix();
-                            pool.create_buffer(0, target.size.x as i32, target.size.y as i32, (target.stride*4) as i32, shm::Format::Argb8888)
-                        };
-                        buffer.assign(filter.clone());
-                        //widget.render(&mut target);
-                        target.rent_mut(|mut target| widget.render(&mut target) );
-                        surface.attach(Some(&buffer), 0, 0);
-                        surface.commit();
-                        Some((buffer, target))
-                    }
-                },
-                LayerSurface{..} => panic!("LayerSurface"),
-                Buffer{event:buffer::Event::Release, object:_buffer} => {},
-                    // assert(_buffer==buffer) widget.render_attach_commit(&mut target.as_mut().unwrap().1, &surface, &buffer); },
-                Buffer{..} => panic!("Buffer"),
-                Seat{event:seat::Event::Name{..}, ..} => {},
-                Seat{event:seat::Event::Capabilities{capabilities}, object:seat} => {
-                    if capabilities.contains(seat::Capability::Keyboard) { seat.get_keyboard().assign(filter.clone()); }
-                    if capabilities.contains(seat::Capability::Pointer) { seat.get_pointer().assign(filter.clone()); }
-                },
-                Seat{..} => panic!("Seat"),
-                Keyboard{event:keyboard::Event::Keymap{..}, ..} => {},
-                Keyboard{event:keyboard::Event::Enter{..}, ..} => {},
-                Keyboard{event:keyboard::Event::Leave{..}, ..} => {},
-                Keyboard{event:keyboard::Event::Key{/*key,state,*/..}, ..} => { *exit = true; },
-                Keyboard{event:keyboard::Event::Modifiers{/*key,state,*/..}, ..} => {},
-                Keyboard{event:keyboard::Event::RepeatInfo{/*key,state,*/..}, ..} => {},
-                Keyboard{..} => panic!("Keyboard"),
-                Pointer{event:pointer::Event::Enter{/*surface_x,surface_y,*/..}, ..} => {},
-                Pointer{event:pointer::Event::Leave{..}, ..} => { *exit = true },
-                Pointer{event:pointer::Event::Motion{/*surface_x,surface_y,*/..}, ..} => {},
-                Pointer{event:pointer::Event::Button{/*button,state,*/..}, ..} => {},
-                Pointer{event:pointer::Event::Axis{..}, ..} => {},
-                Pointer{event:pointer::Event::Frame{..}, ..} => {},
-                Pointer{event:pointer::Event::AxisSource{..}, ..} => {},
-                Pointer{event:pointer::Event::AxisStop{..}, ..} => {},
-                Pointer{event:pointer::Event::AxisDiscrete{..}, ..} => {},
-                Pointer{..} => panic!("Pointer"),
+                    surface.commit();
+                    return;
+                }
+                layer_surface.ack_configure(serial);
+                *unscaled_size = size2{x:width, y:height};
+                draw(pool, &surface, *widget, scale* *unscaled_size);
             }
+            _ => unimplemented!(),
         }
     });
-    layer_surface.assign(filter.clone());
-    globals.instantiate_range::<seat::WlSeat>(1, 7)?.assign(filter);
-    let mut state = State{widget: unsafe{std::mem::transmute::<&mut dyn Widget, &'static mut dyn Widget>(widget)}, exit: false}; // FIXME: safe wrapper
-    while !state.exit { event_queue.dispatch(&mut state, |_,_,_|{})?; }
-    Ok(())
+
+    for seat in compositor.get_all_seats() {
+        let (_, repeat_source) = map_keyboard(&seat, None, RepeatKind::System, move |event, _, mut state| {
+            let State{signal, /*ref mut widget,*/..} = state.get().unwrap();
+            match event {
+                keyboard::Event::Enter { /*keysyms,*/ .. } => {},
+                keyboard::Event::Leave { .. } => {}
+                keyboard::Event::Key { keysym, state, utf8, .. } => { println!("{:?}: {:x} '{:?}'", state, keysym, utf8); signal.stop(); }
+                keyboard::Event::Modifiers { /*modifiers*/.. } => {},
+                keyboard::Event::Repeat { keysym, utf8, .. } => { println!("{:x} '{:?}'", keysym, utf8); },
+            }
+        }).unwrap();
+        event_loop.handle().insert_source(repeat_source, |_, _| {}).unwrap();
+        seat.get_pointer().quick_assign(|_, event, mut state| {
+            let State{signal,/*ref mut widget,*/.. } = state.get().unwrap();
+            match event {
+                pointer::Event::Leave{..} => signal.stop(),
+                pointer::Event::Motion{/*surface_x, surface_y,*/..} => {},
+                pointer::Event::Button{/*button, state,*/..} => {},
+                _ => {},
+            }
+        });
+    }
+
+    let mut state = State::</*'t*/'_>{
+        signal: event_loop.get_signal(),
+        pool: compositor.create_simple_pool(|_|())?,
+        widget: unsafe{std::mem::transmute::<&mut dyn Widget, &'static mut dyn Widget>(widget)},
+        unscaled_size: size2{x:0,y:0}
+    };
+    display.flush()?;
+    event_loop.run(None, &mut state, |_| display.flush().unwrap())? // "`widget` escapes the function body here": How ?
 }

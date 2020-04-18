@@ -46,6 +46,25 @@ impl<'a, I:Iterator> PeekableExt<'a, I> for std::iter::Peekable<I> {
     fn peeking_take_while<P:FnMut(&<Self as Iterator>::Item) -> bool>(&'a mut self, predicate: P) -> PeekingTakeWhile<I, P> { PeekingTakeWhile{iter: self, predicate} }
 }
 
+
+pub trait Take<'t, T> { fn take<'s>(&'s mut self, n: usize) -> &'t [T]; }
+impl<'t, T> Take<'t, T> for &'t [T] {
+    fn take<'s>(&'s mut self, mid: usize) -> &'t [T] {
+        let (consumed, remaining) = std::mem::replace(self, &[]).split_at(mid);
+        *self = remaining;
+        consumed
+    }
+}
+pub trait TakeMut<'t, T> { fn take_mut<'s>(&'s mut self, n: usize) -> &'t mut [T]; }
+impl<'t, T> TakeMut<'t, T> for &'t mut [T] {
+    fn take_mut<'s>(&'s mut self, mid: usize) -> &'t mut [T] {
+        let (consumed, remaining) = std::mem::replace(self, &mut []).split_at_mut(mid);
+        *self = remaining;
+        consumed
+    }
+}
+
+
 #[cfg(feature="array")] pub mod array {
     pub trait FromIterator<T> { //: std::iter::FromIterator<T> {
         fn from_iter<I:std::iter::IntoIterator<Item=T>>(into_iter: I) -> Self;

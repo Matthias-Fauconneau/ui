@@ -59,7 +59,7 @@ impl<'font, 'text> Text<'font, 'text> {
                 };
                 let coverage = self.font.rasterize(scale, id, bbox);
                 style = style.filter(|style:&&Attribute<Style>| style.contains(offset)).or(styles.peeking_take_while(|style| style.contains(offset)).single());
-                target.slice_mut(scale*position, coverage.size).map(coverage, |_,coverage| bgra8{a : 0xFF, ..(coverage*style.map(|x|x.attribute.color).unwrap()).into()})
+                target.slice_mut(scale*position, coverage.size).set_map(coverage, |_,coverage| bgra8{a : 0xFF, ..(coverage*style.map(|x|x.attribute.color).unwrap()).into()})
             }
         }
     }
