@@ -62,6 +62,7 @@ impl<T, D:std::ops::DerefMut<Target=[T]>> Image<D> {
 impl<'t, T> Image<&'t [T]> {
     pub fn take<'s>(&'s mut self, mid: u32) -> Image<&'t [T]> {
         assert!(mid <= self.size.y);
+        self.size.y -= mid;
         Image{size: size2{x:self.size.x, y:mid}, stride: self.stride, data: self.data.take((mid*self.stride) as usize)}
     }
 }
@@ -69,6 +70,7 @@ impl<'t, T> Image<&'t [T]> {
 impl<'t, T> Image<&'t mut [T]> {
     pub fn take_mut<'s>(&'s mut self, mid: u32) -> Image<&'t mut[T]> {
         assert!(mid <= self.size.y);
+        self.size.y -= mid;
         Image{size: size2{x:self.size.x, y:mid}, stride: self.stride, data: self.data.take_mut((mid*self.stride) as usize)}
     }
 }
@@ -88,40 +90,6 @@ impl<'t, T> Iterator for Image<&'t mut [T]> {
         else { None }
     }
 }
-
-/*pub struct LineMut<'t, T> { y: u32, line: &'t mut[T] }
-impl<T> LineMut<'_, T> {
-    fn iter_mut(&mut self) -> impl Iterator<Item=(uint2, &mut T)>+'_ { let y = self.y; self.line.iter_mut().enumerate().map(move |(x,e)| (uint2{x:x as u32,y},e)) }
-}
-impl<'t, T> Iterator for LineMut<'t, T> {
-    type Item = &'t mut T;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.line.len() > 0 { Some(&mut self.line.take_mut(1)[0]) }
-        else { None }
-    }
-}*/
-/*type ImplIterator<'s> = impl Iterator+'s;
-impl<'s, 't:'s, T> IntoIterator for &'s mut Line<'t, T> {
-    type Item = <Self::IntoIter as Iterator>::Item;
-    type IntoIter = ImplIterator<'s>;
-    fn into_iter(self) -> Self::IntoIter { let y = self.y; self.line.into_iter().enumerate().map(move |(x,e)| (x,y,e)) }
-}*/
-
-// Cannot implement Iterator because we need to control lifetime, providing this range.zip(slice).map instead
-/*struct LinesMut<'t, T> { range: std::ops::Range<u32>, slice: Image<&'t mut [T]> }
-impl<'t, T> Iterator for LinesMut<'t, T> {
-    type Item = LineMut<'t, T>;
-    fn next<'s>(&'s mut self) -> Option<Self::Item> {
-        if let (Some(y), Some(line)) = (self.range.next(), self.slice.next()) { Some(LineMut{y, line}) }
-        else { None }
-    }
-    //pub fn for_each<F:FnMut(Line<'_, T>)>(&mut self, f:F) { while let Some(x) = self.next() { f(x); } }
-}*/
-//pub fn lines_mut(&mut self, range: std::ops::Range<u32>) -> LinesMut<'_, T> { LinesMut{range, slice: self.slice_lines_mut(range)} }
-
-/*impl<'t, T:'t, D:std::ops::Deref<Target=[T]>+'t> Image<D> {
-    pub fn lines(&'t self, lines: std::ops::Range<u32>) -> impl Iterator<Item=(u32,&[T])> { lines.map(move |y| { (y, &self.slice_lines(y..y+1).data[..self.size.x as usize] ) } ) }
-}*/
 
 impl<'t, T> Image<&'t mut [T]> {
     pub fn lines_mut(&mut self, range: std::ops::Range<u32>) -> impl Iterator<Item=(u32,&mut [T])> { range.clone().zip(self.slice_lines_mut(range)) }
@@ -143,24 +111,24 @@ impl<'t, T> Image<&'t mut [T]> {
 
 pub fn segment(total_length: u32, segment_count: u32) -> impl Iterator<Item=std::ops::Range<u32>> {
     (0..segment_count)
-    .map(move |i| i*total_length/segment_count)
+    .map(move |i| (i+1)*total_length/segment_count)
     .scan(0, |start, end| { let next = (*start, end); *start = end; Some(next) })
     .map(|(start, end)| start..end)
 }
 
 #[cfg(not(all(feature="array",feature="thread")))] trait Execute : Iterator<Item:FnOnce()>+Sized { fn execute(self) { self.for_each(|task| task()) } }
-#[cfg(all(feature="array",feature="thread"))] trait Execute : Iterator<Item:FnOnce()>+Sized { fn execute(self) {
+/*#[cfg(all(feature="array",feature="thread"))] trait Execute : Iterator<Item:FnOnce()>+Sized { fn execute(self) {
     use crate::{core::array::{Iterator, IntoIterator}};
     Iterator::collect::<[_;N]>( iter.map(|task| unsafe { std::thread::Builder::new().spawn_unchecked(task) } ) ).into_iter().for_each(|t| t.join().unwrap())
-}}
+}}*/
 impl<I:Iterator<Item:FnOnce()>> Execute for I {}
 
 impl<T:Send> Image<&mut [T]> {
-    pub fn set<F:Fn(uint2)->T+Copy+Send>(mut self, f:F) {
-        segment(self.size.y, 8)
+    pub fn set<F:Fn(uint2)->T+Copy+Send>(&mut self, f:F) {
+        /*let mut target = self.take_mut(0);
+        segment(target.size.y, 1/*8*/)
         .map(|segment| {
-            let target = self.take_mut(segment.len() as u32);
-            //move || segment.zip(target.lines_mut()).for_each(|line| { for (p, target) in line.iter_mut() { *target = f(p); } })
+            let target = target.take_mut(segment.len() as u32);
             move || {
                 for (y, target) in segment.zip(target) {
                     for (x, target) in target.iter_mut().enumerate() {
@@ -169,11 +137,12 @@ impl<T:Send> Image<&mut [T]> {
                 }
             }
         })
-        .execute()
+        .execute()*/
+        for y in 0..self.size.y { for x in 0..self.size.x { self[uint2{x,y}] = f(uint2{x,y}); } }
     }
     pub fn set_map<U:Copy+Send+Sync, D:std::ops::Deref<Target=[U]>+Send, F:Fn(uint2,U)->T+Copy+Send>(mut self, source: Image<D>, f: F) {
         assert!(self.size == source.size);
-        segment(self.size.y, 8)
+        /*segment(self.size.y, 1/*8*/)
         .map(|segment| {
             let target = self.take_mut(segment.len() as u32);
             let source = source.slice(uint2{x:0, y:segment.start}, size2{x:source.size.x, y:segment.len() as u32});
@@ -185,7 +154,8 @@ impl<T:Send> Image<&mut [T]> {
                 }
             }
         })
-        .execute()
+        .execute()*/
+        for y in 0..self.size.y { for x in 0..self.size.x { self[uint2{x,y}] = f(uint2{x,y}, source[uint2{x,y}]); } }
     }
 }
 

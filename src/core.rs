@@ -146,7 +146,7 @@ impl<M:std::fmt::Debug+std::fmt::Display> std::error::Error for MessageError<M> 
 pub trait Ok<T> { fn ok(self) -> Result<T>; }
 impl<T> Ok<T> for Option<T> { fn ok(self) -> Result<T> { Ok(self.ok_or(MessageError("None"))?) } }
 
-#[macro_export] macro_rules! throw { ($val:expr) => { fehler::throw!(core::MessageError(format!("{:?}", $val))); } }
+#[macro_export] macro_rules! throw { ($val:expr) => { fehler::throw!($crate::core::MessageError(format!("{:?}", $val))); } }
 //#[macro_export] macro_rules! assert { ($cond:expr, $($val:expr),* ) => { std::assert!($cond,"{}. {:?}", stringify!($cond), ( $( format!("{} = {:?}", stringify!($val), $val), )* ) ); } }
 //#[macro_export] macro_rules! ensure { ($cond:expr) => { (if !$cond { throw!($crate::core::MessageError(stringify!($cond))) } } }
 
@@ -168,7 +168,7 @@ impl<T, E> TryExtend<Result<T,E>> for Vec<T> {
     }
 }
 
-#[macro_export] macro_rules! lazy_static { ($name:ident : $T:ty = $e:expr;) => {
+#[cfg(feature="lazy-static")] #[macro_export] macro_rules! lazy_static { ($name:ident : $T:ty = $e:expr;) => {
     #[allow(non_camel_case_types)] struct $name {}
     #[allow(non_upper_case_globals)] static $name : $name = $name{};
     impl std::ops::Deref for $name {
@@ -183,3 +183,21 @@ impl<T, E> TryExtend<Result<T,E>> for Vec<T> {
         }
     }
 }}
+
+#[cfg(feature="rstack-self")] #[must_use] #[fehler::throws] pub fn rstack_self() { if std::env::args().nth(1).unwrap_or_default() == "rstack-self" { rstack_self::child()?; throw!("") } }
+#[cfg(feature="signal-hook")] pub fn signal_hook() {
+    std::thread::spawn(move || {
+        for _ in signal_hook::iterator::Signals::new(&[signal_hook::SIGINT]).unwrap().forever() {
+            for thread in rstack_self::trace(std::process::Command::new(std::env::current_exe().unwrap()).arg("rstack-self")).unwrap().threads() {
+                println!("{}", thread.name());
+                for frame in thread.frames() {
+                    for sym in frame.symbols() {
+                        if let (Some(path),Some(line)) = (sym.file(),sym.line()) { print!("{}:{}: ", path.display(), line); }
+                        println!("{}", sym.name().unwrap_or_default());
+                    }
+                }
+            }
+            std::process::abort();
+        }
+    });
+}

@@ -8,10 +8,10 @@ pub trait Widget {
 
 #[throws]
 pub fn window<'t>(widget: &'t mut dyn Widget) {
-    use smithay_client_toolkit::{
+    #[allow(unused_imports)] use client_toolkit::{
         default_environment, environment::SimpleGlobal, init_default_environment,
         reexports::calloop::{EventLoop, LoopSignal}, WaylandSource,
-        get_surface_scale_factor, shm,
+        output::with_output_info, get_surface_scale_factor, shm,
         seat::keyboard::{self, map_keyboard, RepeatKind},
         reexports::{
             client::protocol::{wl_surface::WlSurface as Surface, wl_pointer as pointer},
@@ -34,45 +34,40 @@ pub fn window<'t>(widget: &'t mut dyn Widget) {
     fn draw(pool: &mut shm::MemPool, surface: &Surface, widget: &mut dyn Widget, size: size2) {
         let stride = size.x*4;
         pool.resize((size.y*stride) as usize).unwrap();
-        let buffer = pool.buffer(0, size.x as i32, size.y as i32, stride as i32, shm::Format::Argb8888);
         let mut target = Target::from_bytes(pool.mmap(), size);
+        target.set(|_| bgra8{b:0,g:0,r:0,a:0xFF});
         widget.render(&mut target);
+        let buffer = pool.buffer(0, size.x as i32, size.y as i32, stride as i32, shm::Format::Argb8888);
         surface.attach(Some(&buffer), 0, 0);
-        //surface.damage_buffer(0, 0, size.x as i32, size.y as i32);
+        surface.damage_buffer(0, 0, size.x as i32, size.y as i32);
         surface.commit();
     }
 
     let surface = compositor.create_surface_with_scale_callback(|scale, surface, mut state| {
         let State{ pool, widget, unscaled_size, .. } = state.get().unwrap();
         surface.set_buffer_scale(scale);
-        println!("{:?} {:?}", smithay_client_toolkit::get_surface_outputs(&surface).len(), scale);
         draw(pool, &surface, *widget, (scale as u32)* *unscaled_size);
     });
-    /*surface.quick_assign(|_, event, mut state| {
-        match event {
-            smithay_client_toolkit::reexports::client::protocol::wl_surface::Event::Enter{output} =>
-                panic!("{:?}", smithay_client_toolkit::output::with_output_info(&output, |info| info.scale_factor).unwrap()),
-            _ => panic!("{:?}", event),
-        }
-    });*/
 
     let layer_shell = compositor.require_global::<LayerShell>();
     let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "framework".to_string());
-    layer_surface.set_keyboard_interactivity(1);
+    //layer_surface.set_keyboard_interactivity(1);
 
     let mut event_loop = EventLoop::<State>::new()?;
     event_loop.handle().insert_source(WaylandSource::new(queue), |e, _| { e.unwrap(); } ).unwrap();
 
     surface.commit();
-    layer_surface.quick_assign(/*surface*/ move |layer_surface, event, mut state| {
+    layer_surface.quick_assign({let compositor = compositor.clone(); /*surface*/ move |layer_surface, event, mut state| {
         let State{ signal, pool, widget, ref mut unscaled_size, ..} = state.get().unwrap();
         match event {
             layer_surface::Event::Closed => signal.stop(),
             layer_surface::Event::Configure{serial, width, height} => {
-                let scale = get_surface_scale_factor(&surface) as u32;
-                println!("{:?} {:?}", smithay_client_toolkit::get_surface_outputs(&surface).len(), scale);
                 if !(width > 0 && height > 0) {
-                    let size = widget.size(size2{x:3840, y:2160}); // FIXME: get output size
+                    let (scale, size) = with_output_info(
+                        compositor.get_all_outputs().first().unwrap(),
+                        |info| (info.scale_factor as u32, info.modes.first().unwrap().dimensions)
+                    ).unwrap();
+                    let size = widget.size(size2{x:(size.0 as u32), y:(size.1 as u32)});
                     layer_surface.set_size(size.x/scale, size.y/scale);
                     layer_surface.ack_configure(serial);
                     surface.commit();
@@ -80,11 +75,11 @@ pub fn window<'t>(widget: &'t mut dyn Widget) {
                 }
                 layer_surface.ack_configure(serial);
                 *unscaled_size = size2{x:width, y:height};
-                draw(pool, &surface, *widget, scale* *unscaled_size);
+                draw(pool, &surface, *widget, (get_surface_scale_factor(&surface) as u32) * *unscaled_size);
             }
             _ => unimplemented!(),
         }
-    });
+    }});
 
     for seat in compositor.get_all_seats() {
         let (_, repeat_source) = map_keyboard(&seat, None, RepeatKind::System, move |event, _, mut state| {
@@ -111,7 +106,7 @@ pub fn window<'t>(widget: &'t mut dyn Widget) {
 
     let mut state = State::</*'t*/'_>{
         signal: event_loop.get_signal(),
-        pool: compositor.create_simple_pool(|_|())?,
+        pool: compositor.create_simple_pool(|_|{})?,
         widget: unsafe{std::mem::transmute::<&mut dyn Widget, &'static mut dyn Widget>(widget)},
         unscaled_size: size2{x:0,y:0}
     };

@@ -5,29 +5,33 @@ authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition = '2018'
 
 [features]
-type_ascription = []
-const_fn = []
+trace-sigint = ['rstack-self','signal-hook']
+type-ascription = []
+const-fn = []
 array = []
-lazy_static = []
+lazy-static = []
 process = []
-sRGB= ['array','lazy_static']
+sRGB= ['array','lazy-static']
 vector = []
 image = ['vector']
 thread = []
-window = ['smithay-client-toolkit','image','rental']
+window = ['client-toolkit','image','rental']
 color = ['vector']
-color_sRGB = ['color','sRGB','type_ascription']
-text = ['memmap','ttf-parser','rental','derive_more','sRGB','text-size','window']
+color-sRGB = ['color','sRGB','type-ascription']
+text = ['memmap','ttf-parser','rental','derive-more','sRGB','text-size','window']
 #default = []
 
 [dependencies]
-derive_more = { version='', optional=true }
+rstack-self = { version='', features=["dw"], default-features=false, optional=true }
+signal-hook = { version='', optional=true }
+derive-more = { package = 'derive_more', version='', optional=true }
 anyhow = { version='', optional=true }
 fehler = { version='', optional=true }
 memmap = { version='', optional=true }
 rental = { version='', optional=true }
 text-size = { version='', optional=true }
-smithay-client-toolkit = { version = '', optional = true }
+#client-toolkit = { package = 'smithay-client-toolkit', version = '', optional = true }
+client-toolkit = { package = 'smithay-client-toolkit', path = '../client-toolkit', optional = true }
 ttf-parser = { version='', optional=true }
 
 [[example]]

@@ -113,8 +113,9 @@ pub fn line(target : &mut Image<&mut [f32]>, x0: f32, y0: f32, x1: f32, y1: f32)
     let dxdy = (x1-x0)/(y1-y0);
     let mut x = x0;
     // http://www.apache.org/licenses/LICENSE-2.0. Modified from https://github.com/raphlinus/font-rs
-    //target.lines_mut(y0 as u32..y1.ceil() as u32).for_each(|Line{y, line}| {
-    for (y, line) in target.lines_mut(y0 as u32..y1.ceil() as u32) {
+    //for (y, line) in target.lines_mut(y0 as u32..y1.ceil() as u32) {
+    for y in y0 as u32..y1.ceil() as u32 {
+        let line = &mut target.data[(y*target.stride) as usize..];
         let dy = ((y + 1) as f32).min(y1) - (y as f32).max(y0);
         let xnext = x + dxdy * dy;
         let d = dy * dir;
