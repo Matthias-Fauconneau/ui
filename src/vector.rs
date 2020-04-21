@@ -1,8 +1,13 @@
-#[macro_export] macro_rules! vector { ($v:ident $($c:ident)+) => {
+#[macro_export] macro_rules! vector { ($n:literal $v:ident $($tuple:ident)+, $($c:ident)+) => {
 use {crate::core::Zero, std::ops::{Add,Sub,Mul,Div}};
 #[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub struct $v<T> { $( pub $c: T ),+ }
 impl<T:Eq> PartialEq<T> for $v<T> { fn eq(&self, b: &T) -> bool { $( self.$c==*b )&&+ } }
 impl<T:Copy> From<T> for $v<T> { fn from(v: T) -> Self { $v{$($c:v),+} } }
+impl<T:Copy> From<[T; $n]> for $v<T> { fn from([$($c),+]: [T; $n]) -> Self { $v{$($c),+} } } // FIXME: $n from $c
+impl<T:Copy> From<$v<T>> for [T; $n] { fn from(v : $v<T>) -> Self { [$(v.$c),+] } }
+impl<T:Copy> From<($($tuple),+)> for $v<T> { fn from(($($c),+): ($($tuple),+)) -> Self { $v{$($c),+} } } // $tuple from $n
+impl<T:Copy> From<$v<T>> for ($($tuple),+) { fn from(v : $v<T>) -> Self { ($(v.$c),+) } }
+
 impl<T:Copy+Zero> Zero for $v<T> { fn zero() -> Self { T::zero().into() } }
 //pub fn min<T:Ord>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: a.$c .min( b.$c ) ),+} }
 //pub fn max<T:Ord>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: a.$c .max( b.$c ) ),+} }
@@ -24,7 +29,7 @@ impl Mul<$v<f32>> for f32 { type Output=$v<f32>; fn mul(self, b: $v<f32>) -> Sel
 impl Div<$v<f32>> for f32 { type Output=$v<f32>; fn div(self, b: $v<f32>) -> Self::Output { div(self, b) } }
 }}
 
-vector!(xy x y);
+vector!(2 xy T T, x y);
 impl<T:Ord> PartialOrd for xy<T> { fn partial_cmp(&self, b: &xy<T>) -> Option<std::cmp::Ordering> { Some(self.cmp(b)) } }
 impl<T:Ord> Ord for xy<T> { fn cmp(&self, b: &xy<T>) -> std::cmp::Ordering { // reverse lexicographic (i.e lexicographic yx)
     let ordering = self.y.cmp(&b.y);

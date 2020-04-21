@@ -64,6 +64,9 @@ impl<'t, T> TakeMut<'t, T> for &'t mut [T] {
     }
 }
 
+pub unsafe fn cast_mut_slice<T>(slice: &mut [u8]) -> &mut [T] {
+    std::slice::from_raw_parts_mut(slice.as_mut_ptr() as *mut T, slice.len() / std::mem::size_of::<T>())
+}
 
 #[cfg(feature="array")] pub mod array {
     pub trait FromIterator<T> { //: std::iter::FromIterator<T> {
@@ -150,6 +153,8 @@ impl<T> Ok<T> for Option<T> { fn ok(self) -> Result<T> { Ok(self.ok_or(MessageEr
 //#[macro_export] macro_rules! assert { ($cond:expr, $($val:expr),* ) => { std::assert!($cond,"{}. {:?}", stringify!($cond), ( $( format!("{} = {:?}", stringify!($val), $val), )* ) ); } }
 //#[macro_export] macro_rules! ensure { ($cond:expr) => { (if !$cond { throw!($crate::core::MessageError(stringify!($cond))) } } }
 
+#[cfg(feature="try_trait")]
+mod try_extend {
 use std::ops::Try;
 pub trait TryExtend<R:Try> { fn try_extend<I:Iterator<Item=R>>(&mut self, iter: I) -> Result<(),R::Error>; }
 /*impl<R:Try> TryExtend<R> for Vec<R::Ok> {
@@ -166,6 +171,7 @@ impl<T, E> TryExtend<Result<T,E>> for Vec<T> {
         //self.reserve(iter.size_hint().1.unwrap());
         iter.try_for_each(move |element| { self.push(element?); Ok(()) } ).into_result() //32155
     }
+}
 }
 
 #[cfg(feature="lazy-static")] #[macro_export] macro_rules! lazy_static { ($name:ident : $T:ty = $e:expr;) => {

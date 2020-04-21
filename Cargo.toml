@@ -15,11 +15,13 @@ sRGB= ['array','lazy-static']
 vector = []
 image = ['vector']
 thread = []
+widget = []
 window = ['client-toolkit','image','rental']
-color = ['vector']
+color = ['vector','image']
 color-sRGB = ['color','sRGB','type-ascription']
-text = ['memmap','ttf-parser','rental','derive-more','sRGB','text-size','window']
-#default = []
+font = ['memmap','rental']
+text = ['ttf-parser','derive-more','sRGB','text-size','font','widget']
+default = ['vector','image']
 
 [dependencies]
 rstack-self = { version='', features=["dw"], default-features=false, optional=true }
@@ -30,8 +32,8 @@ fehler = { version='', optional=true }
 memmap = { version='', optional=true }
 rental = { version='', optional=true }
 text-size = { version='', optional=true }
-#client-toolkit = { package = 'smithay-client-toolkit', version = '', optional = true }
-client-toolkit = { package = 'smithay-client-toolkit', path = '../client-toolkit', optional = true }
+client-toolkit = { package = 'smithay-client-toolkit', version = '', optional = true }
+#client-toolkit = { package = 'smithay-client-toolkit', path = '../client-toolkit', optional = true }
 ttf-parser = { version='', optional=true }
 
 [[example]]

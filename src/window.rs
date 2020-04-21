@@ -1,14 +1,8 @@
-use crate::{Error, throws, vector::size2, image::{Image, bgra8}};
-
-pub type Target<'t> = Image<&'t mut[bgra8]>;
-pub trait Widget {
-    fn size(&mut self, size : size2) -> size2 { size }
-    fn render(&mut self, target : &mut Target);
-}
+use crate::{Error, throws, widget::Widget};
 
 #[throws]
 pub fn window<'t>(widget: &'t mut dyn Widget) {
-    #[allow(unused_imports)] use client_toolkit::{
+    use client_toolkit::{
         default_environment, environment::SimpleGlobal, init_default_environment,
         reexports::calloop::{EventLoop, LoopSignal}, WaylandSource,
         output::with_output_info, get_surface_scale_factor, shm,
@@ -27,7 +21,7 @@ pub fn window<'t>(widget: &'t mut dyn Widget) {
         singles = [ LayerShell => layer_shell ]
     );
 
-    let (compositor, display, queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
+    let (env, display, queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
 
     struct State<'t> { signal: LoopSignal, pool: shm::MemPool, widget: &'t mut dyn Widget, unscaled_size: size2 }
 
@@ -43,28 +37,28 @@ pub fn window<'t>(widget: &'t mut dyn Widget) {
         surface.commit();
     }
 
-    let surface = compositor.create_surface_with_scale_callback(|scale, surface, mut state| {
+    let surface = env.create_surface_with_scale_callback(|scale, surface, mut state| {
         let State{ pool, widget, unscaled_size, .. } = state.get().unwrap();
         surface.set_buffer_scale(scale);
         draw(pool, &surface, *widget, (scale as u32)* *unscaled_size);
     });
 
-    let layer_shell = compositor.require_global::<LayerShell>();
+    let layer_shell = env.require_global::<LayerShell>();
     let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "framework".to_string());
     //layer_surface.set_keyboard_interactivity(1);
 
     let mut event_loop = EventLoop::<State>::new()?;
-    event_loop.handle().insert_source(WaylandSource::new(queue), |e, _| { e.unwrap(); } ).unwrap();
+    event_loop.handle().insert_source(WaylandSource::new(queue), |e, _| { e.unwrap(); } )?;
 
     surface.commit();
-    layer_surface.quick_assign({let compositor = compositor.clone(); /*surface*/ move |layer_surface, event, mut state| {
+    layer_surface.quick_assign({let env = env.clone(); /*surface*/ move |layer_surface, event, mut state| {
         let State{ signal, pool, widget, ref mut unscaled_size, ..} = state.get().unwrap();
         match event {
             layer_surface::Event::Closed => signal.stop(),
             layer_surface::Event::Configure{serial, width, height} => {
                 if !(width > 0 && height > 0) {
                     let (scale, size) = with_output_info(
-                        compositor.get_all_outputs().first().unwrap(),
+                        env.get_all_outputs().first().unwrap(),
                         |info| (info.scale_factor as u32, info.modes.first().unwrap().dimensions)
                     ).unwrap();
                     let size = widget.size(size2{x:(size.0 as u32), y:(size.1 as u32)});
@@ -81,7 +75,7 @@ pub fn window<'t>(widget: &'t mut dyn Widget) {
         }
     }});
 
-    for seat in compositor.get_all_seats() {
+    for seat in env.get_all_seats() {
         let (_, repeat_source) = map_keyboard(&seat, None, RepeatKind::System, move |event, _, mut state| {
             let State{signal, /*ref mut widget,*/..} = state.get().unwrap();
             match event {
@@ -106,7 +100,7 @@ pub fn window<'t>(widget: &'t mut dyn Widget) {
 
     let mut state = State::</*'t*/'_>{
         signal: event_loop.get_signal(),
-        pool: compositor.create_simple_pool(|_|{})?,
+        pool: env.create_simple_pool(|_|{})?,
         widget: unsafe{std::mem::transmute::<&mut dyn Widget, &'static mut dyn Widget>(widget)},
         unscaled_size: size2{x:0,y:0}
     };

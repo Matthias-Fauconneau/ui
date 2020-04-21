@@ -67,12 +67,12 @@ impl<'font, 'text> Text<'font, 'text> {
 
 fn fit_width(width: u32, from : size2) -> size2 { size2{x: width, y: ceil_div(width * from.y, from.x)} }
 
-use crate::window::{Widget, Target};
+use crate::widget::{Widget, Target};
 impl Text<'_,'_> {
     pub fn scale(&mut self, target: &Target) -> font::Scale { font::Scale{num: target.size.x-1, div: self.size().x-1} } // todo: scroll
 }
 impl Widget for Text<'_,'_> {
-    fn size(&mut self, size : size2) -> size2 { fit_width(size.x, self.size()) }
+    fn size(&mut self, bounds : size2) -> size2 { fit_width(bounds.x, self.size()) }
     fn render(&mut self, target : &mut Target) {
         let scale = self.scale(&target);
         Text::render(&self, target, scale)

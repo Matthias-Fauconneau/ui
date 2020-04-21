@@ -116,12 +116,12 @@ pub fn segment(total_length: u32, segment_count: u32) -> impl Iterator<Item=std:
     .map(|(start, end)| start..end)
 }
 
-#[cfg(not(all(feature="array",feature="thread")))] trait Execute : Iterator<Item:FnOnce()>+Sized { fn execute(self) { self.for_each(|task| task()) } }
+//#[cfg(not(all(feature="array",feature="thread")))] trait Execute : Iterator<Item:FnOnce()>+Sized { fn execute(self) { self.for_each(|task| task()) } }
 /*#[cfg(all(feature="array",feature="thread"))] trait Execute : Iterator<Item:FnOnce()>+Sized { fn execute(self) {
     use crate::{core::array::{Iterator, IntoIterator}};
     Iterator::collect::<[_;N]>( iter.map(|task| unsafe { std::thread::Builder::new().spawn_unchecked(task) } ) ).into_iter().for_each(|t| t.join().unwrap())
 }}*/
-impl<I:Iterator<Item:FnOnce()>> Execute for I {}
+//impl<I:Iterator<Item:FnOnce()>> Execute for I {}
 
 impl<T:Send> Image<&mut [T]> {
     pub fn set<F:Fn(uint2)->T+Copy+Send>(&mut self, f:F) {
@@ -180,18 +180,14 @@ impl<T:Default+Clone> Image<Vec<T>> {
     pub fn zero(size: size2) -> Self { Self::new(size, vec![T::default(); (size.x*size.y) as usize]) }
 }
 
-//#[allow(non_camel_case_types)] #[derive(Clone,Copy)]  pub struct bgr {pub b:f32,pub g:f32,pub r:f32}
-crate::vector!(bgr b g r);
+crate::vector!(3 bgr T T T, b g r);
 #[allow(non_camel_case_types)] pub type bgrf = bgr<f32>;
 
 #[allow(non_camel_case_types)] #[derive(Clone, Copy)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
 impl std::convert::From<u8> for bgra8 { fn from(v: u8) -> Self { bgra8{b:v,g:v,r:v,a:v} } }
 
-pub unsafe fn cast_mut_slice<T>(slice: &mut [u8]) -> &mut [T] {
-    std::slice::from_raw_parts_mut(slice.as_mut_ptr() as *mut T, slice.len() / std::mem::size_of::<T>())
-}
 impl<'t> Image<&'t mut [bgra8]> {
-    pub fn from_bytes(slice: &'t mut [u8], size: size2) -> Self { Self::new(unsafe{cast_mut_slice(slice)}, size) }
+    pub fn from_bytes(slice: &'t mut [u8], size: size2) -> Self { Self::new(unsafe{crate::core::cast_mut_slice(slice)}, size) }
 }
 
 #[cfg(feature="sRGB")] #[allow(non_snake_case)] pub mod sRGB {
