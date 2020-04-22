@@ -191,7 +191,7 @@ impl<'t> Image<&'t mut [bgra8]> {
 }
 
 #[cfg(feature="sRGB")] #[allow(non_snake_case)] pub mod sRGB {
-    crate::lazy_static!{ sRGB_forward12 : [u8; 0x1000] = crate::core::array::map(|i| {
+    crate::lazy_static!{ static ref sRGB_forward12 : [u8; 0x1000] = crate::core::array::map(|i| {
         let linear = i as f64 / 0xFFF as f64;
         (0xFF as f64 * if linear > 0.0031308 {1.055*linear.powf(1./2.4)-0.055} else {12.92*linear}).round() as u8
     }); }

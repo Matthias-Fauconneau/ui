@@ -23,13 +23,14 @@ impl<'t> LineRanges<'t> for &'t str {
     }
 }
 
-
 pub type Color = crate::image::bgrf;
 #[derive(Clone,Copy)] pub enum FontStyle { Normal, Bold, /*Italic, BoldItalic*/ }
 #[derive(Clone,Copy)] pub struct Style { pub color: Color, pub style: FontStyle }
 pub use text_size::{TextSize, TextRange}; // ~Range<u32> with impl SliceIndex for String
 #[derive(Clone,Copy)] pub struct Attribute<T> { pub range: TextRange, pub attribute: T }
 impl<T> std::ops::Deref for Attribute<T> { type Target=TextRange; fn deref(&self) -> &Self::Target { &self.range } }
+
+lazy_static! { pub static ref default_font : font::MapFont = font::from_file("/usr/share/fonts/noto/NotoSans-Regular.ttf").unwrap(); }
 
 pub struct Text<'font, 'text> {
     font : &'font Font<'font>,
@@ -39,7 +40,6 @@ pub struct Text<'font, 'text> {
 }
 impl<'font, 'text> Text<'font, 'text> {
     pub fn new(text : &'text str, style: &'text [Attribute<Style>]) -> Self {
-        lazy_static! { default_font : font::MapFont = font::from_file("/usr/share/fonts/noto/NotoSans-Regular.ttf").unwrap(); }
         Self{font: default_font.suffix(), text, style, size: None}
     }
     pub fn size(&mut self) -> size2 {
