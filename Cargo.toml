@@ -16,7 +16,7 @@ vector = []
 image = ['vector']
 thread = []
 widget = []
-window = ['client-toolkit','image','rental']
+window = ['rental','futures','smol','image','client-toolkit',]
 color = ['vector','image']
 color-sRGB = ['color','sRGB','type-ascription']
 font = ['memmap','rental']
@@ -31,12 +31,16 @@ anyhow = { version='', optional=true }
 fehler = { version='', optional=true }
 memmap = { version='', optional=true }
 rental = { version='', optional=true }
+futures = { version='^0.3', optional=true }
+smol = { version='', optional=true }
 text-size = { version='', optional=true }
-client-toolkit = { package = 'smithay-client-toolkit', version = '', optional = true }
-#client-toolkit = { package = 'smithay-client-toolkit', path = '../client-toolkit', optional = true }
 ttf-parser = { version='', optional=true }
+client-toolkit = { package = 'smithay-client-toolkit', version = '^0.9', optional = true }
 
 [[example]]
 name = 'text'
 path = 'examples/text.rs'
 required-features = ['text']
+
+[patch.crates-io] # Useless here only a reminder for dependencies to copy this in their Cargo.toml ... :(
+wayland-client = { path = "../wayland-rs/wayland-client" } # EventQueue::dispatch_pending(&self, ..)

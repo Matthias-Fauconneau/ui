@@ -193,7 +193,9 @@ impl<T, E> TryExtend<Result<T,E>> for Vec<T> {
     (pub static ref $name:ident : $T:ty = $e:expr;) => { lazy_static!{ (pub) static ref $name : $T = $e; } }
 }
 
-#[cfg(feature="rstack-self")] #[must_use] #[fehler::throws] pub fn rstack_self() { if std::env::args().nth(1).unwrap_or_default() == "rstack-self" { rstack_self::child()?; throw!("") } }
+#[cfg(feature="rstack-self")] #[must_use] #[fehler::throws] pub fn rstack_self() {
+    if std::env::args().nth(1).unwrap_or_default() == "rstack-self" { rstack_self::child()?; throw!("") }
+}
 #[cfg(feature="signal-hook")] pub fn signal_hook() {
     std::thread::spawn(move || {
         for _ in signal_hook::iterator::Signals::new(&[signal_hook::SIGINT]).unwrap().forever() {
