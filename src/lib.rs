@@ -1,3 +1,4 @@
+#![feature(nll)]
 #![cfg_attr(feature="array", allow(incomplete_features),feature(const_generics,maybe_uninit_extra,maybe_uninit_uninit_array))]
 #![cfg_attr(feature="lazy-static", feature(maybe_uninit_ref))]
 #![cfg_attr(feature="try_trait", feature(try_trait))]

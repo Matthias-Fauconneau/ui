@@ -1,6 +1,7 @@
 pub(self) mod raster;
 mod font;
 
+pub use text_size::{TextSize, TextRange}; // ~Range<u32> with impl SliceIndex for String
 use {std::cmp::max, derive_more::Deref, crate::{core::{ceil_div,Single,PeekableExt,Zero},lazy_static, vector::{uint2,size2}, image::{Image, bgra8}}};
 use font::{Font, Layout,GlyphID};
 
@@ -26,7 +27,6 @@ impl<'t> LineRanges<'t> for &'t str {
 pub type Color = crate::image::bgrf;
 #[derive(Clone,Copy)] pub enum FontStyle { Normal, Bold, /*Italic, BoldItalic*/ }
 #[derive(Clone,Copy)] pub struct Style { pub color: Color, pub style: FontStyle }
-pub use text_size::{TextSize, TextRange}; // ~Range<u32> with impl SliceIndex for String
 #[derive(Clone,Copy)] pub struct Attribute<T> { pub range: TextRange, pub attribute: T }
 impl<T> std::ops::Deref for Attribute<T> { type Target=TextRange; fn deref(&self) -> &Self::Target { &self.range } }
 

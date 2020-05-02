@@ -16,7 +16,7 @@ vector = []
 image = ['vector']
 thread = []
 widget = []
-window = ['rental','futures','smol','image','client-toolkit',]
+window = ['rental','futures','smol','image','client-toolkit']
 color = ['vector','image']
 color-sRGB = ['color','sRGB','type-ascription']
 font = ['memmap','rental']
@@ -42,5 +42,6 @@ name = 'text'
 path = 'examples/text.rs'
 required-features = ['text']
 
-[patch.crates-io] # Useless here only a reminder for dependencies to copy this in their Cargo.toml ... :(
+# Useless here only a reminder for dependencies to copy this in their Cargo.toml ... :(
+[patch.crates-io]
 wayland-client = { path = "../wayland-rs/wayland-client" } # EventQueue::dispatch_pending(&self, ..)

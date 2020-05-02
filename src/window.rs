@@ -1,6 +1,7 @@
-use crate::{Result, widget::Widget};
+use crate::{/*Error, throws,*/ Result, widget::Widget};
 
-pub async fn window<W:Widget+'static>(widget: W) -> Result<()> {
+//#[throws]
+pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future::Future<Output=Result<()>>+'w> {
     use client_toolkit::{
         default_environment, environment::SimpleGlobal, init_default_environment,
         output::with_output_info, get_surface_scale_factor, shm,
@@ -19,24 +20,26 @@ pub async fn window<W:Widget+'static>(widget: W) -> Result<()> {
         singles = [ LayerShell => layer_shell ]
     );
 
-    let (env, display, queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
+    let (env, _, queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
 
     enum Item {
         Apply(std::io::Result<()>),
         Quit,
     }
-    struct State<W:Widget> {
+    struct State<'w> {
         pool: shm::MemPool,
-        widget: W,
+        widget: &'w mut dyn Widget,
         unscaled_size: size2
     }
-    struct DispatchData<'t, W:Widget> {
-        streams: &'t mut Peekable<SelectAll<LocalBoxStream<'t, Item>>>,
-        state: &'t mut State<W>,
-    }
-    fn quit<Item>(streams: &mut Peekable<SelectAll<LocalBoxStream<'_, Item>>>) { streams.get_mut().push(iter(once(Item::Quit)).boxed_local()) }
 
-    fn draw<W:Widget>(pool: &mut shm::MemPool, surface: &Surface, widget: &mut W, size: size2) {
+    use {std::iter::once, futures::{FutureExt, stream::{unfold, iter, StreamExt, SelectAll, Peekable, LocalBoxStream}}};
+    struct DispatchData<'d, 'q, 'w> {
+        streams: &'d mut Peekable<SelectAll<LocalBoxStream<'q, Item>>>,
+        state: &'d mut State<'w>,
+    }
+    fn quit(streams: &mut Peekable<SelectAll<LocalBoxStream<'_, Item>>>) { streams.get_mut().push(iter(once(Item::Quit)).boxed_local()) }
+
+    fn draw(pool: &mut shm::MemPool, surface: &Surface, widget: &mut dyn Widget, size: size2) {
         let stride = size.x*4;
         pool.resize((size.y*stride) as usize).unwrap();
         let mut target = Target::from_bytes(pool.mmap(), size);
@@ -48,22 +51,27 @@ pub async fn window<W:Widget+'static>(widget: W) -> Result<()> {
         surface.commit();
     }
 
+    // DispatchData wraps using :Any which currently erases lifetimes
+    unsafe fn erase_lifetime<'d,'q,'w>(data: DispatchData<'d,'q,'w>) -> DispatchData<'static,'static,'static> {
+        std::mem::transmute::<DispatchData::<'d,'q,'w>, DispatchData::<'static,'static,'static>>(data)
+    }
+    unsafe fn restore_erased_lifetime<'d,'q,'w>(data: &mut DispatchData::<'static,'static,'static>) -> &'d mut DispatchData::<'d,'q,'w> { // fixme: use parent lifetimes
+        std::mem::transmute::<&mut DispatchData::<'static,'static,'static>, &mut DispatchData::<'d,'q,'w>>(data)
+    }
+
     let surface = env.create_surface_with_scale_callback(|scale, surface, mut data| {
-        let DispatchData{state:State::<W>{pool, widget, unscaled_size, ..}, ..} = data.get().unwrap();
+        let DispatchData{state:State{pool, widget, unscaled_size, ..}, ..} = unsafe{restore_erased_lifetime(data.get().unwrap())};
         surface.set_buffer_scale(scale);
-        draw(pool, &surface, widget, (scale as u32)* *unscaled_size);
+        draw(pool, &surface, *widget, (scale as u32)* *unscaled_size);
     });
 
     let layer_shell = env.require_global::<LayerShell>();
     let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "framework".to_string());
     //layer_surface.set_keyboard_interactivity(1);
 
-    //let mut event_loop = EventLoop::<State>::new()?;
-    //event_loop.handle().insert_source(WaylandSource::new(queue), |e, _| { e.unwrap(); } )?;
-
     surface.commit();
     layer_surface.quick_assign({let env = env.clone(); /*surface*/ move |layer_surface, event, mut data| {
-        let DispatchData{streams, state:State::<W>{ pool, widget, ref mut unscaled_size, ..}} = data.get().unwrap();
+        let DispatchData{streams, state:State{ pool, widget, ref mut unscaled_size, ..}} = unsafe{restore_erased_lifetime(data.get().unwrap())};
         use layer_surface::Event::*;
         match event {
             Closed => quit(streams),
@@ -81,15 +89,14 @@ pub async fn window<W:Widget+'static>(widget: W) -> Result<()> {
                 }
                 layer_surface.ack_configure(serial);
                 *unscaled_size = size2{x:width, y:height};
-                draw(pool, &surface, widget, (get_surface_scale_factor(&surface) as u32) * *unscaled_size);
+                draw(pool, &surface, *widget, (get_surface_scale_factor(&surface) as u32) * *unscaled_size);
             }
             _ => unimplemented!(),
         }
     }});
 
     for seat in env.get_all_seats() { // fixme: use env.listen_for_seats instead
-        seat.get_keyboard().quick_assign(move |_, event, mut data| {
-            let DispatchData{streams, state:State::<W>{..}} = data.get().unwrap();
+        seat.get_keyboard().quick_assign(move |_, event, _/*mut data*/| {
             use keyboard::Event::*;
             match event {
                 Enter { /*keysyms,*/ .. } => {},
@@ -97,11 +104,11 @@ pub async fn window<W:Widget+'static>(widget: W) -> Result<()> {
                 Key { key, state, .. } => { println!("{:?}: {:x} '{:?}'", state, key, "");  }
                 Modifiers { /*modifiers*/.. } => {},
                 //Repeat { keysym, utf8, .. } => { println!("{:x} '{:?}'", keysym, utf8); },
+                _ => unreachable!()
             }
         });
-        //event_loop.handle().insert_source(repeat_source, |_, _| {}).unwrap();
         seat.get_pointer().quick_assign(|_, event, mut data| {
-            let DispatchData{streams, state:State::<W>{..}} = data.get().unwrap();
+            let DispatchData{streams, state:State{..}} = data.get().unwrap();
             match event {
                 pointer::Event::Leave{..} => quit(streams),
                 pointer::Event::Motion{/*surface_x, surface_y,*/..} => {},
@@ -111,68 +118,52 @@ pub async fn window<W:Widget+'static>(widget: W) -> Result<()> {
         });
     }
 
-    use {std::iter::once, futures::{pin_mut, FutureExt, stream::{unfold, iter, StreamExt, SelectAll, Peekable, LocalBoxStream}}};
-    let mut streams = SelectAll::new().peekable();
-
     // Dispatch socket to per event callbacks which mutate state
     mod nix {
         pub type RawPollFd = std::os::unix::io::RawFd;
         pub trait AsRawPollFd { fn as_raw_poll_fd(&self) -> RawPollFd; }
-        impl AsRawPollFd for std::os::unix::io::RawFd { fn as_raw_poll_fd(&self) -> RawPollFd { self.as_raw_fd() } }
+        impl AsRawPollFd for std::os::unix::io::RawFd { fn as_raw_poll_fd(&self) -> RawPollFd { *self } }
     }
     struct Async<T>(T);
-    impl<T> Async<T> {
-        fn new(poll_fd: impl nix::AsRawPollFd) -> Result<smol::Async<T>, std::io::Error> {
-            struct AsRawFd<T>(T);
-            impl<T> std::os::unix::io::AsRawFd for AsRawFd<T> { fn as_raw_fd(&self) -> std::os::unix::io::RawFd { self.as_raw_poll_fd() /*->smol::Reactor*/ } }
-            smol::Async::new(AsRawFd(poll_fd))
-        }
-    }
-    impl nix::AsRawPollFd for &client::EventQueue {
-        fn as_raw_poll_fd(&self) -> nix::RawPollFd { self.display().get_connection_fd() }
-    }
-    let poll_queue = Async::new(&queue).unwrap();  // Registers in the reactor
-    streams.get_mut().push(
-        unfold(poll_queue, async move |mut q| {
-            Some((Item::Apply(q.with_mut(
-                |q:&mut client::EventQueue|
-                    q.prepare_read().ok_or(std::io::Error::new(std::io::ErrorKind::Interrupted, "Dispatch all events before polling"))?.read_events()
-                ).await), q))
-        }).boxed_local()
-    );
+    struct AsRawFd<T>(T);
+    impl<T:nix::AsRawPollFd> std::os::unix::io::AsRawFd for AsRawFd<T> { fn as_raw_fd(&self) -> std::os::unix::io::RawFd { self.0.as_raw_poll_fd() /*->smol::Reactor*/ } }
+    impl<T:nix::AsRawPollFd> Async<T> { fn new(io: T) -> Result<smol::Async<AsRawFd<T>>, std::io::Error> { smol::Async::new(AsRawFd(io)) } }
+    impl nix::AsRawPollFd for &client::EventQueue { fn as_raw_poll_fd(&self) -> nix::RawPollFd { self.display().get_connection_fd() } }
 
-    let state = State {
+    let mut state = State::<'w> {
         pool: env.create_simple_pool(|_|{})?,
         widget,
         unscaled_size: size2{x:0,y:0}
     };
 
-    loop {
-        loop {
-            let item = {
-                pin_mut!(streams);
-                if let Some(item) = streams.peek().now_or_never() { item } else { break; }
-            };
-            let item = item.ok_or(std::io::Error::new(std::io::ErrorKind::UnexpectedEof,""))?;
-            match item {
-                Item::Apply(_) => queue.dispatch_pending(&mut DispatchData::<'_>{streams: &mut streams, state: &mut state}, |_,_,_| ()).unwrap(),
-                Item::Quit => return Ok(()),
-            };
-            let _next = streams.next(); // That should just drop the peek
-            assert!(_next.now_or_never().is_some());
+    Ok(async move /*queue*/ {
+        let poll_queue = Async::new(&queue).unwrap();  // Registers in the reactor (borrows after moving queue in the async)
+        let mut streams = SelectAll::<LocalBoxStream<'_,Item>>::new().peekable();
+        streams.get_mut().push(
+            unfold(poll_queue, async move |mut q:smol::Async<AsRawFd<&client::EventQueue>>| {
+                Some((Item::Apply(q.with_mut(
+                    |q| q.0.prepare_read().ok_or(std::io::Error::new(std::io::ErrorKind::Interrupted, "Dispatch all events before polling"))?.read_events()
+                    ).await), q))
+            }).boxed_local()
+        );
+
+        'run: loop {
+            'pending: loop {
+                let item = if let Some(item) = std::pin::Pin::new(&mut streams).peek().now_or_never() { item } else { break 'pending; };
+                let item = item.ok_or(std::io::Error::new(std::io::ErrorKind::UnexpectedEof,""))?;
+                match item {
+                    Item::Apply(_) => queue.dispatch_pending(/*Any: 'static*/
+                        unsafe{&mut erase_lifetime(DispatchData{streams: &mut streams, state: &mut state})}, |_,_,_| ()).unwrap(),
+                    Item::Quit => break 'run,
+                };
+                let _next = streams.next(); // That should just drop the peek
+                assert!(_next.now_or_never().is_some());
+            }
+            queue.display().flush().unwrap();
+            std::pin::Pin::new(&mut streams).peek().await;
         }
-        display.flush().unwrap();
-        pin_mut!(streams);
-        streams.peek().await;
-    }
-    /*let mut state = State::</*'t*/'_>{
-        signal: event_loop.get_signal(),
-        pool: env.create_simple_pool(|_|{})?,
-        widget: unsafe{std::mem::transmute::<&mut dyn Widget, &'static mut dyn Widget>(widget)},
-        unscaled_size: size2{x:0,y:0}
-    };
-    display.flush()?;
-    event_loop.run(None, &mut state, |_| display.flush().unwrap())? // "`widget` escapes the function body here": How ?*/
+        Ok(())
+    })
 }
 
-pub fn run<'t>(widget: &'t mut dyn Widget) -> Result<()> { smol::run(window(widget)); }
+pub fn run(widget: &mut dyn Widget) -> Result<()> { smol::run(window(widget)?) }
