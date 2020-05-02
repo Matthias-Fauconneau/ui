@@ -99,11 +99,12 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
         seat.get_keyboard().quick_assign(move |_, event, _/*mut data*/| {
             use keyboard::Event::*;
             match event {
+                Keymap {..} => {},
                 Enter { /*keysyms,*/ .. } => {},
                 Leave { .. } => {}
                 Key { key, state, .. } => { println!("{:?}: {:x} '{:?}'", state, key, "");  }
                 Modifiers { /*modifiers*/.. } => {},
-                //Repeat { keysym, utf8, .. } => { println!("{:x} '{:?}'", keysym, utf8); },
+                RepeatInfo {..} => {},
                 _ => unreachable!()
             }
         });
