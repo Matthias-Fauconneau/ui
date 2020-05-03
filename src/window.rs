@@ -119,7 +119,6 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
         });
     }
 
-    // Dispatch socket to per event callbacks which mutate state
     mod nix {
         pub type RawPollFd = std::os::unix::io::RawFd;
         pub trait AsRawPollFd { fn as_raw_poll_fd(&self) -> RawPollFd; }
@@ -131,19 +130,19 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
     impl<T:nix::AsRawPollFd> Async<T> { fn new(io: T) -> Result<smol::Async<AsRawFd<T>>, std::io::Error> { smol::Async::new(AsRawFd(io)) } }
     impl nix::AsRawPollFd for &client::EventQueue { fn as_raw_poll_fd(&self) -> nix::RawPollFd { self.display().get_connection_fd() } }
 
-    let mut state = State::<'w> {
+    let mut state = State {
         pool: env.create_simple_pool(|_|{})?,
         widget,
         unscaled_size: size2{x:0,y:0}
     };
 
     Ok(async move /*queue*/ {
-        let poll_queue = Async::new(&queue).unwrap();  // Registers in the reactor (borrows after moving queue in the async)
-        let mut streams = SelectAll::<LocalBoxStream<'_,Item>>::new().peekable();
+        let poll_queue = Async::new(&queue)?;  // Registers in the reactor (borrows after moving queue in the async)
+        let mut streams = SelectAll::new().peekable();
         streams.get_mut().push(
-            unfold(poll_queue, async move |mut q:smol::Async<AsRawFd<&client::EventQueue>>| {
-                Some((Item::Apply(q.with_mut(
-                    |q| q.0.prepare_read().ok_or(std::io::Error::new(std::io::ErrorKind::Interrupted, "Dispatch all events before polling"))?.read_events()
+            unfold(poll_queue, async move |q/*:smol::Async<AsRawFd<&client::EventQueue>>*/| { // Apply message callbacks (&mut state)
+                Some((Item::Apply(q.with(
+                    |q/*:&client::EventQueue*/| q.0.prepare_read().ok_or(std::io::Error::new(std::io::ErrorKind::Interrupted, "Dispatch all events before polling"))?.read_events()
                     ).await), q))
             }).boxed_local()
         );
@@ -153,8 +152,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
                 let item = if let Some(item) = std::pin::Pin::new(&mut streams).peek().now_or_never() { item } else { break 'pending; };
                 let item = item.ok_or(std::io::Error::new(std::io::ErrorKind::UnexpectedEof,""))?;
                 match item {
-                    Item::Apply(_) => queue.dispatch_pending(/*Any: 'static*/
-                        unsafe{&mut erase_lifetime(DispatchData{streams: &mut streams, state: &mut state})}, |_,_,_| ()).unwrap(),
+                    Item::Apply(_) => queue.dispatch_pending(/*Any: 'static*/unsafe{&mut erase_lifetime(DispatchData{streams: &mut streams, state: &mut state})}, |_,_,_| ())?,
                     Item::Quit => break 'run,
                 };
                 let _next = streams.next(); // That should just drop the peek

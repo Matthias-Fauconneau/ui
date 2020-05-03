@@ -77,7 +77,7 @@ impl<'t, T> Image<&'t mut [T]> {
 
 impl<'t, T> Iterator for Image<&'t [T]> {
     type Item = &'t [T];
-    fn next<'s>(&'s mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.size.y > 0 { Some(&self.take(1).data[..self.size.x as usize]) }
         else { None }
     }
@@ -85,7 +85,7 @@ impl<'t, T> Iterator for Image<&'t [T]> {
 
 impl<'t, T> Iterator for Image<&'t mut [T]> {
     type Item = &'t mut[T];
-    fn next<'s>(&'s mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.size.y > 0 { Some(&mut self.take_mut(1).data[..self.size.x as usize]) }
         else { None }
     }

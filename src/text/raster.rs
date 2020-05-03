@@ -108,7 +108,7 @@ pub fn fill(edges : &Image<&[f32]>) -> Image<Vec<f32>> {
 
 pub fn line(target : &mut Image<&mut [f32]>, x0: f32, y0: f32, x1: f32, y1: f32) {
     //let _ = scopeguard::guard_on_unwind(target.size,|size| eprintln!("{:?}", size));
-    if y0 == y1 { return; }
+    #[allow(clippy::float_cmp)] if y0 == y1 { return; }
     let (dir, x0, y0, x1, y1) = if y0 < y1 { (1., x0, y0, x1, y1) } else { (-1., x1, y1, x0, y0) };
     let dxdy = (x1-x0)/(y1-y0);
     let mut x = x0;

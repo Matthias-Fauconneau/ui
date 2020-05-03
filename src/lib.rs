@@ -1,4 +1,3 @@
-#![feature(nll)]
 #![cfg_attr(feature="array", allow(incomplete_features),feature(const_generics,maybe_uninit_extra,maybe_uninit_uninit_array))]
 #![cfg_attr(feature="lazy-static", feature(maybe_uninit_ref))]
 #![cfg_attr(feature="try_trait", feature(try_trait))]
@@ -10,7 +9,6 @@
 //#![cfg_attr(feature="thread", feature(thread_spawn_unchecked))]
 //#![cfg_attr(all(feature="thread",feature="image"), feature(slice_index_methods))]
 #![cfg_attr(feature="text", feature(type_alias_impl_trait,associated_type_bounds))]
-//#![cfg_attr(feature="window", feature(generic_associated_types))]
 #![cfg_attr(feature="font", feature(box_syntax))]
 #[cfg(feature="font")] #[macro_use] extern crate rental;
 

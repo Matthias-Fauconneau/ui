@@ -64,6 +64,9 @@ impl<'t, T> TakeMut<'t, T> for &'t mut [T] {
     }
 }
 
+/// # Safety
+///
+/// T should be a basic type (valid when casted from any input data)
 pub unsafe fn cast_mut_slice<T>(slice: &mut [u8]) -> &mut [T] {
     std::slice::from_raw_parts_mut(slice.as_mut_ptr() as *mut T, slice.len() / std::mem::size_of::<T>())
 }
@@ -118,7 +121,10 @@ pub unsafe fn cast_mut_slice<T>(slice: &mut [u8]) -> &mut [T] {
             //Self{data: unsafe{std::mem::transmute::<[T;N], [std::mem::MaybeUninit<T>;N]>(array)}, alive: 0..N }
             Self{data: unsafe{let data = std::ptr::read(&array as *const [T; N] as *const [std::mem::MaybeUninit<T>; N]); std::mem::forget(array); data}, alive: 0..N}
         }
-        fn as_mut_slice(&mut self) -> &mut [T] { unsafe { std::mem::transmute::<&mut [std::mem::MaybeUninit<T>], &mut [T]>(&mut self.data[self.alive.clone()]) } }
+        fn as_mut_slice(&mut self) -> &mut [T] {
+            //unsafe { std::mem::transmute::<&mut [std::mem::MaybeUninit<T>], &mut [T]>(&mut self.data[self.alive.clone()]) }
+            unsafe { &mut *(&mut self.data[self.alive.clone()] as *mut [std::mem::MaybeUninit<T>] as *mut [T]) }
+        }
     }
     impl<T, const N: usize> std::iter::Iterator for IntoIter<T, N> {
         type Item = T;
@@ -193,7 +199,7 @@ impl<T, E> TryExtend<Result<T,E>> for Vec<T> {
     (pub static ref $name:ident : $T:ty = $e:expr;) => { lazy_static!{ (pub) static ref $name : $T = $e; } }
 }
 
-#[cfg(feature="rstack-self")] #[must_use] #[fehler::throws] pub fn rstack_self() {
+#[cfg(feature="rstack-self")] #[fehler::throws] pub fn rstack_self() {
     if std::env::args().nth(1).unwrap_or_default() == "rstack-self" { rstack_self::child()?; throw!("") }
 }
 #[cfg(feature="signal-hook")] pub fn signal_hook() {
