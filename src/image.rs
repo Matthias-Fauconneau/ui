@@ -1,5 +1,6 @@
 use crate::vector::size2;
 
+#[derive(Debug)]
 pub struct Image<Data> {
     pub stride : u32,
     pub size : size2,
@@ -104,7 +105,7 @@ impl<'t, T> Image<&'t mut [T]> {
 
 impl<'t, T> Image<&'t mut [T]> {
     fn new(data: &'t mut [T], size : size2) -> Self {
-        assert!(data.len() == (size.x*size.y) as usize);
+        assert_eq!(data.len(), (size.x*size.y) as usize, "{:?}", size);
         Self{stride: size.x, size, data}
     }
 }
@@ -183,7 +184,7 @@ impl<T:Default+Clone> Image<Vec<T>> {
 crate::vector!(3 bgr T T T, b g r);
 #[allow(non_camel_case_types)] pub type bgrf = bgr<f32>;
 
-#[allow(non_camel_case_types)] #[derive(Clone, Copy)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
+#[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
 impl std::convert::From<u8> for bgra8 { fn from(v: u8) -> Self { bgra8{b:v,g:v,r:v,a:v} } }
 
 impl<'t> Image<&'t mut [bgra8]> {
