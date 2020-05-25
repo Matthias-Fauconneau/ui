@@ -117,8 +117,8 @@ pub fn segment(total_length: u32, segment_count: u32) -> impl Iterator<Item=std:
     .map(|(start, end)| start..end)
 }
 
-//#[cfg(not(all(feature="array",feature="thread")))] trait Execute : Iterator<Item:FnOnce()>+Sized { fn execute(self) { self.for_each(|task| task()) } }
-/*#[cfg(all(feature="array",feature="thread"))] trait Execute : Iterator<Item:FnOnce()>+Sized { fn execute(self) {
+//#[cfg(not(feature="thread"))] trait Execute : Iterator<Item:FnOnce()>+Sized { fn execute(self) { self.for_each(|task| task()) } }
+/*#[cfg(feature="thread")] trait Execute : Iterator<Item:FnOnce()>+Sized { fn execute(self) {
     use crate::{core::array::{Iterator, IntoIterator}};
     Iterator::collect::<[_;N]>( iter.map(|task| unsafe { std::thread::Builder::new().spawn_unchecked(task) } ) ).into_iter().for_each(|t| t.join().unwrap())
 }}*/

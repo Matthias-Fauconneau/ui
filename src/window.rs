@@ -4,7 +4,7 @@ use crate::{/*Error, throws,*/ Result, widget::Widget};
 pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future::Future<Output=Result<()>>+'w> {
     use client_toolkit::{
         default_environment, environment::SimpleGlobal, init_default_environment,
-        output::with_output_info, get_surface_scale_factor, shm,
+        seat::with_seat_data, output::with_output_info, get_surface_scale_factor, shm,
         reexports::{
             client::{self, protocol::{wl_surface::WlSurface as Surface, wl_keyboard as keyboard, wl_pointer as pointer}},
             protocols::wlr::unstable::layer_shell::v1::client::{
@@ -95,29 +95,35 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
         }
     }});
 
-    for seat in env.get_all_seats() { // fixme: use env.listen_for_seats instead
-        seat.get_keyboard().quick_assign(move |_, event, _/*mut data*/| {
-            use keyboard::Event::*;
-            match event {
-                Keymap {..} => {},
-                Enter { /*keysyms,*/ .. } => {},
-                Leave { .. } => {}
-                Key { key, state, .. } => { println!("{:?}: {:x} '{:?}'", state, key, "");  }
-                Modifiers { /*modifiers*/.. } => {},
-                RepeatInfo {..} => {},
-                _ => unreachable!()
-            }
-        });
-        seat.get_pointer().quick_assign(|_, event, mut data| {
-            let DispatchData{streams, state:State{..}} = data.get().unwrap();
-            match event {
-                pointer::Event::Leave{..} => quit(streams),
-                pointer::Event::Motion{/*surface_x, surface_y,*/..} => {},
-                pointer::Event::Button{/*button, state,*/..} => {},
-                _ => {},
-            }
-        });
-    }
+    let handler = move |seat, seat_data| {
+        if seat_data.has_keyboard {
+            seat.get_keyboard().quick_assign(move |_, event, _/*mut data*/| {
+                use keyboard::Event::*;
+                match event {
+                    Keymap {..} => {},
+                    Enter { /*keysyms,*/ .. } => {},
+                    Leave { .. } => {}
+                    Key { key, state, .. } => { println!("{:?}: {:x} '{:?}'", state, key, "");  }
+                    Modifiers { /*modifiers*/.. } => {},
+                    RepeatInfo {..} => {},
+                    _ => unreachable!()
+                }
+            });
+        }
+        if seat_data.has_pointer {
+            seat.get_pointer().quick_assign(|_, event, mut data| {
+                let DispatchData{streams, state:State{..}} = data.get().unwrap();
+                match event {
+                    pointer::Event::Leave{..} => quit(streams),
+                    pointer::Event::Motion{/*surface_x, surface_y,*/..} => {},
+                    pointer::Event::Button{/*button, state,*/..} => {},
+                    _ => {},
+                }
+            });
+        }
+    };
+    for seat in env.get_all_seats() { let seat_data = clone_seat_data(&seat).unwrap(); seat_handler(seat, &seat_data); }
+    let seat_listener = env.listen_for_seats(move |seat, seat_data, _| seat_handler(seat, seat_data));
 
     mod nix {
         pub type RawPollFd = std::os::unix::io::RawFd;
@@ -139,6 +145,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
     Ok(async move /*queue*/ {
         let poll_queue = Async::new(&queue)?;  // Registers in the reactor (borrows after moving queue in the async)
         let mut streams = SelectAll::new().peekable();
+
         streams.get_mut().push(
             unfold(poll_queue, async move |q/*:smol::Async<AsRawFd<&client::EventQueue>>*/| { // Apply message callbacks (&mut state)
                 Some((Item::Apply(q.with(
@@ -148,8 +155,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
         );
 
         'run: loop {
-            'pending: loop {
-                let item = if let Some(item) = std::pin::Pin::new(&mut streams).peek().now_or_never() { item } else { break 'pending; };
+            while /*~poll_next*/ std::pin::Pin::new(&mut streams).peek().now_or_never().is_some() {
                 let item = item.ok_or(std::io::Error::new(std::io::ErrorKind::UnexpectedEof,""))?;
                 match item {
                     Item::Apply(_) => queue.dispatch_pending(/*Any: 'static*/unsafe{&mut erase_lifetime(DispatchData{streams: &mut streams, state: &mut state})}, |_,_,_| ())?,
@@ -161,6 +167,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
             queue.display().flush().unwrap();
             std::pin::Pin::new(&mut streams).peek().await;
         }
+        drop(seat_listener);
         Ok(())
     })
 }

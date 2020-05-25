@@ -5,43 +5,45 @@ authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition = '2018'
 
 [features]
-trace-sigint = ['rstack-self','signal-hook']
-type-ascription = []
-const-fn = []
 array = []
-lazy-static = []
+lazy_static = []
+try_extend = []
 process = []
-sRGB= ['array','lazy-static']
+trace_sigint = ['rstack-self','signal-hook']
 vector = []
+sRGB= ['array','lazy_static']
 image = ['vector']
-thread = []
+thread = ['array']
 widget = []
 window = ['rental','futures','smol','image','client-toolkit']
 color = ['vector','image']
-color-sRGB = ['color','sRGB','type-ascription']
+color-sRGB = ['color','sRGB']
 font = ['memmap','rental']
 text = ['ttf-parser','derive-more','sRGB','text-size','font','widget']
-default = ['vector','image']
+default = ['anyhow']
 
 [dependencies]
+cfg-if = ''
+fehler = { version='', optional=true }
+anyhow = { version='', optional=true }
+derive-more = { package = 'derive_more', version='', optional=true }
+
 rstack-self = { version='', features=["dw"], default-features=false, optional=true }
 signal-hook = { version='', optional=true }
-derive-more = { package = 'derive_more', version='', optional=true }
-anyhow = { version='', optional=true }
-fehler = { version='', optional=true }
-memmap = { version='', optional=true }
-rental = { version='', optional=true }
+
 futures = { version='^0.3', optional=true }
+rental = { version='', optional=true }
+
+memmap = { version='', optional=true }
 smol = { version='', optional=true }
+
 text-size = { version='', optional=true }
+
 ttf-parser = { version='', optional=true }
+
 client-toolkit = { package = 'smithay-client-toolkit', version = '^0.9', optional = true }
 
 [[example]]
 name = 'text'
 path = 'examples/text.rs'
 required-features = ['text']
-
-# Useless here only a reminder for dependencies to copy this in their Cargo.toml ... :(
-[patch.crates-io]
-wayland-client = { path = "../wayland-rs/wayland-client" } # EventQueue::dispatch_pending(&self, ..)

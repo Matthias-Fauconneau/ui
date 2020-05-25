@@ -23,6 +23,5 @@ impl From<XYZ> for bgrf { fn from(XYZ{X,Y,Z}: XYZ) -> Self { Self{
     use {super::{LCh,Luv,XYZ,bgrf}, crate::image::bgra8};
     fn clamp(x:f32) -> f32 { if x > 1. {1.} else if x < 0. {0.} else {x} }
     impl bgrf { fn clamp(&self) -> Self { Self{b:clamp(self.b), g:clamp(self.g), r:clamp(self.r)} } }
-    impl From<LCh> for bgra8 { fn from(v: LCh) -> Self { (((v.into():Luv).into():XYZ).into():bgrf).clamp().into() } }
-    //impl From<LCh> for bgra8 { fn from(v: LCh) -> Self { v.into::<Luv>().into::<XYZ>().into::<bgrf>().clamp().into() } }
+    impl From<LCh> for bgra8 { fn from(v: LCh) -> Self { v.into::<Luv>().into::<XYZ>().into::<bgrf>().clamp().into() } }
 }
