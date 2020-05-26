@@ -1,5 +1,5 @@
 #[macro_export] macro_rules! lazy_static {
-    ($(($vis:tt))? static ref $name:ident : $T:ty = $e:expr;) => {
+    ($($vis:vis)? static ref $name:ident : $T:ty = $e:expr;) => {
         #[allow(non_camel_case_types)] $($vis)? struct $name {}
         #[allow(non_upper_case_globals)] $($vis)? static $name : $name = $name{};
         impl std::ops::Deref for $name {
@@ -14,5 +14,4 @@
             }
         }
     };
-    (pub static ref $name:ident : $T:ty = $e:expr;) => { lazy_static!{ (pub) static ref $name : $T = $e; } }
 }

@@ -10,7 +10,7 @@
 #![cfg_attr(feature="font", feature(box_syntax))]
 #![cfg_attr(feature="text", feature(type_alias_impl_trait,associated_type_bounds))]
 
-pub mod error; pub use error::{Error, Result, OkOr, Ok, ErrInto, MapErrToError};
+pub mod error; pub use error::{Error, Result, OkOr, Ok};
 //pub use num::Zero;
 pub use cfg_if::cfg_if;
 #[cfg(feature="fehler")] pub use fehler::throws;

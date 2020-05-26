@@ -1,12 +1,3 @@
-pub trait From<T> { fn from(t: T) -> Self; }
-impl<T:std::string::ToString> From<T> for String { fn from(t: T) -> Self { t.to_string() } }
-impl<T,F,O:From<F>> From<Result<T,F>> for Result<T,O> { fn from(r: Result<T,F>) -> Self { r.map_err(From::from) } }
-pub trait Into<U> { fn into(self) -> U; }
-impl<T, U:From<T>> Into<U> for T { fn into(self) -> U { U::from(self) } }
-
-pub trait ErrInto<U> { fn err_into(self) -> U; }
-impl<U, T:Into<U>> ErrInto<U> for T { fn err_into(self) -> U { self.into() } }
-
 #[cfg(not(feature="anyhow"))] mod anyhow {
     #[derive(Debug)] pub struct Error(Box<dyn std::error::Error>);
     impl<E:std::error::Error+'static/*Send+Sync*/> From<E> for Error { fn from(error: E) -> Self { Error(Box::new(error)) } }
@@ -17,9 +8,6 @@ impl<U, T:Into<U>> ErrInto<U> for T { fn err_into(self) -> U { self.into() } }
     impl Error { fn msg(msg: impl std::fmt::Debug+std::fmt::Display+'static) { MessageError(msg) } }
 }
 pub use anyhow::Error;
-impl From<String> for Error { fn from(msg: String) -> Self { Error::msg(msg) } }
-pub trait MapErrToError<T> { fn map_err_to_error(self) -> Result<T,Error>; }
-impl<T> MapErrToError<T> for Result<T,String> { fn map_err_to_error(self) -> Result<T,Error> { self.err_into() } }
 
 pub type Result<T=(), E=Error> = std::result::Result<T, E>;
 
