@@ -17,6 +17,7 @@ impl<T> OkOr<T> for Result<T, ()> { fn ok_or(self, s: &'static str) -> Result<T,
 pub trait Ok<T> { fn ok(self) -> Result<T, Error>; }
 impl<T> Ok<T> for Option<T> { fn ok(self) -> Result<T, Error> { self.ok_or(()).ok_or("none") } }
 
-//#[macro_export] macro_rules! throw { ($val:expr) => { fehler::throw!($crate::core::MessageError(format!("{:?}", $val))); } }
+//#[macro_export] macro_rules! throw { ($val:expr) => { $crate::anyhow::throw!(Error::msg(format!("{:?}", $val))); } }
 //#[macro_export] macro_rules! assert { ($cond:expr, $($val:expr),* ) => { std::assert!($cond,"{}. {:?}", stringify!($cond), ( $( format!("{} = {:?}", stringify!($val), $val), )* ) ); } }
-//#[macro_export] macro_rules! ensure { ($cond:expr) => { (if !$cond { throw!($crate::core::MessageError(stringify!($cond))) } } }
+//#[macro_export] macro_rules! ensure { ($cond:expr) => { if !$cond { $crate::bail!(stringify!($cond)) } } }
+#[macro_export] macro_rules! ensure { ($cond:expr) => { if !$cond { Err($crate::Error::msg(stringify!($cond)))? } } }

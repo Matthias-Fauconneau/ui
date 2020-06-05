@@ -1,4 +1,4 @@
-#[derive(Debug)] pub struct Status<T=std::process::ExitStatus, E=crate::core::Error>(pub Result<T, E>);
+#[derive(Debug)] pub struct Status<T=std::process::ExitStatus, E=crate::error::Error>(pub Result<T, E>);
 impl<T,E> std::ops::Try for Status<T,E> {
     type Ok = T;
     type Error = E;

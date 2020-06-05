@@ -1,6 +1,6 @@
-#[fehler::throws] pub fn rstack_self() { if std::env::args().nth(1).unwrap_or_default() == "rstack-self" { rstack_self::child()?; throw!("") } }
+#[throws] pub fn rstack_self() { if std::env::args().nth(1).unwrap_or_default() == "rstack-self" { rstack_self::child()?; throw!("") } }
 
-#[fehler::throws] pub fn trace_sigint() {
+#[throws] pub fn trace_sigint() {
     rstack_self()?;
     std::thread::spawn(move || {
         for _ in signal_hook::iterator::Signals::new(&[signal_hook::SIGINT]).unwrap().forever() {

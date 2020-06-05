@@ -13,7 +13,7 @@
 pub mod error; pub use error::{Error, Result, OkOr, Ok};
 //pub use num::Zero;
 pub use cfg_if::cfg_if;
-#[cfg(feature="fehler")] pub use fehler::throws;
+#[cfg(feature="fehler")] use fehler::throws;
 //#[cfg(feature="array")] pub use array::map;
 #[cfg(feature="lazy_static")] mod lazy_static;
 cfg_if! { if #[cfg(feature="try_extend")] { mod try_extend; /*pub use try_extend::TryExtend;*/ } }
