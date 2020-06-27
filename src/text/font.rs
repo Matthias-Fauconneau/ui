@@ -1,7 +1,7 @@
-#[allow(unused_imports)]
-use {derive_more::{From,Deref}, std::cmp::{min, max}, crate::{core::{sign,floor_div,ceil_div,Error}, throws, vector::{uint2,size2,vec2,lerp,sq}}, ttf_parser::{GlyphId,Rect}};
+use {std::cmp::{min, max}, crate::{num::{sign,floor_div,ceil_div}, error::{Error,throws}, vector::{uint2,size2,vec2,lerp,sq}}, ttf_parser::{GlyphId,Rect}};
 
-#[derive(From,Deref)]
+use derive_more::Deref; //From
+#[derive(Deref)]
 pub struct Font<'t>(ttf_parser::Font<'t>);
 
 pub struct FontIter<'t, I: 't> { font: &'t Font<'t>, iter: I }
@@ -15,39 +15,39 @@ impl<T> Char for (T, char) { fn char(&self) -> char { self.1 } }
 type GlyphIDs<'t, I:Iterator> = impl 't+Iterator<Item=(I::Item, GlyphId)>; // Map
 impl<'t> Font<'t> {
     pub fn glyphs<I:'t+Iterator<Item:Char>>(&'t self, iter: I) -> FontIter<'t, GlyphIDs<'t, I>> {
-        FontIter{font: self, iter: iter.map(move |item|{let c=item.char(); (item, self.glyph_index(c).unwrap_or_else(||panic!("Missing glyph for '{:?}'",c)))})}
+		FontIter{font: self, iter: iter.map(move |item|{let c=item.char(); (item, self.glyph_index(c).unwrap_or_else(||panic!("Missing glyph for '{:?}'",c)))})}
     }
 }
-pub trait GlyphID { fn id(&self) -> GlyphId; }
-impl<T> GlyphID for (T, GlyphId) { fn id(&self) -> GlyphId { self.1 } }
+pub trait DerefGlyphId { fn id(&self) -> &GlyphId; }
+impl<T> DerefGlyphId for (T, GlyphId) { fn id(&self) -> &GlyphId { &self.1 } }
 
 pub struct Layout<T>{pub x: i32, pub glyph: T, pub bbox: Rect}
 type LayoutGlyphs<'t, I:Iterator> = impl 't+Iterator<Item=Layout<I::Item>>; // FilterMap<Scan>
-impl<'t, I:'t+Iterator<Item:GlyphID>> FontIter<'t, I> {
+impl<'t, I:'t+Iterator<Item:DerefGlyphId>> FontIter<'t, I> {
     pub fn layout(self) -> FontIter<'t, LayoutGlyphs<'t, I>> {
         FontIter{
             font: self.font,
             iter: self.iter.scan((None,0),{let font = self.font; move |(last_id, x), glyph| {
-                        let id = glyph.id();
-                        if let Some(last_id) = *last_id { *x += font.glyphs_kerning(last_id, id).unwrap_or(0) as i32; }
+                        let id = *glyph.id();
+                        if let Some(last_id) = *last_id { *x += font.kerning_subtables().next().map_or(0, |x| x.glyphs_kerning(last_id, id).unwrap_or(0) as i32); }
                         *last_id = Some(id);
                         let next = (*x, glyph);
                         *x += font.glyph_hor_advance(id)? as i32;
                         Some(next)
                    }})
-                   .filter_map({let font = self.font; move |(x, glyph)| { let id=glyph.id(); Some(Layout{x, glyph, bbox: font.glyph_bounding_box(id)?}) }})
+                   .filter_map({let font = self.font; move |(x, glyph)| { let id = *glyph.id(); Some(Layout{x, glyph, bbox: font.glyph_bounding_box(id)?}) }})
         }
     }
 }
 
 #[derive(Default)] pub struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
-impl<T:GlyphID, I:Iterator<Item=Layout<T>>> FontIter<'_, I> {
+impl<T:DerefGlyphId, I:Iterator<Item=Layout<T>>> FontIter<'_, I> {
     pub fn metrics(self) -> LineMetrics {
         let font = &self.font;
         self.iter.fold(Default::default(), |metrics:LineMetrics, item| {
             let Layout{x, glyph, bbox} = item;
             LineMetrics{
-                width: (x + font.glyph_hor_side_bearing(glyph.id()).unwrap() as i32 + bbox.x_max as i32) as u32,
+                width: (x + font.glyph_hor_side_bearing(*glyph.id()).unwrap() as i32 + bbox.x_max as i32) as u32,
                 ascent: max(metrics.ascent, bbox.y_max),
                 descent: min(metrics.descent, bbox.y_min)
             }
@@ -116,14 +116,11 @@ impl<'t> Font<'t> {
     }
 }
 
-rental! { mod rent {
-    #[rental(covariant)]
-    pub struct MapFont {
-        map: Box<memmap::Mmap>,
-        font: super::Font<'map>
-    }
-} } pub use rent::MapFont;
-#[throws]
-pub fn from_file(path: &str) -> MapFont {
-    MapFont::new(box unsafe{memmap::Mmap::map(&std::fs::File::open(path)?)}?, |map| ttf_parser::Font::from_data(map, 0).unwrap().into())
+pub struct Handle<'t>(Font<'t>); // OwningHandle forwards deref, but Font derefs to ttf_parser::Font, while we want OwningHandle to deref to Font not ttf_parser::Font
+impl<'t> std::ops::Deref for Handle<'t> { type Target = Font<'t>; fn deref(&self) -> &Self::Target{ &self.0 } }
+#[throws] pub fn from_file(path: &std::path::Path) -> owning_ref::OwningHandle<Box<memmap::Mmap>, Handle> {
+	owning_ref::OwningHandle::new_with_fn(
+		Box::new(unsafe{memmap::Mmap::map(&std::fs::File::open(path)?)}?),
+		unsafe { |map| Handle(Font(ttf_parser::Font::from_data(&*map, 0).unwrap())) }
+	)
 }

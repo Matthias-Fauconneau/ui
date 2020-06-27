@@ -7,8 +7,8 @@ impl<T, const N : usize> FromIterator<T> for [T; N] {
         let mut iter = into_iter.into_iter();
         for e in array.iter_mut() { e.write(iter.next().unwrap()); } // panic on short iter
         //unsafe { std::mem::transmute::<_, [T; N]>(array) } // cannot transmute between generic types
-        let array_as_initialized = unsafe { crate::ptr::read(&array as *const _ as *const [T; N]) }
-        core::mem::forget(array);
+        let array_as_initialized = unsafe { std::ptr::read(&array as *const _ as *const [T; N]) };
+        std::mem::forget(array);
         array_as_initialized // Self(array_as_initialized)
     }
 }
@@ -51,4 +51,4 @@ impl<T, const N: usize> std::iter::Iterator for IntoIter<T, N> {
     }
 }
 impl<T, const N: usize> Drop for IntoIter<T,N> { fn drop(&mut self) { unsafe { std::ptr::drop_in_place(self.as_mut_slice()) } } }
-impl<T:Zero, const N:usize> Zero for [T; N] { fn zero() -> Self { array::map(|_|Zero::zero()) } }
+impl<T: crate::num::Zero, const N:usize> crate::num::Zero for [T; N] { fn zero() -> Self { map(|_| crate::num::Zero::zero()) } }

@@ -1,9 +1,10 @@
+#![allow(non_upper_case_globals)]
 pub(self) mod raster;
 mod font;
 
 pub use text_size::{TextSize, TextRange}; // ~Range<u32> with impl SliceIndex for String
-use {std::cmp::max, derive_more::Deref, crate::{core::{ceil_div,Single,PeekableExt,Zero},lazy_static, vector::{uint2,size2}, image::{Image, bgra8}}};
-use font::{Font, Layout,GlyphID};
+use {std::cmp::max, derive_more::Deref, crate::{iter::{Single, PeekableExt}, num::{Zero, ceil_div}, vector::{uint2, size2}, image::{Image, bgra8}}};
+use font::{Font, Layout, DerefGlyphId};
 
 #[derive(Deref)] struct LineRange<'t> { #[deref] text: &'t str, range: std::ops::Range<usize>}
 impl LineRange<'_> {
@@ -30,7 +31,15 @@ pub type Color = crate::image::bgrf;
 #[derive(Clone,Copy)] pub struct Attribute<T> { pub range: TextRange, pub attribute: T }
 impl<T> std::ops::Deref for Attribute<T> { type Target=TextRange; fn deref(&self) -> &Self::Target { &self.range } }
 
-lazy_static! { pub static ref default_font : font::MapFont = font::from_file("/usr/share/fonts/noto/NotoSans-Regular.ttf").unwrap(); }
+lazy_static::lazy_static! {
+	static ref default_font : owning_ref::OwningHandle<Box<memmap::Mmap>, font::Handle<'static>> = font::from_file(
+		["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/liberation-fonts/LiberationSans-Regular.ttf"].iter().map(std::path::Path::new)
+			.filter(|x| std::path::Path::exists(x))
+			.next().unwrap()
+	).unwrap();
+
+	pub static ref default_style: [Attribute::<Style>; 1] = [Attribute::<Style>{range: TextRange::up_to(u32::MAX.into()), attribute: Style{color: Color{b:1.,r:1.,g:1.}, style: FontStyle::Normal}}];
+}
 
 pub struct Text<'font, 'text> {
     font : &'font Font<'font>,
@@ -40,7 +49,7 @@ pub struct Text<'font, 'text> {
 }
 impl<'font, 'text> Text<'font, 'text> {
     pub fn new(text : &'text str, style: &'text [Attribute<Style>]) -> Self {
-        Self{font: default_font.suffix(), text, style, size: None}
+		Self{font: &default_font, text, style, size: None}
     }
     pub fn size(&mut self) -> size2 {
         let Self{font, text, ref mut size, ..} = self;
@@ -116,10 +125,11 @@ impl Widget for TextEdit<'_,'_> {
             }
             impl<I:Iterator> NthOrLast for I {}
             let position = uint2{
-                x: font.glyphs(line.chars()).layout().nth_or_last(column).map_or_else(
-                        |last| last.map_or(0, |last| last.x+(font.glyph_hor_advance(last.glyph.id()).unwrap() as i32)),
+                x:
+					font.glyphs(line.chars()).layout().nth_or_last(column).map_or_else(
+                        |last| last.map_or(0, |last| last.x+(font.glyph_hor_advance(*last.glyph.id()).unwrap() as i32)),
                         |layout| layout.x
-                    ) as u32,
+					) as u32,
                 y: (line_index as u32)*(font.height() as u32)
             };
             let height = font.height() as u32;

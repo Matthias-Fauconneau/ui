@@ -1,5 +1,5 @@
 #[macro_export] macro_rules! vector { ($n:literal $v:ident $($tuple:ident)+, $($c:ident)+) => {
-use {crate::core::Zero, std::ops::{Add,Sub,Mul,Div}};
+use {$crate::num::Zero, std::ops::{Add,Sub,Mul,Div}};
 #[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub struct $v<T> { $( pub $c: T ),+ }
 impl<T:Eq> PartialEq<T> for $v<T> { fn eq(&self, b: &T) -> bool { $( self.$c==*b )&&+ } }
 impl<T:Copy> From<T> for $v<T> { fn from(v: T) -> Self { $v{$($c:v),+} } }
@@ -12,8 +12,8 @@ impl<T:Copy+Zero> Zero for $v<T> { fn zero() -> Self { T::zero().into() } }
 //pub fn min<T:Ord>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: a.$c .min( b.$c ) ),+} }
 //pub fn max<T:Ord>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: a.$c .max( b.$c ) ),+} }
 // Panics on unordered values (i.e NaN)
-pub fn min<T:PartialOrd>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: std::cmp::min_by(a.$c, b.$c, |a,b| a.partial_cmp(b).unwrap() ) ),+} }
-pub fn max<T:PartialOrd>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: std::cmp:: max_by(a.$c, b.$c, |a,b| a.partial_cmp(b).unwrap() ) ),+} }
+//pub fn min<T:PartialOrd>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: std::cmp::min_by(a.$c, b.$c, |a,b| a.partial_cmp(b).unwrap() ) ),+} }
+//pub fn max<T:PartialOrd>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: std::cmp:: max_by(a.$c, b.$c, |a,b| a.partial_cmp(b).unwrap() ) ),+} }
 impl<T:Add> Add<$v<T>> for $v<T> { type Output=$v<T::Output>; fn add(self, b: $v<T>) -> Self::Output { Self::Output{$($c: self.$c+b.$c),+} } }
 impl<T:Sub> Sub<$v<T>> for $v<T> { type Output=$v<T::Output>; fn sub(self, b: $v<T>) -> Self::Output { Self::Output{$($c: self.$c-b.$c),+} } }
 impl<T:Mul> Mul<$v<T>> for $v<T> { type Output=$v<T::Output>; fn mul(self, b: $v<T>) -> Self::Output { Self::Output{$($c: self.$c*b.$c),+} } }
@@ -50,5 +50,5 @@ impl xy<u32> { pub const fn as_f32(self) -> xy<f32> { xy{x: self.x as f32, y: se
 pub fn lerp(t : f32, a : vec2, b : vec2) -> xy<f32> { (1.-t)*a + t*b }
 pub fn dot(a:vec2, b:vec2) -> f32 { a.x*b.x + a.y*b.y }
 pub fn sq(x:vec2) -> f32 { dot(x, x) }
-pub fn norm(v:vec2) -> f32 { crate::core::sqrt(sq(v)) }
-pub fn atan(v:vec2) -> f32 { crate::core::atan(v.y,v.x) }
+pub fn norm(v:vec2) -> f32 { crate::num::sqrt(sq(v)) }
+pub fn atan(v:vec2) -> f32 { crate::num::atan(v.y,v.x) }

@@ -5,8 +5,7 @@ authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition = '2018'
 
 [features]
-array = []
-lazy_static = []
+array = [] # const_generics
 try_extend = []
 process = []
 trace_sigint = ['fehler','rstack-self','signal-hook']
@@ -14,25 +13,26 @@ vector = []
 sRGB= ['array','lazy_static']
 image = ['vector']
 thread = ['array']
-widget = []
-window = ['rental','futures','smol','image','client-toolkit']
+widget = ['image']
+window = ['futures','smol','image','client-toolkit','widget']
 color = ['vector','image']
 color-sRGB = ['color','sRGB']
-font = ['memmap','rental']
-text = ['fehler','ttf-parser','derive-more','sRGB','text-size','font','widget']
-default = ['anyhow'] # fehler::throws should $crate
+font = ['fehler','ttf-parser','derive-more','memmap','owning-ref']
+text = ['sRGB','text-size','font','widget']
+#default = ['anyhow','fehler'] # fehler::throws should $crate
+default = ['window']
 
 [dependencies]
 cfg-if = ''
 fehler = { version='', optional=true }
 anyhow = { version='', optional=true }
 derive-more = { package = 'derive_more', version='', optional=true }
+lazy_static = { version='', optional=true }
+owning-ref = { package = 'owning_ref', version='', optional=true }
+futures = { version='^0.3', optional=true }
 
 rstack-self = { version='', features=["dw"], default-features=false, optional=true }
 signal-hook = { version='', optional=true }
-
-futures = { version='^0.3', optional=true }
-rental = { version='', optional=true }
 
 memmap = { version='', optional=true }
 smol = { version='', optional=true }
@@ -47,3 +47,8 @@ client-toolkit = { package = 'smithay-client-toolkit', version = '^0.9', optiona
 name = 'text'
 path = 'examples/text.rs'
 required-features = ['text']
+
+[[example]]
+name = 'window'
+path = 'examples/window.rs'
+required-features = ['window']

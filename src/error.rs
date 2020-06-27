@@ -5,11 +5,13 @@
     impl<M:std::fmt::Debug> std::fmt::Debug for MessageError<M> { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { std::fmt::Debug::fmt(&self.0, f) } }
     impl<M:std::fmt::Display> std::fmt::Display for MessageError<M> { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { std::fmt::Display::fmt(&self.0, f) } }
     impl<M:std::fmt::Debug+std::fmt::Display> std::error::Error for MessageError<M> {}
-    impl Error { fn msg(msg: impl std::fmt::Debug+std::fmt::Display+'static) { MessageError(msg) } }
+    impl Error { pub fn msg(msg: impl std::fmt::Debug+std::fmt::Display+'static) -> Error { Error(Box::new(MessageError(msg))) } }
 }
 pub use anyhow::Error;
 
 pub type Result<T=(), E=Error> = std::result::Result<T, E>;
+
+#[cfg(feature="fehler")] pub use fehler::{throws, throw}; // fehler should $crate
 
 pub trait OkOr<T> { fn ok_or(self, s: &'static str) -> Result<T, Error>; }
 impl<T> OkOr<T> for Result<T, ()> { fn ok_or(self, s: &'static str) -> Result<T, Error> { self.ok().ok_or(Error::msg(s)) } }
@@ -17,7 +19,9 @@ impl<T> OkOr<T> for Result<T, ()> { fn ok_or(self, s: &'static str) -> Result<T,
 pub trait Ok<T> { fn ok(self) -> Result<T, Error>; }
 impl<T> Ok<T> for Option<T> { fn ok(self) -> Result<T, Error> { self.ok_or(()).ok_or("none") } }
 
-//#[macro_export] macro_rules! throw { ($val:expr) => { $crate::anyhow::throw!(Error::msg(format!("{:?}", $val))); } }
+#[cfg(feature="anyhow")] pub use anyhow::{bail, ensure, Context};
+//#[macro_export] macro_rules! bail { ($val:expr) => { $crate::anyhow::throw!(Error::msg(format!("{:?}", $val))); } }
+//#[macro_export] macro_rules! ensure { ($cond:expr) => { if !$cond { $crate::error::bail!(stringify!($cond)) } } }
+//#[macro_export] macro_rules! ensure { ($cond:expr) => { if !$cond { bail!(stringify!($cond)) } } }
+//pub use crate::ensure;
 //#[macro_export] macro_rules! assert { ($cond:expr, $($val:expr),* ) => { std::assert!($cond,"{}. {:?}", stringify!($cond), ( $( format!("{} = {:?}", stringify!($val), $val), )* ) ); } }
-//#[macro_export] macro_rules! ensure { ($cond:expr) => { if !$cond { $crate::bail!(stringify!($cond)) } } }
-#[macro_export] macro_rules! ensure { ($cond:expr) => { if !$cond { Err($crate::Error::msg(stringify!($cond)))? } } }
