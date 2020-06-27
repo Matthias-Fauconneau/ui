@@ -24,4 +24,4 @@ impl<T> Ok<T> for Option<T> { fn ok(self) -> Result<T, Error> { self.ok_or(()).o
 //#[macro_export] macro_rules! ensure { ($cond:expr) => { if !$cond { $crate::error::bail!(stringify!($cond)) } } }
 //#[macro_export] macro_rules! ensure { ($cond:expr) => { if !$cond { bail!(stringify!($cond)) } } }
 //pub use crate::ensure;
-//#[macro_export] macro_rules! assert { ($cond:expr, $($val:expr),* ) => { std::assert!($cond,"{}. {:?}", stringify!($cond), ( $( format!("{} = {:?}", stringify!($val), $val), )* ) ); } }
+#[macro_export] macro_rules! assert { ($cond:expr $(, $val:expr)* ) => { std::assert!($cond, "{}. {:?}", stringify!($cond), ( $( format!("{} = {:?}", stringify!($val), $val), )* ) ); } }

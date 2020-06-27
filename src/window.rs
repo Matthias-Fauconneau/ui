@@ -1,10 +1,10 @@
-use crate::{/*Error, throws,*/ Result, widget::Widget};
+use crate::{Error, throws, Result, widget::Widget};
 
-//#[throws]
-pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future::Future<Output=Result<()>>+'w> {
+#[throws]
+pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Future<Output=Result<()>>+'w {
     use client_toolkit::{
         default_environment, environment::SimpleGlobal, init_default_environment,
-        seat::{SeatData, with_seat_data}, output::with_output_info, get_surface_scale_factor, shm,
+        seat::{SeatData, with_seat_data}, output::with_output_info, get_surface_outputs, get_surface_scale_factor, shm,
         reexports::{
             client::{self, protocol::{wl_surface::WlSurface as Surface, wl_seat::WlSeat as Seat, wl_keyboard as keyboard, wl_pointer as pointer}},
             protocols::wlr::unstable::layer_shell::v1::client::{
@@ -44,7 +44,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
         pool.resize((size.y*stride) as usize).unwrap();
         let mut target = Target::from_bytes(pool.mmap(), size);
         target.set(|_| bgra8{b:0,g:0,r:0,a:0xFF});
-        widget.render(&mut target);
+        widget.paint(&mut target);
         let buffer = pool.buffer(0, size.x as i32, size.y as i32, stride as i32, shm::Format::Argb8888);
         surface.attach(Some(&buffer), 0, 0);
         surface.damage_buffer(0, 0, size.x as i32, size.y as i32);
@@ -71,7 +71,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
 
     surface.commit();
     layer_surface.quick_assign({let env = env.clone(); /*surface*/ move |layer_surface, event, mut data| {
-        let DispatchData{streams, state:State{ pool, widget, ref mut unscaled_size, ..}} = unsafe{restore_erased_lifetime(data.get().unwrap())};
+        let DispatchData{streams, state:State{pool, widget, ref mut unscaled_size, ..}} = unsafe{restore_erased_lifetime(data.get().unwrap())};
         use layer_surface::Event::*;
         match event {
             Closed => quit(streams),
@@ -89,7 +89,13 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
                 }
                 layer_surface.ack_configure(serial);
                 *unscaled_size = size2{x:width, y:height};
-                draw(pool, &surface, *widget, (get_surface_scale_factor(&surface) as u32) * *unscaled_size);
+                let scale = if get_surface_outputs(&surface).is_empty() { // get_surface_outputs defaults to 1 instead of first output factor
+					env.get_all_outputs().first().map(|output| with_output_info(output, |info| info.scale_factor)).flatten().unwrap_or(1)
+				} else {
+					get_surface_scale_factor(&surface)
+				};
+				surface.set_buffer_scale(scale);
+                draw(pool, &surface, *widget, (scale as u32) * *unscaled_size);
             }
             _ => unimplemented!(),
         }
@@ -142,7 +148,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
         unscaled_size: size2{x:0,y:0}
     };
 
-    Ok(async move /*queue*/ {
+    async move /*queue*/ {
         let poll_queue = Async::new(queue.display().create_event_queue())?;  // Registers in the reactor (borrows after moving queue in the async)
         let mut streams = SelectAll::new().peekable();
 
@@ -169,7 +175,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> Result<impl core::future
         }
         drop(seat_listener);
         Ok(())
-    })
+    }
 }
 
-pub fn run(widget: &mut dyn Widget) -> Result<()> { smol::run(window(widget)?) }
+#[throws] pub fn run(widget: &mut dyn Widget) { smol::run(window(widget)?)? }

@@ -19,8 +19,7 @@ color = ['vector','image']
 color-sRGB = ['color','sRGB']
 font = ['fehler','ttf-parser','derive-more','memmap','owning-ref']
 text = ['sRGB','text-size','font','widget']
-#default = ['anyhow','fehler'] # fehler::throws should $crate
-default = ['window']
+default = ['anyhow','fehler','window'] # fehler::throws should $crate
 
 [dependencies]
 cfg-if = ''

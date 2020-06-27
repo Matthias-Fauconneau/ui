@@ -7,10 +7,10 @@ pub struct Image<Data> {
     pub data : Data,
 }
 
-use {std::assert, crate::{slice::{Take,TakeMut}, vector::uint2}};
+use crate::{assert, slice::{Take,TakeMut}, vector::uint2};
 
 impl<D> Image<D> {
-    pub fn index(&self, uint2{x,y}: uint2) -> usize { assert!( x < self.size.x && y < self.size.y ); (y * self.stride + x) as usize }
+    pub fn index(&self, uint2{x,y}: uint2) -> usize { assert!( x < self.size.x && y < self.size.y); (y * self.stride + x) as usize }
 }
 
 impl<D> std::ops::Deref for Image<D> {
@@ -40,22 +40,22 @@ impl<T, D:std::ops::DerefMut<Target=[T]>> std::ops::IndexMut<uint2> for Image<D>
 
 impl<T, D:std::ops::Deref<Target=[T]>> Image<D> {
     pub fn slice_lines(&self, lines: std::ops::Range<u32>) -> Image<&[T]> {
-        assert!(lines.end <= self.size.y, (self.size, lines));
+        assert!(lines.end <= self.size.y, self.size, lines);
         Image{size: size2{x:self.size.x, y:lines.len() as u32}, stride: self.stride, data: &self.data[(lines.start*self.stride) as usize..]}
     }
     pub fn slice(&self, offset: uint2, size: size2) -> Image<&[T]> {
-        assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, (self.size, offset, size));
+        assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, self.size, offset, size);
         Image{size, stride: self.stride, data: &self.data[(offset.y*self.stride+offset.x) as usize..]}
     }
 }
 
 impl<T, D:std::ops::DerefMut<Target=[T]>> Image<D> {
     pub fn slice_lines_mut(&mut self, lines: std::ops::Range<u32>) -> Image<&mut [T]> {
-        assert!(lines.end <= self.size.y, (self.size, lines));
+        assert!(lines.end <= self.size.y, self.size, lines);
         Image{size: size2{x:self.size.x, y:lines.len() as u32}, stride: self.stride, data: &mut self.data[(lines.start*self.stride) as usize..]}
     }
     pub fn slice_mut(&mut self, offset : uint2, size : size2) -> Image<&mut[T]> {
-        assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, (self.size, offset, size));
+        assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, self.size, offset, size);
         Image{size, stride: self.stride, data: &mut self.data[(offset.y*self.stride+offset.x) as usize..]}
     }
 }
@@ -161,7 +161,10 @@ impl<T:Send> Image<&mut [T]> {
 }
 
 impl<T> Image<Vec<T>> {
-    pub fn new(size: size2, data: Vec<T>) -> Self { assert_eq!(data.len(), (size.x*size.y) as usize); Self{stride: size.x, size, data} }
+    pub fn new(size: size2, data: Vec<T>) -> Self {
+		assert_eq!(data.len(), (size.x*size.y) as usize);
+		Self{stride: size.x, size, data}
+	}
     pub fn from_iter<I:IntoIterator<Item=T>>(size : size2, iter : I) -> Self {
         let mut buffer = Vec::with_capacity((size.y*size.x) as usize);
         buffer.extend( iter.into_iter() );
