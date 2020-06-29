@@ -19,9 +19,6 @@ impl From<XYZ> for bgrf { fn from(XYZ{X,Y,Z}: XYZ) -> Self { Self{
     g: - 0.9689 * X + 1.8758 * Y + 0.0415 * Z,
     r:    3.2406 * X - 1.5372 * Y - 0.4986 * Z
 }}}
-#[cfg(feature="color-sRGB")] #[allow(non_snake_case)] pub mod sRGB {
-    use {super::{LCh,Luv,XYZ,bgrf}, crate::image::bgra8};
-    fn clamp(x:f32) -> f32 { if x > 1. {1.} else if x < 0. {0.} else {x} }
-    impl bgrf { fn clamp(&self) -> Self { Self{b:clamp(self.b), g:clamp(self.g), r:clamp(self.r)} } }
+cfg_if! { if #[cfg(feature="sRGB")] {
     impl From<LCh> for bgra8 { fn from(v: LCh) -> Self { v.into::<Luv>().into::<XYZ>().into::<bgrf>().clamp().into() } }
 }

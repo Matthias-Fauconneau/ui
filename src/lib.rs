@@ -16,15 +16,22 @@ pub use cfg_if::cfg_if;
 mod iter;
 mod slice;
 #[cfg(feature="array")] mod array; //pub use array::map;
-mod num; //pub use num::Zero;
-//cfg_if! { if #[cfg(feature="try_extend")] { mod try_extend; /*pub use try_extend::TryExtend;*/ } }
+pub mod num; pub use num::{/*Zero,*/ Ratio};
+//cfg_if! { if #[cfg(feature="try_extend")] { mod try_extend; pub use try_extend::TryExtend; }}
 pub fn log<T:std::fmt::Debug>(v: T) { println!("{:?}", v); }
 #[macro_export] macro_rules! log { ($($A:expr),+) => ( $crate::core::log(($($A),+)) ) }
-//cfg_if! { if #[cfg(feature="trace_sigint")] { mod trace_sigint; /*pub use trace_sigint::{rstack_self, signal_hook};*/ } }
+//cfg_if! { if #[cfg(feature="trace_sigint")] { mod trace_sigint; pub use trace_sigint::{rstack_self, signal_hook}; }}
 //#[cfg(feature="process")] pub mod process;
-cfg_if! { if #[cfg(feature="vector")] { #[macro_use] pub mod vector; pub use vector::{xy, /*uint2,*/ size2, /*vec2, sq*/}; } }
-cfg_if! { if #[cfg(feature="image")] { pub mod image; pub use image::{/*Image,*/ bgra8}; } }
+cfg_if! { if #[cfg(feature="vector")] { #[macro_use] pub mod vector; pub use vector::{xy, uint2, size2, vec2}; }}
+cfg_if! { if #[cfg(feature="image")] { pub mod image; pub use image::{Image, bgra8}; }}
+cfg_if! { if #[cfg(feature="sRGB")] { pub use image::sRGB; }}
 //#[cfg(feature="color")] pub mod color;
-cfg_if! { if #[cfg(feature="widget")] { pub mod widget; pub use widget::{Target, Widget}; } }
-cfg_if! { if #[cfg(feature="window")] { pub mod window; } }
-cfg_if! { if #[cfg(feature="text")] { pub mod text; pub use text::{Text, default_style}; } }
+cfg_if! { if #[cfg(feature="widget")] { pub mod widget; pub use widget::{Target, Widget, bg, fg}; }}
+cfg_if! { if #[cfg(feature="window")] { pub mod window; }}
+cfg_if! { if #[cfg(feature="font")] {
+	mod quad;
+	mod cubic;
+	mod raster;
+	pub mod font; pub use font::Font;
+}}
+cfg_if! { if #[cfg(feature="text")] { pub mod text; pub use text::{Text, default_style}; }}

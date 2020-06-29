@@ -1,3 +1,4 @@
+#![allow(non_upper_case_globals)]
 use crate::vector::size2;
 
 #[derive(Debug)]
@@ -186,6 +187,8 @@ impl<T:Default+Clone> Image<Vec<T>> {
 
 vector!(3 bgr T T T, b g r);
 #[allow(non_camel_case_types)] pub type bgrf = bgr<f32>;
+#[cfg(all(feature="color",feature="sRGB"))]
+impl bgrf { fn clamp(&self) -> Self { use crate::num::clamp; Self{b:clamp(self.b), g:clamp(self.g), r:clamp(self.r)} } }
 
 #[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
 impl std::convert::From<u8> for bgra8 { fn from(v: u8) -> Self { bgra8{b:v,g:v,r:v,a:v} } }
@@ -194,12 +197,13 @@ impl<'t> Image<&'t mut [bgra8]> {
     pub fn from_bytes(slice: &'t mut [u8], size: size2) -> Self { Self::new(unsafe{crate::slice::cast_mut(slice)}, size) }
 }
 
-#[cfg(feature="sRGB")] #[allow(non_snake_case)] pub mod sRGB {
-	#![allow(non_snake_case,non_upper_case_globals)]
-    lazy_static::lazy_static!{ static ref sRGB_forward12 : [u8; 0x1000] = crate::array::map(|i| {
-        let linear = i as f64 / 0xFFF as f64;
-        (0xFF as f64 * if linear > 0.0031308 {1.055*linear.powf(1./2.4)-0.055} else {12.92*linear}).round() as u8
-    }); }
-    pub fn sRGB(v : f32) -> u8 { sRGB_forward12[(0xFFF as f32*v) as usize] } // 4K (fixme: interpolation of a smaller table might be faster)
-    impl From<super::bgrf> for super::bgra8 { fn from(v: super::bgrf) -> Self { Self{b:sRGB(v.b), g:sRGB(v.g), r:sRGB(v.r), a:0xFF} } }
-}
+cfg_if::cfg_if! { if #[cfg(feature="sRGB")] {
+    lazy_static::lazy_static!{
+		static ref sRGB_forward12 : [u8; 0x1000] = crate::array::map(|i| {
+			let linear = i as f64 / 0xFFF as f64;
+			(0xFF as f64 * if linear > 0.0031308 {1.055*linear.powf(1./2.4)-0.055} else {12.92*linear}).round() as u8
+		});
+	}
+    #[allow(non_snake_case)] pub fn sRGB(v : f32) -> u8 { sRGB_forward12[(0xFFF as f32*v) as usize] } // 4K (fixme: interpolation of a smaller table might be faster)
+    impl From<bgrf> for super::bgra8 { fn from(v: bgrf) -> Self { Self{b:sRGB(v.b), g:sRGB(v.g), r:sRGB(v.r), a:0xFF} } }
+}}

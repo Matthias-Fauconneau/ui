@@ -16,10 +16,10 @@ thread = ['array']
 widget = ['image']
 window = ['futures','smol','image','client-toolkit','widget']
 color = ['vector','image']
-color-sRGB = ['color','sRGB']
-font = ['fehler','ttf-parser','derive-more','memmap','owning-ref']
-text = ['sRGB','text-size','font','widget']
-default = ['anyhow','fehler','window'] # fehler::throws should $crate
+font = ['derive-more','fehler','ttf-parser','kurbo']
+font-file = ['font','owning-ref','memmap']
+text = ['font','sRGB','text-size','widget','font-file','lazy_static']
+default = ['anyhow','fehler','window','sRGB'] # fehler::throws should $crate
 
 [dependencies]
 cfg-if = ''
@@ -39,6 +39,7 @@ smol = { version='', optional=true }
 text-size = { version='', optional=true }
 
 ttf-parser = { version='', optional=true }
+kurbo = { version='', optional=true }
 
 client-toolkit = { package = 'smithay-client-toolkit', version = '^0.9', optional = true }
 

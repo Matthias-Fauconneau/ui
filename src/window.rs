@@ -1,4 +1,4 @@
-use crate::{Error, throws, Result, widget::Widget};
+use crate::{error::{throws, Error, Result}, widget::Widget};
 
 #[throws]
 pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Future<Output=Result<()>>+'w {
@@ -39,12 +39,12 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
     }
     fn quit(streams: &mut Peekable<SelectAll<LocalBoxStream<'_, Item>>>) { streams.get_mut().push(iter(once(Item::Quit)).boxed_local()) }
 
-    fn draw(pool: &mut shm::MemPool, surface: &Surface, widget: &mut dyn Widget, size: size2) {
+    #[throws] fn draw(pool: &mut shm::MemPool, surface: &Surface, widget: &mut dyn Widget, size: size2) {
         let stride = size.x*4;
-        pool.resize((size.y*stride) as usize).unwrap();
+        pool.resize((size.y*stride) as usize)?;
         let mut target = Target::from_bytes(pool.mmap(), size);
         target.set(|_| bgra8{b:0,g:0,r:0,a:0xFF});
-        widget.paint(&mut target);
+        widget.paint(&mut target)?;
         let buffer = pool.buffer(0, size.x as i32, size.y as i32, stride as i32, shm::Format::Argb8888);
         surface.attach(Some(&buffer), 0, 0);
         surface.damage_buffer(0, 0, size.x as i32, size.y as i32);
@@ -62,7 +62,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
     let surface = env.create_surface_with_scale_callback(|scale, surface, mut data| {
         let DispatchData{state:State{pool, widget, unscaled_size, ..}, ..} = unsafe{restore_erased_lifetime(data.get().unwrap())};
         surface.set_buffer_scale(scale);
-        draw(pool, &surface, *widget, (scale as u32)* *unscaled_size);
+        draw(pool, &surface, *widget, (scale as u32)* *unscaled_size).unwrap()
     });
 
     let layer_shell = env.require_global::<LayerShell>();
@@ -95,7 +95,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
 					get_surface_scale_factor(&surface)
 				};
 				surface.set_buffer_scale(scale);
-                draw(pool, &surface, *widget, (scale as u32) * *unscaled_size);
+                draw(pool, &surface, *widget, (scale as u32) * *unscaled_size).unwrap();
             }
             _ => unimplemented!(),
         }

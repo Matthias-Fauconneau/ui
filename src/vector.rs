@@ -47,8 +47,9 @@ impl xy<u32> { pub const fn as_f32(self) -> xy<f32> { xy{x: self.x as f32, y: se
 #[allow(non_camel_case_types)] pub type size2 = xy<u32>;
 #[allow(non_camel_case_types)] pub type vec2 = xy<f32>;
 
-pub fn lerp(t : f32, a : vec2, b : vec2) -> xy<f32> { (1.-t)*a + t*b }
-pub fn dot(a:vec2, b:vec2) -> f32 { a.x*b.x + a.y*b.y }
+pub fn lerp(t: f32, a: vec2, b: vec2) -> xy<f32> { (1.-t)*a + t*b }
+pub fn dot(a: vec2, b: vec2) -> f32 { a.x*b.x + a.y*b.y }
+pub fn cross(a: vec2, b: vec2) -> f32 { a.x*b.y - a.y*b.x }
 pub fn sq(x:vec2) -> f32 { dot(x, x) }
 pub fn norm(v:vec2) -> f32 { crate::num::sqrt(sq(v)) }
 pub fn atan(v:vec2) -> f32 { crate::num::atan(v.y,v.x) }

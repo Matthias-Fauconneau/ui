@@ -1,10 +1,59 @@
 #![allow(non_upper_case_globals)]
-pub(self) mod raster;
-mod font;
+use {std::cmp::{min, max}, ttf_parser::{GlyphId,Rect}, font::Font};
+
+pub struct FontIter<'t, I: 't> { font: &'t Font<'t>, iter: I }
+impl<'t, T> std::ops::Deref for FontIter<'t, T> { type Target = T; fn deref(&self) -> &Self::Target { &self.iter } }
+impl<'t, T> std::ops::DerefMut for FontIter<'t, T> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.iter } }
+impl<'t, I:IntoIterator> IntoIterator for FontIter<'t, I> { type Item=I::Item; type IntoIter=I::IntoIter; fn into_iter(self) -> Self::IntoIter { self.iter.into_iter() } }
+
+pub trait Char { fn char(&self) -> char; }
+impl Char for char { fn char(&self) -> char { *self } }
+impl<T> Char for (T, char) { fn char(&self) -> char { self.1 } }
+type GlyphIDs<'t, I:Iterator> = impl 't+Iterator<Item=(I::Item, GlyphId)>; // Map
+impl<'t> Font<'t> {
+    pub fn glyphs<I:'t+Iterator<Item:Char>>(&'t self, iter: I) -> FontIter<'t, GlyphIDs<'t, I>> {
+		FontIter{font: self, iter: iter.map(move |item|{let c=item.char(); (item, self.glyph_index(c).unwrap_or_else(||panic!("Missing glyph for '{:?}'",c)))})}
+    }
+}
+pub trait DerefGlyphId { fn id(&self) -> &GlyphId; }
+impl<T> DerefGlyphId for (T, GlyphId) { fn id(&self) -> &GlyphId { &self.1 } }
+
+pub struct Layout<T>{pub x: i32, pub glyph: T, pub bbox: Rect}
+type LayoutGlyphs<'t, I:Iterator> = impl 't+Iterator<Item=Layout<I::Item>>; // FilterMap<Scan>
+impl<'t, I:'t+Iterator<Item:DerefGlyphId>> FontIter<'t, I> {
+    pub fn layout(self) -> FontIter<'t, LayoutGlyphs<'t, I>> {
+        FontIter{
+            font: self.font,
+            iter: self.iter.scan((None,0),{let font = self.font; move |(last_id, x), glyph| {
+                        let id = *glyph.id();
+                        if let Some(last_id) = *last_id { *x += font.kerning_subtables().next().map_or(0, |x| x.glyphs_kerning(last_id, id).unwrap_or(0) as i32); }
+                        *last_id = Some(id);
+                        let next = (*x, glyph);
+                        *x += font.glyph_hor_advance(id)? as i32;
+                        Some(next)
+                   }})
+                   .filter_map({let font = self.font; move |(x, glyph)| { let id = *glyph.id(); Some(Layout{x, glyph, bbox: font.glyph_bounding_box(id)?}) }})
+        }
+    }
+}
+
+#[derive(Default)] pub struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
+impl<T:DerefGlyphId, I:Iterator<Item=Layout<T>>> FontIter<'_, I> {
+    pub fn metrics(self) -> LineMetrics {
+        let font = &self.font;
+        self.iter.fold(Default::default(), |metrics:LineMetrics, item| {
+            let Layout{x, glyph, bbox} = item;
+            LineMetrics{
+                width: (x + font.glyph_hor_side_bearing(*glyph.id()).unwrap() as i32 + bbox.x_max as i32) as u32,
+                ascent: max(metrics.ascent, bbox.y_max),
+                descent: min(metrics.descent, bbox.y_min)
+            }
+        })
+    }
+}
 
 pub use text_size::{TextSize, TextRange}; // ~Range<u32> with impl SliceIndex for String
-use {std::cmp::max, derive_more::Deref, crate::{iter::{Single, PeekableExt}, num::{Zero, ceil_div}, vector::{uint2, size2}, image::{Image, bgra8}}};
-use font::{Font, Layout, DerefGlyphId};
+use {derive_more::Deref, crate::{iter::{Single, PeekableExt}, num::{Zero, ceil_div}, vector::{uint2, size2}, image::{Image, bgra8}}};
 
 #[derive(Deref)] struct LineRange<'t> { #[deref] text: &'t str, range: std::ops::Range<usize>}
 impl LineRange<'_> {
@@ -32,13 +81,13 @@ pub type Color = crate::image::bgrf;
 impl<T> std::ops::Deref for Attribute<T> { type Target=TextRange; fn deref(&self) -> &Self::Target { &self.range } }
 
 lazy_static::lazy_static! {
-	static ref default_font : owning_ref::OwningHandle<Box<memmap::Mmap>, font::Handle<'static>> = font::from_file(
+	static ref default_font : font::File = font::open(
 		["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/liberation-fonts/LiberationSans-Regular.ttf"].iter().map(std::path::Path::new)
 			.filter(|x| std::path::Path::exists(x))
 			.next().unwrap()
 	).unwrap();
-
-	pub static ref default_style: [Attribute::<Style>; 1] = [Attribute::<Style>{range: TextRange::up_to(u32::MAX.into()), attribute: Style{color: Color{b:1.,r:1.,g:1.}, style: FontStyle::Normal}}];
+	pub static ref default_style: [Attribute::<Style>; 1] =
+		[Attribute::<Style>{range: TextRange::up_to(u32::MAX.into()), attribute: Style{color: Color{b:1.,r:1.,g:1.}, style: FontStyle::Normal}}];
 }
 
 pub struct Text<'font, 'text> {
