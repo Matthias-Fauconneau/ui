@@ -40,5 +40,6 @@ impl Ratio {
     pub fn ceil(self, x: i32) -> i32 { sign(x)*ceil_div(x.abs() as u32*self.num, self.div) as i32 }
 }
 impl std::ops::Mul<f32> for Ratio { type Output=f32; fn mul(self, b: f32) -> Self::Output { b*(self.num as f32)/(self.div as f32) } }
-impl std::ops::Mul<u32> for Ratio { type Output=u32; fn mul(self, b: u32) -> Self::Output { floor_div(b*self.num, self.div) } }
+//impl std::ops::Mul<u32> for Ratio { type Output=u32; #[track_caller] fn mul(self, b: u32) -> Self::Output { floor_div(b*self.num, self.div) } }
+impl std::ops::Mul<i32> for Ratio { type Output=i32; #[track_caller] fn mul(self, b: i32) -> Self::Output { b * self.num as i32 / self.div as i32 /*floor_div -> -∞*/ } }
 }}

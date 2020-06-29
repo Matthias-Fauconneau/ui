@@ -6,10 +6,11 @@ edition = '2018'
 
 [features]
 array = [] # const_generics
-try_extend = []
-process = []
-trace_sigint = ['fehler','rstack-self','signal-hook']
-vector = []
+#try_extend = []
+num = []
+#process = []
+#trace_sigint = ['fehler','rstack-self','signal-hook']
+vector = ['num']
 sRGB= ['array','lazy_static']
 image = ['vector']
 thread = ['array']
@@ -17,9 +18,10 @@ widget = ['image']
 window = ['futures','smol','image','client-toolkit','widget']
 color = ['vector','image']
 font = ['derive-more','fehler','ttf-parser','kurbo']
+graphic = ['fehler','widget','sRGB']
 font-file = ['font','owning-ref','memmap']
 text = ['font','sRGB','text-size','widget','font-file','lazy_static']
-default = ['anyhow','fehler','window','sRGB'] # fehler::throws should $crate
+default = ['anyhow','fehler','window','graphic'] # fehler::throws should $crate
 
 [dependencies]
 cfg-if = ''

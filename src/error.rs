@@ -1,3 +1,5 @@
+#[cfg(feature="fehler")] pub use fehler::{throws, throw}; // fehler should $crate
+
 #[cfg(not(feature="anyhow"))] mod anyhow {
     #[derive(Debug)] pub struct Error(Box<dyn std::error::Error>);
     impl<E:std::error::Error+'static/*Send+Sync*/> From<E> for Error { fn from(error: E) -> Self { Error(Box::new(error)) } }
@@ -10,8 +12,6 @@
 pub use anyhow::Error;
 
 pub type Result<T=(), E=Error> = std::result::Result<T, E>;
-
-#[cfg(feature="fehler")] pub use fehler::{throws, throw}; // fehler should $crate
 
 pub trait OkOr<T> { fn ok_or(self, s: &'static str) -> Result<T, Error>; }
 impl<T> OkOr<T> for Result<T, ()> { fn ok_or(self, s: &'static str) -> Result<T, Error> { self.ok().ok_or(Error::msg(s)) } }

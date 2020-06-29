@@ -3,9 +3,7 @@ use derive_more::Deref;
 #[derive(Deref)]
 pub struct Font<'t>(ttf_parser::Font<'t>);
 
-use {crate::{num::Ratio, vector::{uint2, size2, vec2}}, ttf_parser::Rect, crate::Image};
-
-impl std::ops::Mul<uint2> for Ratio { type Output=uint2; fn mul(self, b: uint2) -> Self::Output { uint2{x:self*b.x, y:self*b.y} } }
+use {crate::{num::Ratio, vector::{size2, vec2}}, ttf_parser::Rect, crate::Image};
 
 pub struct Outline { scale : Ratio, x_min: i32, y_max: i32, target : Image<Vec<f32>>, first : Option<vec2>, p0 : Option<vec2>}
 impl Outline {
