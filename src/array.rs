@@ -2,7 +2,7 @@ pub trait FromIterator<T> {
     fn from_iter<I:std::iter::IntoIterator<Item=T>>(into_iter: I) -> Self;
 }
 impl<T, const N : usize> FromIterator<T> for [T; N] {
-    fn from_iter<I>(into_iter:I) -> Self where I:std::iter::IntoIterator<Item=T> {
+    #[track_caller] fn from_iter<I>(into_iter:I) -> Self where I:std::iter::IntoIterator<Item=T> {
         let mut array : [std::mem::MaybeUninit<T>; N] = std::mem::MaybeUninit::uninit_array();
         let mut iter = into_iter.into_iter();
         for e in array.iter_mut() { e.write(iter.next().unwrap()); } // panic on short iter
@@ -13,7 +13,7 @@ impl<T, const N : usize> FromIterator<T> for [T; N] {
     }
 }
 pub trait Iterator : std::iter::Iterator {
-    fn collect<B: FromIterator<Self::Item>>(self) -> B where Self:Sized { FromIterator::from_iter(self) }
+    #[track_caller] fn collect<B: FromIterator<Self::Item>>(self) -> B where Self:Sized { FromIterator::from_iter(self) }
 }
 impl<I:std::iter::Iterator> Iterator for I {}
 pub fn map<T, F:Fn(usize)->T, const N:usize>(f : F) -> [T; N] { Iterator::collect((0..N).map(f)) }

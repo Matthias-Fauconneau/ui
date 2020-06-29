@@ -181,8 +181,8 @@ impl<T> Image<Vec<T>> {
     pub fn as_mut(&mut self) -> Image<&mut [T]> { Image{stride:self.stride, size:self.size, data: self.data.as_mut()} }
 }
 
-impl<T:Default+Clone> Image<Vec<T>> {
-    pub fn zero(size: size2) -> Self { Self::new(size, vec![T::default(); (size.x*size.y) as usize]) }
+impl<T:crate::num::Zero> Image<Vec<T>> {
+    pub fn zero(size: size2) -> Self { Image::<Vec<T>>::from_iter(size, std::iter::from_fn(|| Some(Zero::zero()))) }
 }
 
 vector!(3 bgr T T T, b g r);

@@ -1,10 +1,10 @@
-use crate::{error::{throws, Error}, num::Ratio, vector::{self, xy, int2, size2}, font::{self, Font}};
+use crate::{error::{throws, Error}, num::Ratio, vector::{self, int2, size2}, font::Font};
 
 impl std::ops::Mul<int2> for Ratio { type Output=int2; #[track_caller] fn mul(self, b: int2) -> Self::Output { int2{x:self*b.x, y:self*b.y} } }
 
 #[derive(Default)] pub struct Rect { pub top_left: int2, pub size: size2 }
 
-pub struct Glyph { pub top_left: int2, pub id: font::GlyphId }
+pub struct Glyph { pub top_left: int2, pub id: ttf_parser::GlyphId }
 
 pub struct Graphic<'t> {
 	pub fill: Vec<Rect>,
@@ -20,11 +20,8 @@ impl<T, I:Iterator<Item=(T,T)>> Bounds for I where T: vector::ComponentWiseMinMa
 
 impl Graphic<'_> {
 	pub fn bounds(&self) -> Rect {
-		self.fill.iter().map(|r| (r.top_left, r.top_left.iter().zip(r.size.iter()).map(|(o,&s)| o + if s < i32::MAX as u32 { s as i32 } else { 0 }).collect()))
-		.chain( self.glyph.iter().map(|g| (g.top_left, g.top_left + {
-				let b = self.font.glyph_bounding_box(g.id).unwrap();
-				xy{x: self.scale.ceil(b.x_max as i32) - self.scale.floor(b.x_min as i32), y: self.scale.ceil(b.y_max as i32) - self.scale.floor(b.y_min as i32)}
-		})))
+					self.fill.iter().map(|r| (r.top_left, r.top_left.iter().zip(r.size.iter()).map(|(o,&s)| o + if s < i32::MAX as u32 { s as i32 } else { 0 }).collect()))
+		.chain( self.glyph.iter().map(|g| (g.top_left, g.top_left + self.font.size(self.scale, g.id).into())) )
 		.bounds()
 		.map(|(top_left, bottom_right)| Rect{top_left, size: (bottom_right-top_left).into()})
 		.unwrap_or_default()
@@ -36,7 +33,7 @@ pub struct GraphicView<'t> { graphic: Graphic<'t>, view: Rect }
 use crate::{widget::{Target, Widget, fg}, image::{bgra8, sRGB}};
 
 impl Widget for GraphicView<'_> {
-    fn size(&mut self, size: size2) -> size2 { dbg!(self.view.size.iter().zip(size.iter()).map(|(&v,&s)| if v > 0 { v } else { s }).collect()) }
+    fn size(&mut self, size: size2) -> size2 { self.view.size.iter().zip(size.iter()).map(|(&v,&s)| if v > 0 { v } else { s }).collect() }
     #[throws] fn paint(&mut self, target : &mut Target) {
 		for &Rect{top_left, size} in &self.graphic.fill {
 			let offset = (top_left-self.view.top_left).into();

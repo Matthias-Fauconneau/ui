@@ -1,5 +1,5 @@
 //#![cfg_attr(feature="", feature(trait_alias))]
-#![cfg_attr(any(feature="image",all(feature="num",feature="font")), feature(track_caller))]
+#![cfg_attr(any(feature="array",feature="image",all(feature="num",feature="font")), feature(track_caller))]
 #![cfg_attr(feature="array", allow(incomplete_features),feature(const_generics,maybe_uninit_extra,maybe_uninit_uninit_array))]
 //#![cfg_attr(feature="lazy_static", feature(maybe_uninit_ref))]
 //#![cfg_attr(feature="try_extend", feature(try_trait))]
@@ -17,7 +17,7 @@ pub mod error; pub use error::{Error, Result/*, OkOr, Ok*/};
 pub use cfg_if::cfg_if;
 mod iter;
 mod slice;
-#[cfg(feature="array")] mod array; //pub use array::map;
+#[cfg(feature="array")] pub mod array; //pub use array::{Iterator, map};
 cfg_if! { if #[cfg(feature="num")] { pub mod num; pub use num::{Zero, Ratio}; } }
 //cfg_if! { if #[cfg(feature="try_extend")] { mod try_extend; pub use try_extend::TryExtend; }}
 pub fn log<T:std::fmt::Debug>(v: T) { println!("{:?}", v); }

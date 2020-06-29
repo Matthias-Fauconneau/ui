@@ -57,6 +57,7 @@ impl<T:Ord> Ord for xy<T> { fn cmp(&self, b: &xy<T>) -> std::cmp::Ordering { // 
 } }*/
 
 impl From<xy<i32>> for xy<u32> { fn from(i: xy<i32>) -> Self { xy{x: i.x as u32, y: i.y as u32} } }
+impl From<xy<u32>> for xy<i32> { fn from(u: xy<u32>) -> Self { xy{x: u.x as i32, y: u.y as i32} } }
 impl From<xy<u32>> for xy<f32> { fn from(f: xy<u32>) -> Self { xy{x: f.x as f32, y: f.y as f32} } }
 //impl From<xy<f32>> for xy<u32> { fn from(f: xy<f32>) -> Self { xy{x: f.x as u32, y: f.y as u32} } }
 

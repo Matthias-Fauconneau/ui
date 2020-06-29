@@ -157,13 +157,10 @@ pub fn line(target : &mut Image<&mut [f32]>, p0: vec2, p1: vec2) {
 
 pub fn fill(edges : &Image<&[f32]>) -> Image<Vec<f32>> {
     assert!(edges.stride == edges.size.x);
-    Image::new(size2{x: edges.size.x, y: edges.size.y-1},
-        edges.iter().scan(0.,|acc, &a| {
-            *acc += a;
-            Some(acc.abs().min(1.0))
-            //assert!(0. <= *acc && *acc <= 1., *acc);
-            //Some(*acc)
-        })
-        .take(((edges.size.y-1)*edges.size.x) as usize)
-        .collect() )
+    let size = edges.size-size2{x:0, y:1};
+    Image::from_iter(size, edges.iter().scan(0.,|acc, &a| {
+		*acc += a;
+		//assert!(0. <= *acc && *acc <= 1., *acc);
+		Some(acc.abs().min(1.0))
+	}).take((size.y*size.x) as usize))
 }
