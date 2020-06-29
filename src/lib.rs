@@ -1,5 +1,5 @@
 //#![cfg_attr(feature="", feature(trait_alias))]
-#![cfg_attr(all(feature="num",feature="font"), feature(track_caller))]
+#![cfg_attr(any(feature="image",all(feature="num",feature="font")), feature(track_caller))]
 #![cfg_attr(feature="array", allow(incomplete_features),feature(const_generics,maybe_uninit_extra,maybe_uninit_uninit_array))]
 //#![cfg_attr(feature="lazy_static", feature(maybe_uninit_ref))]
 //#![cfg_attr(feature="try_extend", feature(try_trait))]

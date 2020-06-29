@@ -23,7 +23,7 @@ impl Graphic<'_> {
 		self.fill.iter().map(|r| (r.top_left, r.top_left.iter().zip(r.size.iter()).map(|(o,&s)| o + if s < i32::MAX as u32 { s as i32 } else { 0 }).collect()))
 		.chain( self.glyph.iter().map(|g| (g.top_left, g.top_left + {
 				let b = self.font.glyph_bounding_box(g.id).unwrap();
-				xy{x: b.x_max as i32-b.x_min as i32, y: b.y_max as i32-b.y_min as i32}
+				xy{x: self.scale.ceil(b.x_max as i32) - self.scale.floor(b.x_min as i32), y: self.scale.ceil(b.y_max as i32) - self.scale.floor(b.y_min as i32)}
 		})))
 		.bounds()
 		.map(|(top_left, bottom_right)| Rect{top_left, size: (bottom_right-top_left).into()})

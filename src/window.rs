@@ -1,4 +1,4 @@
-use crate::{error::{throws, Error, Result}, widget::Widget};
+use crate::{error::{throws, Error, Result}, num, widget::Widget};
 
 #[throws]
 pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Future<Output=Result<()>>+'w {
@@ -77,25 +77,22 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
             Closed => quit(streams),
             Configure{serial, width, height} => {
                 if !(width > 0 && height > 0) {
-                    let (scale, size) = with_output_info(
-                        env.get_all_outputs().first().unwrap(),
-                        |info| (info.scale_factor as u32, info.modes.first().unwrap().dimensions)
-                    ).unwrap();
+                    let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(), |info| (info.scale_factor as u32, info.modes.first().unwrap().dimensions)).unwrap();
                     let size = widget.size(size2{x:(size.0 as u32), y:(size.1 as u32)});
-                    layer_surface.set_size(size.x/scale, size.y/scale);
+                    layer_surface.set_size(num::ceil_div(size.x, scale), num::ceil_div(size.y, scale));
                     layer_surface.ack_configure(serial);
                     surface.commit();
-                    return;
-                }
-                layer_surface.ack_configure(serial);
-                *unscaled_size = size2{x:width, y:height};
-                let scale = if get_surface_outputs(&surface).is_empty() { // get_surface_outputs defaults to 1 instead of first output factor
-					env.get_all_outputs().first().map(|output| with_output_info(output, |info| info.scale_factor)).flatten().unwrap_or(1)
-				} else {
-					get_surface_scale_factor(&surface)
-				};
-				surface.set_buffer_scale(scale);
-                draw(pool, &surface, *widget, (scale as u32) * *unscaled_size).unwrap();
+                } else {
+					layer_surface.ack_configure(serial);
+					*unscaled_size = size2{x:width, y:height};
+					let scale = if get_surface_outputs(&surface).is_empty() { // get_surface_outputs defaults to 1 instead of first output factor
+						env.get_all_outputs().first().map(|output| with_output_info(output, |info| info.scale_factor)).flatten().unwrap_or(1)
+					} else {
+						get_surface_scale_factor(&surface)
+					};
+					surface.set_buffer_scale(scale);
+					draw(pool, &surface, *widget, (scale as u32) * *unscaled_size).unwrap();
+				}
             }
             _ => unimplemented!(),
         }

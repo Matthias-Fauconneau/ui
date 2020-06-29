@@ -5,7 +5,7 @@ pub struct Font<'t>(ttf_parser::Font<'t>);
 
 use {crate::{num::Ratio, vector::{size2, vec2}}, ttf_parser::Rect, crate::Image};
 
-pub struct Outline { scale : Ratio, x_min: i32, y_max: i32, target : Image<Vec<f32>>, first : Option<vec2>, p0 : Option<vec2>}
+pub struct Outline { scale : f32, x_min: f32, y_max: f32, target : Image<Vec<f32>>, first : Option<vec2>, p0 : Option<vec2>}
 impl Outline {
     pub fn new(scale: Ratio, bbox: Rect) -> Self {
         let x_min = scale.floor(bbox.x_min as i32);
@@ -14,9 +14,9 @@ impl Outline {
             x: (scale.ceil(bbox.x_max as i32)-x_min) as u32,
             y: (y_max-scale.floor(bbox.y_min as i32)) as u32+1
         };
-        Self{scale, x_min, y_max, target: Image::new(size, vec![0.; (size.x*size.y) as usize]), first:None, p0:None}
+        Self{scale: scale.into(), x_min: x_min as f32, y_max: y_max as f32, target: Image::new(size, vec![0.; (size.x*size.y) as usize]), first:None, p0:None}
     }
-    fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-(self.x_min as f32), y: (self.y_max as f32)-self.scale*y} }
+    fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-self.x_min, y: -self.scale*y+self.y_max} }
 }
 
 use crate::{quad::quad, cubic::cubic, raster::{self, line}};
