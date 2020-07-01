@@ -5,52 +5,48 @@ authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition = '2018'
 
 [features]
-array = [] # const_generics
-#try_extend = []
+trace = ['fehler', 'rstack-self']
+timeout = ['trace']
+array = []
 num = []
-#process = []
-#trace_sigint = ['fehler','rstack-self','signal-hook']
 vector = ['num']
+image = ['vector','timeout']
 sRGB= ['array','lazy_static']
-image = ['vector']
-thread = ['array']
 widget = ['image']
 window = ['futures','smol','image','client-toolkit','widget']
-color = ['vector','image']
 font = ['derive-more','fehler','ttf-parser','kurbo']
 graphic = ['fehler','widget','sRGB']
 font-file = ['font','owning-ref','memmap']
 text = ['font','sRGB','text-size','widget','font-file','lazy_static']
+color = ['vector','image']
 default = ['anyhow','fehler','window','graphic'] # fehler::throws should $crate
 
 [dependencies]
 cfg-if = ''
 fehler = { version='', optional=true }
 anyhow = { version='', optional=true }
-derive-more = { package = 'derive_more', version='', optional=true }
+derive-more = { package='derive_more', version='', optional=true }
 lazy_static = { version='', optional=true }
-owning-ref = { package = 'owning_ref', version='', optional=true }
+owning-ref = { package='owning_ref', version='', optional=true }
 futures = { version='^0.3', optional=true }
-
-rstack-self = { version='', features=["dw"], default-features=false, optional=true }
-signal-hook = { version='', optional=true }
-
-memmap = { version='', optional=true }
 smol = { version='', optional=true }
 
-text-size = { version='', optional=true }
+rstack-self = { version='', features=["dw"], default-features=false, optional=true }
+memmap = { version='', optional=true }
 
-ttf-parser = { version='', optional=true }
+client-toolkit = { package='smithay-client-toolkit', version='', optional=true }
+
 kurbo = { version='', optional=true }
+ttf-parser = { version='', optional=true }
 
-client-toolkit = { package = 'smithay-client-toolkit', version = '^0.9', optional = true }
-
-[[example]]
-name = 'text'
-path = 'examples/text.rs'
-required-features = ['text']
+text-size = { version='', optional=true }
 
 [[example]]
 name = 'window'
 path = 'examples/window.rs'
 required-features = ['window']
+
+[[example]]
+name = 'text'
+path = 'examples/text.rs'
+required-features = ['text']

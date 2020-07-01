@@ -168,7 +168,7 @@ impl<T> Image<Vec<T>> {
 	}
     pub fn from_iter<I:IntoIterator<Item=T>>(size : size2, iter : I) -> Self {
         let mut buffer = Vec::with_capacity((size.y*size.x) as usize);
-        buffer.extend( iter.into_iter() );
+        crate::timeout(|| buffer.extend(iter.into_iter()) );
         Image::<Vec<T>>::new(size, buffer)
     }
     pub fn uninitialized(size: size2) -> Self {
