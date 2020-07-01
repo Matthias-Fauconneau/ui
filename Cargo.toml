@@ -6,11 +6,11 @@ edition = '2018'
 
 [features]
 trace = ['fehler', 'rstack-self']
-timeout = ['trace']
+timeout = ['trace'] # thread_spawn_unchecked
 array = []
 num = []
 vector = ['num']
-image = ['vector','timeout']
+image = ['vector']
 sRGB= ['array','lazy_static']
 widget = ['image']
 window = ['futures','smol','image','client-toolkit','widget']
@@ -33,6 +33,7 @@ smol = { version='', optional=true }
 
 rstack-self = { version='', features=["dw"], default-features=false, optional=true }
 memmap = { version='', optional=true }
+signal-hook = { version='', optional=true }
 
 client-toolkit = { package='smithay-client-toolkit', version='', optional=true }
 

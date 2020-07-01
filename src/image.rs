@@ -1,12 +1,13 @@
 #![allow(non_upper_case_globals)]
 use crate::vector::size2;
 
-#[derive(Debug)]
 pub struct Image<Data> {
     pub stride : u32,
     pub size : size2,
     pub data : Data,
 }
+
+impl<Data> std::fmt::Debug for Image<Data> { fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(),std::fmt::Error> { write!(f, "{:?} {:?}", self.size, self.stride) } }
 
 use crate::{assert, slice::{Take,TakeMut}, vector::uint2};
 
@@ -168,7 +169,7 @@ impl<T> Image<Vec<T>> {
 	}
     pub fn from_iter<I:IntoIterator<Item=T>>(size : size2, iter : I) -> Self {
         let mut buffer = Vec::with_capacity((size.y*size.x) as usize);
-        crate::timeout(|| buffer.extend(iter.into_iter()) );
+        buffer.extend(iter.into_iter().take(buffer.capacity()));
         Image::<Vec<T>>::new(size, buffer)
     }
     pub fn uninitialized(size: size2) -> Self {
@@ -185,7 +186,7 @@ impl<T:crate::num::Zero> Image<Vec<T>> {
     pub fn zero(size: size2) -> Self { Image::<Vec<T>>::from_iter(size, std::iter::from_fn(|| Some(Zero::zero()))) }
 }
 
-vector!(3 bgr T T T, b g r);
+vector!(3 bgr T T T, b g r, Blue Green Red);
 #[allow(non_camel_case_types)] pub type bgrf = bgr<f32>;
 #[cfg(all(feature="color",feature="sRGB"))]
 impl bgrf { fn clamp(&self) -> Self { use crate::num::clamp; Self{b:clamp(self.b), g:clamp(self.g), r:clamp(self.r)} } }

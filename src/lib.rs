@@ -14,7 +14,9 @@ mod slice;
 #[cfg(feature="array")] pub mod array; //pub use array::{Iterator, map};
 cfg_if! { if #[cfg(feature="num")] { pub mod num; pub use num::{Zero, Ratio}; } }
 cfg_if! { if #[cfg(feature="vector")] { #[macro_use] pub mod vector; pub use vector::{xy, int2, uint2, size2, vec2}; }}
-cfg_if! { if #[cfg(feature="trace")] { mod trace; pub use trace::{rstack_self, trace}; #[cfg(feature="timeout")] pub use trace::timeout; }}
+cfg_if! { if #[cfg(feature="trace")] { pub mod trace; pub use trace::rstack_self; }}
+#[cfg(feature="timeout")] pub use trace::timeout;
+#[cfg(feature="signal-hook")] pub use trace::sigint_trace;
 cfg_if! { if #[cfg(feature="image")] { pub mod image; pub use image::{Image, bgra8}; }}
 cfg_if! { if #[cfg(feature="sRGB")] { pub use image::sRGB; }}
 #[cfg(feature="color")] pub mod color;

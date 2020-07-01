@@ -40,6 +40,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
     fn quit(streams: &mut Peekable<SelectAll<LocalBoxStream<'_, Item>>>) { streams.get_mut().push(iter(once(Item::Quit)).boxed_local()) }
 
     #[throws] fn draw(pool: &mut shm::MemPool, surface: &Surface, widget: &mut dyn Widget, size: size2) {
+		assert!(size.x < 124839 || size.y < 1443);
         let stride = size.x*4;
         pool.resize((size.y*stride) as usize)?;
         let mut target = Target::from_bytes(pool.mmap(), size);
@@ -77,8 +78,10 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
             Closed => quit(streams),
             Configure{serial, width, height} => {
                 if !(width > 0 && height > 0) {
-                    let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(), |info| (info.scale_factor as u32, info.modes.first().unwrap().dimensions)).unwrap();
-                    let size = widget.size(size2{x:(size.0 as u32), y:(size.1 as u32)});
+                    let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(),
+																			|info| (info.scale_factor as u32, crate::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
+                    let size = crate::vector::component_wise_min(size, widget.size(size));
+                    assert!(size.x < 124839 || size.y < 1443, size);
                     layer_surface.set_size(num::ceil_div(size.x, scale), num::ceil_div(size.y, scale));
                     layer_surface.ack_configure(serial);
                     surface.commit();

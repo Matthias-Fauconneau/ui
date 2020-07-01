@@ -5,7 +5,7 @@ pub trait ComponentWiseMinMax {
 pub fn component_wise_min<V: ComponentWiseMinMax>(a: V, b: V) -> V { a.min(b) }
 pub fn component_wise_max<V: ComponentWiseMinMax>(a: V, b: V) -> V { a.max(b) }
 
-#[macro_export] macro_rules! vector { ($n:literal $v:ident $($tuple:ident)+, $($c:ident)+) => {
+#[macro_export] macro_rules! vector { ($n:literal $v:ident $($tuple:ident)+, $($c:ident)+, $($C:ident)+) => {
 use {$crate::num::Zero, std::ops::{Add,Sub,Mul,Div}};
 #[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)] pub struct $v<T> { $( pub $c: T ),+ }
 
@@ -20,7 +20,30 @@ impl<T> std::iter::FromIterator<T> for $v<T> { fn from_iter<I:std::iter::IntoIte
 	use crate::array::FromIterator; <[T; $n]>::from_iter(into_iter).into()
 } }
 
+#[derive(Clone, Copy)] pub enum Component { $($C),+ }
+/*impl $v<_> {
+	pub fn enumerate() -> impl Iterator<Item=Component> { use crate::array::IntoIterator; [$(Component::$C),+].into_iter() }
+	pub fn map<B>(f: impl FnMut(Component) -> B) -> $v<B> { Self::enumerate().map(f).collect() }
+}*/
+impl<T> $v<T> {
+	pub fn enumerate() -> impl Iterator<Item=Component> { use crate::array::IntoIterator; [$(Component::$C),+].into_iter() }
+	pub fn map(f: impl FnMut(Component) -> T) -> $v<T> { Self::enumerate().map(f).collect() }
+}
+
+impl<T> std::ops::Index<Component> for $v<T> {
+    type Output = T;
+    fn index(&self, component: Component) -> &Self::Output {
+        match component {
+            $(Component::$C => &self.$c),+
+        }
+    }
+}
+
 impl<T:Eq> PartialEq<T> for $v<T> { fn eq(&self, b: &T) -> bool { $( self.$c==*b )&&+ } }
+
+impl<T:PartialOrd> PartialOrd for $v<T> { fn partial_cmp(&self, b: &Self) -> Option<std::cmp::Ordering> {
+	Self::enumerate().map(|i| self[i].partial_cmp(&b[i])).fold_first(|c,x| if c == x { c } else { None }).flatten()
+} }
 
 impl<T:Ord> $crate::vector::ComponentWiseMinMax for $v<T> {
 	fn min(self, other: Self) -> Self { $v{$($c: self.$c .min( other.$c ) ),+} }
@@ -38,6 +61,7 @@ impl<T:Div+Copy> Div<T> for $v<T> { type Output=$v<T::Output>; fn div(self, b: T
 
 impl<T:Copy> From<T> for $v<T> { fn from(v: T) -> Self { $v{$($c:v),+} } }
 impl<T:Copy+Zero> Zero for $v<T> { fn zero() -> Self { T::zero().into() } }
+impl<T:Copy+Zero> $v<T> { pub fn zero() -> Self { Zero::zero() } }
 
 fn mul<T:Copy+Mul>(a: T, b: $v<T>) -> $v<T::Output> { $v{$($c: a*b.$c),+} }
 fn div<T:Copy+Div>(a: T, b: $v<T>) -> $v<T::Output> { $v{$($c: a/b.$c),+} }
@@ -48,15 +72,15 @@ impl Mul<$v<f32>> for f32 { type Output=$v<f32>; fn mul(self, b: $v<f32>) -> Sel
 impl Div<$v<f32>> for f32 { type Output=$v<f32>; fn div(self, b: $v<f32>) -> Self::Output { div(self, b) } }
 }}
 
-vector!(2 xy T T, x y);
-// Ord provides min/max which conflicts with component-wise min/max
-/*impl<T:Ord> PartialOrd for xy<T> { fn partial_cmp(&self, b: &xy<T>) -> Option<std::cmp::Ordering> { Some(self.cmp(b)) } }
+vector!(2 xy T T, x y, X Y);
+/*// /!\ Ord provides min/max which conflicts with component-wise min/max
 impl<T:Ord> Ord for xy<T> { fn cmp(&self, b: &xy<T>) -> std::cmp::Ordering { // reverse lexicographic (i.e lexicographic yx)
     let ordering = self.y.cmp(&b.y);
     if ordering != std::cmp::Ordering::Equal { ordering } else { self.x.cmp(&b.x) }
 } }*/
 
-impl From<xy<i32>> for xy<u32> { fn from(i: xy<i32>) -> Self { xy{x: i.x as u32, y: i.y as u32} } }
+impl xy<i32> { pub const fn as_u32(self) -> xy<u32> { xy{x: self.x as u32, y: self.y as u32} } }
+impl From<xy<i32>> for xy<u32> { fn from(i: xy<i32>) -> Self { i.as_u32() } }
 impl From<xy<u32>> for xy<i32> { fn from(u: xy<u32>) -> Self { xy{x: u.x as i32, y: u.y as i32} } }
 impl From<xy<u32>> for xy<f32> { fn from(f: xy<u32>) -> Self { xy{x: f.x as f32, y: f.y as f32} } }
 //impl From<xy<f32>> for xy<u32> { fn from(f: xy<f32>) -> Self { xy{x: f.x as u32, y: f.y as u32} } }

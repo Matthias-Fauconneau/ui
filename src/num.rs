@@ -42,5 +42,6 @@ impl Ratio {
     pub fn ceil(self, x: i32) -> i32 { sign(x)*ceil_div(x.abs() as u32*self.num, self.div) as i32 }
 }
 impl From<Ratio> for f32 { fn from(r: Ratio) -> Self { r.num as f32 / r.div as f32 } }
+impl std::ops::Mul<u32> for Ratio { type Output=u32; #[track_caller] fn mul(self, b: u32) -> Self::Output { b * self.num / self.div /*-> 0*/ } }
 impl std::ops::Mul<i32> for Ratio { type Output=i32; #[track_caller] fn mul(self, b: i32) -> Self::Output { b * self.num as i32 / self.div as i32 /*-> 0*/ } }
 }}
