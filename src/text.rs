@@ -1,5 +1,5 @@
 #![allow(non_upper_case_globals)]
-use {std::cmp::{min, max}, ttf_parser::{GlyphId,Rect}, font::Font};
+use {std::cmp::{min, max}, ttf_parser::{GlyphId,Rect}, crate::{error::{throws, Error}, num::Ratio, font::{self, Font}}};
 
 pub struct FontIter<'t, I: 't> { font: &'t Font<'t>, iter: I }
 impl<'t, T> std::ops::Deref for FontIter<'t, T> { type Target = T; fn deref(&self) -> &Self::Target { &self.iter } }
@@ -81,7 +81,7 @@ pub type Color = crate::image::bgrf;
 impl<T> std::ops::Deref for Attribute<T> { type Target=TextRange; fn deref(&self) -> &Self::Target { &self.range } }
 
 lazy_static::lazy_static! {
-	static ref default_font : font::File = font::open(
+	static ref default_font : font::File<'static> = font::open(
 		["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/liberation-fonts/LiberationSans-Regular.ttf"].iter().map(std::path::Path::new)
 			.filter(|x| std::path::Path::exists(x))
 			.next().unwrap()
@@ -91,32 +91,32 @@ lazy_static::lazy_static! {
 }
 
 pub struct Text<'font, 'text> {
-    font : &'font Font<'font>,
-    text : &'text str,
+    pub font : &'font Font<'font>,
+    pub text : &'text str,
     style: &'text [Attribute<Style>],
-    size : Option<size2>
+    //size : Option<size2>
 }
 impl<'font, 'text> Text<'font, 'text> {
-    pub fn new(text : &'text str, style: &'text [Attribute<Style>]) -> Self {
-		Self{font: &default_font, text, style, size: None}
+    pub fn new(font: &'font Font<'font>, text : &'text str, style: &'text [Attribute<Style>]) -> Self { Self{font, text, style/*, size: None*/} }
+    pub fn size(&/*mut*/ self) -> size2 {
+        let Self{font, text, /*ref mut size,*/ ..} = self;
+        //*size.get_or_insert_with(||{
+            let (line_count, max_width) = text.lines()
+				.map(|line| font.glyphs(line.chars()).layout().metrics())
+				.fold((0,0),|(line_count, width), line| (line_count+1, max(width, line.width)));
+            size2{x: max_width, y: line_count * (font.height() as u32)}
+        //})
     }
-    pub fn size(&mut self) -> size2 {
-        let Self{font, text, ref mut size, ..} = self;
-        *size.get_or_insert_with(||{
-            let (count, max_width) = text.lines().map(|line| font.glyphs(line.chars()).layout().metrics()).fold((0,0),|(count, width), line| (count+1, max(width, line.width)));
-            size2{x: max_width, y: count * (font.height() as u32)}
-        })
-    }
-    pub fn render(&self, target : &mut Image<&mut[bgra8]>, scale: font::Scale) {
+    pub fn paint(&self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
         let (mut style, mut styles) = (None, self.style.iter().peekable());
         for (line_index, line) in self.text.line_ranges().enumerate() {
-            for Layout{x, glyph: ((offset,_), id), bbox} in self.font.glyphs(line.char_indices()).layout() {
+            for Layout{x, glyph: ((index,_), id), bbox} in self.font.glyphs(line.char_indices()).layout() {
                 let position = uint2{
                     x: (x+self.font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
                     y: (line_index as u32)*(self.font.height() as u32) + (self.font.ascender()-bbox.y_max) as u32
                 };
                 let coverage = self.font.rasterize(scale, id, bbox);
-                style = style.filter(|style:&&Attribute<Style>| style.contains(offset)).or_else(|| styles.peeking_take_while(|style| style.contains(offset)).single());
+                style = style.filter(|style:&&Attribute<Style>| style.contains(index)).or_else(|| styles.peeking_take_while(|style| style.contains(index)).single());
                 target.slice_mut(scale*position, coverage.size).set_map(coverage, |_,coverage| bgra8{a : 0xFF, ..(coverage*style.map(|x|x.attribute.color).unwrap()).into()})
             }
         }
@@ -127,13 +127,13 @@ fn fit_width(width: u32, from : size2) -> size2 { size2{x: width, y: ceil_div(wi
 
 use crate::widget::{Widget, Target};
 impl Text<'_,'_> {
-    pub fn scale(&mut self, target: &Target) -> font::Scale { font::Scale{num: target.size.x-1, div: self.size().x-1} } // todo: scroll
+    pub fn scale(&mut self, target: &Target) -> Ratio { Ratio{num: target.size.x-1, div: Text::size(&self).x-1} } // todo: scroll
 }
 impl Widget for Text<'_,'_> {
-    fn size(&mut self, bounds : size2) -> size2 { fit_width(bounds.x, self.size()) }
-    fn render(&mut self, target : &mut Target) {
+    fn size(&mut self, bounds : size2) -> size2 { fit_width(bounds.x, Text::size(&self)) }
+    #[throws] fn paint(&mut self, target : &mut Target) {
         let scale = self.scale(&target);
-        Text::render(&self, target, scale)
+        Text::paint(&self, target, scale)
     }
 }
 
@@ -148,14 +148,14 @@ pub struct TextEdit<'font, 'text> {
 
 impl<'font, 'text> TextEdit<'font, 'text> {
     pub fn new(text : &'text str, style: &'text [Attribute<Style>]) -> Self {
-        Self{text: Text::new(text, style), cursor: Zero::zero()}
+        Self{text: Text::new(&default_font, text, style), cursor: Zero::zero()}
     }
 }
 
 impl Widget for TextEdit<'_,'_> {
     fn size(&mut self, size : size2) -> size2 { Widget::size(&mut self.text, size) }
-    fn render(&mut self, target : &mut Target) {
-        Widget::render(&mut self.text, target);
+    #[throws] fn paint(&mut self, target : &mut Target) {
+        Widget::paint(&mut self.text, target)?;
         /*if self.hasFocus()*/ {
             let scale = self.text.scale(&target);
             let Self{text: Text{text, font, ..}, cursor} = self;

@@ -38,7 +38,7 @@ impl Widget for GraphicView<'_> {
     #[throws] fn paint(&mut self, target : &mut Target) {
 		for &Rect{top_left, bottom_right} in &self.graphic.fill {
 			let top_left = (self.graphic.scale * (top_left-self.view.top_left)).into();
-			let bottom_right = xy::map(|i| if bottom_right[i] == i32::MAX { target.size[i] } else { self.graphic.scale * (bottom_right[i]-self.view.top_left[i]) as u32 });
+			let bottom_right = xy::map(|i| if bottom_right[i] == i32::MAX { target.size[i] } else { self.graphic.scale.ceil(bottom_right[i]-self.view.top_left[i]) as u32 });
 			target.slice_mut(top_left, vector::component_wise_min(bottom_right, target.size)-top_left).set(|_| fg);
 		}
 		for &Glyph{top_left, id} in &self.graphic.glyph {

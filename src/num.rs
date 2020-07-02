@@ -13,7 +13,7 @@ macro_rules! signed_impl { ($($T:ty)+) => ($( impl Signed for $T { fn signum(&se
 signed_impl!(i16 i32 f32);
 #[cfg(feature="font")]
 pub fn sign<T:Signed>(x : T) -> T { x.signum() }
-//pub fn abs<T:Signed>(x : T) -> T { x.abs() }
+pub fn abs<T:Signed>(x : T) -> T { x.abs() }
 //pub fn sq<T:Copy+std::ops::Mul>(x: T) -> T::Output { x*x }
 //pub fn cb<T:Copy+std::ops::Mul>(x: T) -> <T::Output as std::ops::Mul<T>>::Output where <T as std::ops::Mul>::Output : std::ops::Mul<T> { x*x*x }
 

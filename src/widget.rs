@@ -1,4 +1,4 @@
-use crate::{vector::size2, image::{Image, bgra8}, Result};
+use crate::{error::Result, vector::size2, image::{Image, bgra8}};
 
 pub type Target<'t> = Image<&'t mut[bgra8]>;
 #[allow(non_upper_case_globals)] pub static black: bgra8 = bgra8{b:0x00,g:0x00,r:0x00,a:0xFF};
