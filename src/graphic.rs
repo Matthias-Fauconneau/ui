@@ -5,6 +5,11 @@ impl std::ops::Mul<int2> for Ratio { type Output=int2; #[track_caller] fn mul(se
 
 #[derive(Default)] pub struct Rect { pub top_left: int2, pub bottom_right: int2 }
 
+impl Rect {
+	pub fn horizontal(y: i32, dy: u8, left: i32, right: i32) -> Rect { Self{ top_left: xy{ y: y-(dy/2) as i32, x: left }, bottom_right: xy{ y: y+(dy/2) as i32, x: right     } } }
+	pub fn vertical(x: i32, dx: u8, top: i32, bottom: i32) -> Rect { Self{ top_left: xy{ x: x-(dx/2) as i32, y: top }, bottom_right: xy{ x: x+(dx/2) as i32, y: bottom } } }
+}
+
 pub struct Glyph { pub top_left: int2, pub id: ttf_parser::GlyphId }
 
 pub struct Graphic<'t> {
@@ -14,8 +19,8 @@ pub struct Graphic<'t> {
 	pub glyph: Vec<Glyph>,
 }
 
-trait Bounds : Iterator { fn bounds(self) -> Option<Self::Item>; }
-impl<T, I:Iterator<Item=(T,T)>> Bounds for I where T: vector::ComponentWiseMinMax+Copy {
+pub trait Bounds : Iterator { fn bounds(self) -> Option<Self::Item>; }
+impl<T: vector::ComponentWiseMinMax+Copy, I:Iterator<Item=(T,T)>> Bounds for I {
 	fn bounds(self) -> Option<Self::Item> { self.fold_first(|(min,max), e| (vector::component_wise_min(min, e.0), vector::component_wise_max(max, e.1))) }
 }
 
@@ -38,14 +43,16 @@ impl Widget for GraphicView<'_> {
     #[throws] fn paint(&mut self, target : &mut Target) {
 		for &Rect{top_left, bottom_right} in &self.graphic.fill {
 			let top_left = (self.graphic.scale * (top_left-self.view.top_left)).into();
-			let bottom_right = xy::map(|i| if bottom_right[i] == i32::MAX { target.size[i] } else { self.graphic.scale.ceil(bottom_right[i]-self.view.top_left[i]) as u32 });
-			target.slice_mut(top_left, vector::component_wise_min(bottom_right, target.size)-top_left).set(|_| fg);
+			if top_left < target.size {
+				let bottom_right = xy::map(|i| if bottom_right[i] == i32::MAX { target.size[i] } else { self.graphic.scale.ceil(bottom_right[i]-self.view.top_left[i]) as u32 });
+				target.slice_mut(top_left, vector::component_wise_min(bottom_right, target.size)-top_left).set(|_| fg);
+			}
 		}
 		for &Glyph{top_left, id} in &self.graphic.glyph {
-			let bbox = self.graphic.font.glyph_bounding_box(id).unwrap();
-			let coverage = self.graphic.font.rasterize(self.graphic.scale, id, bbox);
 			let offset = (self.graphic.scale * (top_left-self.view.top_left)).into();
 			if offset < target.size {
+				let bbox = self.graphic.font.glyph_bounding_box(id).unwrap();
+				let coverage = self.graphic.font.rasterize(self.graphic.scale, id, bbox);
 				let size = vector::component_wise_min(coverage.size, target.size-offset);
 				target.slice_mut(offset, size).set_map(coverage.slice(xy::zero(), size), |_,coverage| bgra8{a : 0xFF, ..sRGB(coverage).into()});
 			}

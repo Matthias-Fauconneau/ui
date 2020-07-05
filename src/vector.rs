@@ -1,9 +1,14 @@
 pub trait ComponentWiseMinMax {
-	fn min(self, other: Self) -> Self;
-	fn max(self, other: Self) -> Self;
+	fn component_wise_min(self, other: Self) -> Self;
+	fn component_wise_max(self, other: Self) -> Self;
 }
-pub fn component_wise_min<V: ComponentWiseMinMax>(a: V, b: V) -> V { a.min(b) }
-pub fn component_wise_max<V: ComponentWiseMinMax>(a: V, b: V) -> V { a.max(b) }
+pub fn component_wise_min<V: ComponentWiseMinMax>(a: V, b: V) -> V { a.component_wise_min(b) }
+pub fn component_wise_max<V: ComponentWiseMinMax>(a: V, b: V) -> V { a.component_wise_max(b) }
+
+impl<T:Ord> ComponentWiseMinMax for T { // /!\ falsified by impl Ord for Vector
+	fn component_wise_min(self, other: Self) -> Self { self.min(other) }
+	fn component_wise_max(self, other: Self) -> Self { self.max(other) }
+}
 
 #[macro_export] macro_rules! vector { ($n:literal $v:ident $($tuple:ident)+, $($c:ident)+, $($C:ident)+) => {
 use {$crate::num::Zero, std::ops::{Add,Sub,Mul,Div}};
@@ -46,8 +51,8 @@ impl<T:PartialOrd> PartialOrd for $v<T> { fn partial_cmp(&self, b: &Self) -> Opt
 } }
 
 impl<T:Ord> $crate::vector::ComponentWiseMinMax for $v<T> {
-	fn min(self, other: Self) -> Self { $v{$($c: self.$c .min( other.$c ) ),+} }
-	fn max(self, other: Self) -> Self { $v{$($c: self.$c .max( other.$c ) ),+} }
+	fn component_wise_min(self, other: Self) -> Self { $v{$($c: self.$c .min( other.$c ) ),+} }
+	fn component_wise_max(self, other: Self) -> Self { $v{$($c: self.$c .max( other.$c ) ),+} }
 }
 // Panics on unordered values (i.e NaN)
 //pub fn min<T:PartialOrd>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: std::cmp::min_by(a.$c, b.$c, |a,b| a.partial_cmp(b).unwrap() ) ),+} }
@@ -73,11 +78,6 @@ impl Div<$v<f32>> for f32 { type Output=$v<f32>; fn div(self, b: $v<f32>) -> Sel
 }}
 
 vector!(2 xy T T, x y, X Y);
-/*// /!\ Ord provides min/max which conflicts with component-wise min/max
-impl<T:Ord> Ord for xy<T> { fn cmp(&self, b: &xy<T>) -> std::cmp::Ordering { // reverse lexicographic (i.e lexicographic yx)
-    let ordering = self.y.cmp(&b.y);
-    if ordering != std::cmp::Ordering::Equal { ordering } else { self.x.cmp(&b.x) }
-} }*/
 
 impl xy<i32> { pub const fn as_u32(self) -> xy<u32> { xy{x: self.x as u32, y: self.y as u32} } }
 impl From<xy<i32>> for xy<u32> { fn from(i: xy<i32>) -> Self { i.as_u32() } }
