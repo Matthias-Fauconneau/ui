@@ -14,34 +14,41 @@ signed_impl!(i16 i32 f32);
 #[cfg(feature="font")]
 pub fn sign<T:Signed>(x : T) -> T { x.signum() }
 pub fn abs<T:Signed>(x : T) -> T { x.abs() }
-//pub fn sq<T:Copy+std::ops::Mul>(x: T) -> T::Output { x*x }
+pub fn sq<T:Copy+std::ops::Mul>(x: T) -> T::Output { x*x }
 //pub fn cb<T:Copy+std::ops::Mul>(x: T) -> <T::Output as std::ops::Mul<T>>::Output where <T as std::ops::Mul>::Output : std::ops::Mul<T> { x*x*x }
 
 #[cfg(feature="font")]
-pub fn floor_div(n : u32, d : u32) -> u32 { n/d }
-pub fn div_truncate_towards_0(n : i32, d : i32) -> i32 { n/d }
-#[cfg(any(feature="font",feature="window"))]
-pub fn ceil_div(n : u32, d : u32) -> u32 { (n+d-1)/d }
-pub fn div_round_towards_inf(n : i32, d : i32) -> i32 { (n+d-1)/d }
+pub fn div_trunc(n : u32, d : u32) -> u32 { n/d }
 //pub fn div_rem(n : u32, d : u32) -> (u32, u32) { (n/d, n%d) }
+#[cfg(any(feature="font",feature="window"))]
+pub fn udiv_ceil(n : u32, d : u32) -> u32 { (n+d-1)/d }
 
-//pub fn floor(x : f32) -> f32 { x.floor() }
-//pub fn fract(x: f32) -> f32 { x.fract() }
+pub fn div_rem(n : i32, d : u32) -> (i32, i32) { (n/d as i32, n%d as i32) }
+pub fn div_floor(n: i32, d: u32) -> i32 {
+	let (q, r) = div_rem(n, d);
+	if r < 0 { q - 1 } else { q }
+}
+pub fn div_ceil(n: i32, d: u32) -> i32 {
+	let (q, r) = div_rem(n, d);
+	if r > 0 { q + 1 } else { q }
+}
+
+pub fn floor(x : f32) -> f32 { x.floor() }
+pub fn fract(x: f32) -> f32 { x.fract() }
 pub fn sqrt(x: f32) -> f32 { x.sqrt() }
 //pub fn cos(x: f32) -> f32 { x.cos() }
 //pub fn sin(x: f32) -> f32 { x.sin() }
 pub fn atan(y: f32, x: f32) -> f32 { y.atan2(x) }
 
-#[cfg(all(feature="color",feature="sRGB"))]
+#[cfg(any(feature="font",all(feature="color",feature="sRGB")))]
 pub fn clamp(x:f32) -> f32 { if x > 1. {1.} else if x < 0. {0.} else {x} }
 
 cfg_if::cfg_if! { if #[cfg(feature="font")] {
-#[derive(Clone,Copy)] pub struct Ratio { pub num: u32, pub div: u32 }
+#[derive(Clone,Copy,Debug)] pub struct Ratio { pub num: u32, pub div: u32 }
 impl Ratio {
-    pub fn floor(self, x: i32) -> i32 { sign(x)*floor_div(x.abs() as u32*self.num, self.div) as i32 }
-    pub fn ceil(self, x: i32) -> i32 { sign(x)*ceil_div(x.abs() as u32*self.num, self.div) as i32 }
+	pub fn floor(&self, x: i32) -> i32 { div_floor(x * self.num as i32, self.div) }
+	pub fn ceil(&self, x: i32) -> i32 { div_ceil(x * self.num as i32, self.div) }
 }
 impl From<Ratio> for f32 { fn from(r: Ratio) -> Self { r.num as f32 / r.div as f32 } }
-impl std::ops::Mul<u32> for Ratio { type Output=u32; #[track_caller] fn mul(self, b: u32) -> Self::Output { b * self.num / self.div /*-> 0*/ } }
-impl std::ops::Mul<i32> for Ratio { type Output=i32; #[track_caller] fn mul(self, b: i32) -> Self::Output { b * self.num as i32 / self.div as i32 /*-> 0*/ } }
+impl std::ops::Mul<u32> for Ratio { type Output=u32; #[track_caller] fn mul(self, b: u32) -> Self::Output { b * self.num / self.div } }
 }}

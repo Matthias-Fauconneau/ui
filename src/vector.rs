@@ -24,17 +24,12 @@ impl<T> $v<T> { pub fn iter(&self) -> impl Iterator<Item=&T> { use crate::array:
 impl<T> std::iter::FromIterator<T> for $v<T> { fn from_iter<I:std::iter::IntoIterator<Item=T>>(into_iter: I) -> Self {
 	use crate::array::FromIterator; <[T; $n]>::from_iter(into_iter).into()
 } }
+//impl<T> $v<T> { pub fn map(&self, f: impl Fn(&T) -> T) -> $v<T> { self.iter().map(f).collect() } }
 
 #[derive(Clone, Copy)] pub enum Component { $($C),+ }
-/*impl $v<_> {
-	pub fn enumerate() -> impl Iterator<Item=Component> { use crate::array::IntoIterator; [$(Component::$C),+].into_iter() }
-	pub fn map<B>(f: impl FnMut(Component) -> B) -> $v<B> { Self::enumerate().map(f).collect() }
-}*/
-impl<T> $v<T> {
-	pub fn enumerate() -> impl Iterator<Item=Component> { use crate::array::IntoIterator; [$(Component::$C),+].into_iter() }
-	pub fn map(f: impl FnMut(Component) -> T) -> $v<T> { Self::enumerate().map(f).collect() }
+impl Component {
+	pub fn enumerate() -> impl Iterator<Item=Self> { use crate::array::IntoIterator; [$(Self::$C),+].into_iter() }
 }
-
 impl<T> std::ops::Index<Component> for $v<T> {
     type Output = T;
     fn index(&self, component: Component) -> &Self::Output {
@@ -43,11 +38,13 @@ impl<T> std::ops::Index<Component> for $v<T> {
         }
     }
 }
+pub fn $v<B>(f: impl FnMut(Component) -> B) -> $v<B> { Component::enumerate().map(f).collect() }
+
 
 impl<T:Eq> PartialEq<T> for $v<T> { fn eq(&self, b: &T) -> bool { $( self.$c==*b )&&+ } }
 
 impl<T:PartialOrd> PartialOrd for $v<T> { fn partial_cmp(&self, b: &Self) -> Option<std::cmp::Ordering> {
-	Self::enumerate().map(|i| self[i].partial_cmp(&b[i])).fold_first(|c,x| if c == x { c } else { None }).flatten()
+	Component::enumerate().map(|i| self[i].partial_cmp(&b[i])).fold_first(|c,x| if c == x { c } else { None }).flatten()
 } }
 
 impl<T:Ord> $crate::vector::ComponentWiseMinMax for $v<T> {

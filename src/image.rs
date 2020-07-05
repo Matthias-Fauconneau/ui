@@ -41,9 +41,9 @@ impl<T, D:std::ops::DerefMut<Target=[T]>> std::ops::IndexMut<uint2> for Image<D>
 }
 
 impl<T, D:std::ops::Deref<Target=[T]>> Image<D> {
-    pub fn slice_lines(&self, lines: std::ops::Range<u32>) -> Image<&[T]> {
-        assert!(lines.end <= self.size.y, self.size, lines);
-        Image{size: size2{x:self.size.x, y:lines.len() as u32}, stride: self.stride, data: &self.data[(lines.start*self.stride) as usize..]}
+    pub fn rows(&self, rows: std::ops::Range<u32>) -> Image<&[T]> {
+        assert!(rows.end <= self.size.y, self.size, rows);
+        Image{size: size2{x:self.size.x, y:rows.len() as u32}, stride: self.stride, data: &self.data[(rows.start*self.stride) as usize..]}
     }
     pub fn slice(&self, offset: uint2, size: size2) -> Image<&[T]> {
         assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, self.size, offset, size);
@@ -52,9 +52,9 @@ impl<T, D:std::ops::Deref<Target=[T]>> Image<D> {
 }
 
 impl<T, D:std::ops::DerefMut<Target=[T]>> Image<D> {
-    pub fn slice_lines_mut(&mut self, lines: std::ops::Range<u32>) -> Image<&mut [T]> {
-        assert!(lines.end <= self.size.y, self.size, lines);
-        Image{size: size2{x:self.size.x, y:lines.len() as u32}, stride: self.stride, data: &mut self.data[(lines.start*self.stride) as usize..]}
+    pub fn rows_mut(&mut self, rows: std::ops::Range<u32>) -> Image<&mut [T]> {
+        assert!(rows.end <= self.size.y, self.size, rows);
+        Image{size: size2{x:self.size.x, y:rows.len() as u32}, stride: self.stride, data: &mut self.data[(rows.start*self.stride) as usize..]}
     }
     #[track_caller] pub fn slice_mut(&mut self, offset : uint2, size : size2) -> Image<&mut[T]> {
         assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, self.size, offset, size);
@@ -94,10 +94,6 @@ impl<'t, T> Iterator for Image<&'t mut [T]> {
     }
 }
 
-impl<'t, T> Image<&'t mut [T]> {
-    pub fn lines_mut(&mut self, range: std::ops::Range<u32>) -> impl Iterator<Item=(u32,&mut [T])> { range.clone().zip(self.slice_lines_mut(range)) }
-}
-
 /*impl<'t, T> Image<&'t [T]> {
     fn new(data: &'t [T], size : size2) -> Self {
         assert!(data.len() == (size.x*size.y) as usize);
@@ -126,6 +122,7 @@ pub fn segment(total_length: u32, segment_count: u32) -> impl Iterator<Item=std:
 }}*/
 //impl<I:Iterator<Item:FnOnce()>> Execute for I {}
 
+use crate::vector::xy;
 impl<T:Send> Image<&mut [T]> {
     pub fn set<F:Fn(uint2)->T+Copy+Send>(&mut self, f:F) {
         /*let mut target = self.take_mut(0);
@@ -141,9 +138,9 @@ impl<T:Send> Image<&mut [T]> {
             }
         })
         .execute()*/
-        for y in 0..self.size.y { for x in 0..self.size.x { self[uint2{x,y}] = f(uint2{x,y}); } }
+        for y in 0..self.size.y { for x in 0..self.size.x { self[xy{x,y}] = f(xy{x,y}); } }
     }
-    pub fn set_map<U:Copy+Send+Sync, D:std::ops::Deref<Target=[U]>+Send, F:Fn(uint2,U)->T+Copy+Send>(mut self, source: Image<D>, f: F) {
+    pub fn set_map<U:Send+Sync, D:std::ops::Deref<Target=[U]>+Send, F:Fn(uint2,&U)->T+Copy+Send>(&mut self, source: Image<D>, f: F) {
         assert!(self.size == source.size);
         /*segment(self.size.y, 1/*8*/)
         .map(|segment| {
@@ -158,7 +155,24 @@ impl<T:Send> Image<&mut [T]> {
             }
         })
         .execute()*/
-        for y in 0..self.size.y { for x in 0..self.size.x { self[uint2{x,y}] = f(uint2{x,y}, source[uint2{x,y}]); } }
+        for y in 0..self.size.y { for x in 0..self.size.x { self[xy{x,y}] = f(xy{x,y}, &source[xy{x,y}]); } }
+    }
+    pub fn zip_map<U:Send+Sync, D:std::ops::Deref<Target=[U]>+Send, F:Fn(uint2,&T,&U)->T+Copy+Send>(&mut self, source: Image<D>, f: F) {
+        assert!(self.size == source.size);
+        /*segment(self.size.y, 1/*8*/)
+        .map(|segment| {
+            let target = self.take_mut(segment.len() as u32);
+            let source = source.slice(uint2{x:0, y:segment.start}, size2{x:source.size.x, y:segment.len() as u32});
+            move || {
+                for (y, (target, source)) in segment.zip(target.zip(source)) {
+                    for (x, (target, source)) in target.iter_mut().zip(source).enumerate() {
+                        *target = f(uint2{x:x as u32, y}, *target, *source);
+                    }
+                }
+            }
+        })
+        .execute()*/
+        for y in 0..self.size.y { for x in 0..self.size.x { self[xy{x,y}] = f(xy{x,y}, &self[xy{x,y}], &source[xy{x,y}]); } }
     }
 }
 

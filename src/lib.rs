@@ -6,7 +6,10 @@
 #![cfg_attr(feature="graphic", feature(iterator_fold_self))]
 //#![cfg_attr(feature="image", feature(slice_index_methods))]
 #![cfg_attr(feature="font", feature(associated_type_bounds))]
+#![cfg_attr(feature="font", feature(non_ascii_idents))]
+#![cfg_attr(feature="font", allow(uncommon_codepoints,mixed_script_confusables))]
 
+#[macro_export] macro_rules! dbg { ( $first:expr $(,$A:expr)* ) => ( eprint!("{} = {:?}", stringify!($first), $first); $( eprint!(", {} = {:?}", stringify!($A), $A); )* eprintln!(""); ) }
 pub mod error; pub use error::{Error, Result/*bail, ensure, Ok*/}; #[cfg(feature="fehler")] pub use error::throws;
 pub use cfg_if::cfg_if;
 mod iter;
