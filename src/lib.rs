@@ -32,4 +32,4 @@ cfg_if! { if #[cfg(feature="font")] {
 	pub mod font; pub use font::Font;
 }}
 cfg_if! { if #[cfg(feature="text")] { pub mod text; pub use text::{Text, default_style}; }}
-cfg_if! { if #[cfg(feature="graphic")] { pub mod graphic; pub use graphic::{Rect, Glyph, Graphic, GraphicView}; }}
+cfg_if! { if #[cfg(feature="graphic")] { pub mod graphic; pub use graphic::{Rect, Glyph, Graphic}; }}

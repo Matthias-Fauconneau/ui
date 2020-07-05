@@ -10,8 +10,13 @@ impl<T:Ord> ComponentWiseMinMax for T { // /!\ falsified by impl Ord for Vector
 	fn component_wise_max(self, other: Self) -> Self { self.max(other) }
 }
 
+macro_rules! impl_Op { { $v:ident $($c:ident)+: $Op:ident $op:ident $OpAssign:ident $op_assign:ident } => {
+	impl<T:$Op> $Op for $v<T> { type Output=$v<T::Output>; fn $op(self, b: Self) -> Self::Output { Self::Output{$($c: self.$c.$op(b.$c)),+} } }
+	impl<T:$OpAssign> $OpAssign for $v<T> { fn $op_assign(&mut self, b: Self) { $(self.$c.$op_assign(b.$c);)+ } }
+}}
+
 #[macro_export] macro_rules! vector { ($n:literal $v:ident $($tuple:ident)+, $($c:ident)+, $($C:ident)+) => {
-use {$crate::num::Zero, std::ops::{Add,Sub,Mul,Div}};
+use {$crate::num::Zero, std::ops::{Add,Sub,Mul,Div,AddAssign,SubAssign,MulAssign,DivAssign}};
 #[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)] pub struct $v<T> { $( pub $c: T ),+ }
 
 impl<T> From<($($tuple),+)> for $v<T> { fn from(($($c),+): ($($tuple),+)) -> Self { $v{$($c),+} } } // $tuple from $n
@@ -40,7 +45,6 @@ impl<T> std::ops::Index<Component> for $v<T> {
 }
 pub fn $v<B>(f: impl FnMut(Component) -> B) -> $v<B> { Component::enumerate().map(f).collect() }
 
-
 impl<T:Eq> PartialEq<T> for $v<T> { fn eq(&self, b: &T) -> bool { $( self.$c==*b )&&+ } }
 
 impl<T:PartialOrd> PartialOrd for $v<T> { fn partial_cmp(&self, b: &Self) -> Option<std::cmp::Ordering> {
@@ -55,10 +59,11 @@ impl<T:Ord> $crate::vector::ComponentWiseMinMax for $v<T> {
 //pub fn min<T:PartialOrd>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: std::cmp::min_by(a.$c, b.$c, |a,b| a.partial_cmp(b).unwrap() ) ),+} }
 //pub fn max<T:PartialOrd>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: std::cmp:: max_by(a.$c, b.$c, |a,b| a.partial_cmp(b).unwrap() ) ),+} }
 
-impl<T:Add> Add for $v<T> { type Output=$v<T::Output>; fn add(self, b: Self) -> Self::Output { Self::Output{$($c: self.$c+b.$c),+} } }
-impl<T:Sub> Sub for $v<T> { type Output=$v<T::Output>; fn sub(self, b: Self) -> Self::Output { Self::Output{$($c: self.$c-b.$c),+} } }
-impl<T:Mul> Mul for $v<T> { type Output=$v<T::Output>; fn mul(self, b: Self) -> Self::Output { Self::Output{$($c: self.$c*b.$c),+} } }
-impl<T:Div> Div for $v<T> { type Output=$v<T::Output>; fn div(self, b: Self) -> Self::Output { Self::Output{$($c: self.$c/b.$c),+} } }
+impl_Op!{$v $($c)+: Add add AddAssign add_assign}
+impl_Op!{$v $($c)+: Sub sub SubAssign sub_assign}
+impl_Op!{$v $($c)+: Mul mul MulAssign mul_assign}
+impl_Op!{$v $($c)+: Div div DivAssign div_assign}
+
 impl<T:Div+Copy> Div<T> for $v<T> { type Output=$v<T::Output>; fn div(self, b: T) -> Self::Output { Self::Output{$($c: self.$c/b),+} } }
 
 impl<T:Copy> From<T> for $v<T> { fn from(v: T) -> Self { $v{$($c:v),+} } }

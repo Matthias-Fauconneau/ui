@@ -1,6 +1,7 @@
-use crate::{error::{throws, Error}, num::Ratio, vector::{self, xy, uint2, size2, int2}, image::Image, font::Font};
+use crate::{error::{throws, Error, Result}, num::Ratio, vector::{self, xy, uint2, size2, int2}, image::Image, font::Font};
 
 impl std::ops::Mul<uint2> for Ratio { type Output=uint2; #[track_caller] fn mul(self, b: uint2) -> Self::Output { xy{x:self*b.x, y:self*b.y} } }
+impl std::ops::Div<Ratio> for uint2{ type Output=uint2; #[track_caller] fn div(self, r: Ratio) -> Self::Output { xy{x:self.x/r, y:self.y/r} } }
 
 #[derive(Default)] pub struct Rect { pub top_left: int2, pub bottom_right: int2 }
 
@@ -9,7 +10,15 @@ impl Rect {
 	pub fn vertical(x: i32, dx: u8, top: i32, bottom: i32) -> Rect { Self{ top_left: xy{ x: x-(dx/2) as i32, y: top }, bottom_right: xy{ x: x+(dx/2) as i32, y: bottom } } }
 }
 
+impl Rect {
+	pub fn translate(&mut self, offset: int2) { self.top_left += offset; self.bottom_right += offset; }
+}
+
 pub struct Glyph { pub top_left: int2, pub id: ttf_parser::GlyphId }
+
+impl Glyph {
+	pub fn translate(&mut self, offset: int2) { self.top_left += offset; }
+}
 
 pub struct Graphic<'t> {
 	pub scale: Ratio,
@@ -33,11 +42,11 @@ impl Graphic<'_> {
 	}
 }
 
-pub struct GraphicView<'t> { graphic: Graphic<'t>, view: Rect }
+pub struct View<'t> { graphic: Graphic<'t>, view: Rect }
 
-use crate::{widget::{Target, Widget}, image::{bgra8, sRGB}};
+use crate::{widget::{self, Target}, image::{bgra8, sRGB}};
 
-impl Widget for GraphicView<'_> {
+impl widget::Widget for View<'_> {
     fn size(&mut self, _: size2) -> size2 { self.graphic.scale * (self.view.bottom_right-self.view.top_left).as_u32() }
     #[throws] fn paint(&mut self, target : &mut Target) {
 		let buffer = {
@@ -45,7 +54,7 @@ impl Widget for GraphicView<'_> {
 			for &Rect{top_left, bottom_right} in &self.graphic.fill {
 				let top_left = self.graphic.scale * (top_left-self.view.top_left).as_u32();
 				if top_left < target.size {
-					let bottom_right = xy(|i| if bottom_right[i] == i32::MAX { target.size[i] } else { self.graphic.scale.floor(bottom_right[i]-self.view.top_left[i]) as u32 });
+					let bottom_right = xy(|i| if bottom_right[i] == i32::MAX { target.size[i] } else { self.graphic.scale.ifloor(bottom_right[i]-self.view.top_left[i]) as u32 });
 					target.slice_mut(top_left, vector::component_wise_min(bottom_right, target.size)-top_left).set(|_| 1.);
 				}
 			}
@@ -64,4 +73,12 @@ impl Widget for GraphicView<'_> {
 	}
 }
 
-impl<'t> GraphicView<'t> { pub fn new(graphic: Graphic<'t>) -> Self { Self{view: graphic.bounds(), graphic} } }
+impl<'t> View<'t> { pub fn new(graphic: Graphic<'t>) -> Self { Self{view: graphic.bounds(), graphic} } }
+
+impl Ratio { #[track_caller] fn ceil2(&self, v: uint2) -> uint2 { xy{x:self.ceil(v.x), y:self.ceil(v.y)} } }
+
+pub struct Widget<T>(pub T);
+impl<'t, T:Fn(size2)->Result<Graphic<'t>>> widget::Widget for Widget<T> {
+    fn size(&mut self, size: size2) -> size2 { let graphic = self.0(size).unwrap(); let view = graphic.bounds(); graphic.scale.ceil2((view.bottom_right-view.top_left).as_u32()) }
+    #[throws] fn paint(&mut self, target : &mut Target) { View::new(self.0(target.size)?).paint(target)? }
+}

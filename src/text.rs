@@ -53,7 +53,7 @@ impl<T:DerefGlyphId, I:Iterator<Item=Layout<T>>> FontIter<'_, I> {
 }
 
 pub use text_size::{TextSize, TextRange}; // ~Range<u32> with impl SliceIndex for String
-use {derive_more::Deref, crate::{iter::{Single, PeekableExt}, num::{Zero, udiv_ceil}, vector::{uint2, size2}, image::{Image, bgra8}}};
+use {derive_more::Deref, crate::{iter::{Single, PeekableExt}, num::{Zero, div_ceil}, vector::{uint2, size2}, image::{Image, bgra8}}};
 
 #[derive(Deref)] struct LineRange<'t> { #[deref] text: &'t str, range: std::ops::Range<usize>}
 impl LineRange<'_> {
@@ -123,7 +123,7 @@ impl<'font, 'text> Text<'font, 'text> {
     }
 }
 
-fn fit_width(width: u32, from : size2) -> size2 { size2{x: width, y: udiv_ceil(width * from.y, from.x)} }
+fn fit_width(width: u32, from : size2) -> size2 { size2{x: width, y: div_ceil(width * from.y, from.x)} }
 
 use crate::widget::{Widget, Target};
 impl Text<'_,'_> {

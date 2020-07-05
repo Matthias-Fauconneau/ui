@@ -82,7 +82,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
 																			|info| (info.scale_factor as u32, crate::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
                     let size = crate::vector::component_wise_min(size, widget.size(size));
                     assert!(size.x < 124839 || size.y < 1443, size);
-                    layer_surface.set_size(num::udiv_ceil(size.x, scale), num::udiv_ceil(size.y, scale));
+                    layer_surface.set_size(num::div_ceil(size.x, scale), num::div_ceil(size.y, scale));
                     layer_surface.ack_configure(serial);
                     surface.commit();
                 } else {

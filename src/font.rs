@@ -7,7 +7,7 @@ impl<'t> Font<'t> {
 	}
 	pub fn scaled_size(&self, scale: Ratio, id: ttf_parser::GlyphId) -> size2 {
 		let b = self.glyph_bounding_box(id).unwrap();
-		size2{x: (scale.ceil(b.x_max as i32) - scale.floor(b.x_min as i32)) as u32, y: (scale.ceil(b.y_max as i32) - scale.floor(b.y_min as i32)) as u32}
+		size2{x: (scale.iceil(b.x_max as i32) - scale.ifloor(b.x_min as i32)) as u32, y: (scale.iceil(b.y_max as i32) - scale.ifloor(b.y_min as i32)) as u32}
 	}
 }
 
@@ -55,8 +55,8 @@ impl ttf_parser::OutlineBuilder for Outline<'_> {
 
 impl<'t> Font<'t> {
     pub fn rasterize(&self, scale: Ratio, id: ttf_parser::GlyphId, bbox: ttf_parser::Rect) -> Image<Vec<f32>> {
-		let x_min = scale.floor(bbox.x_min as i32)-1; // Correct rasterization with f32 roundoff without bound checking
-        let y_max = scale.ceil(bbox.y_max as i32);
+		let x_min = scale.ifloor(bbox.x_min as i32)-1; // Correct rasterization with f32 roundoff without bound checking
+        let y_max = scale.iceil(bbox.y_max as i32);
         let mut target = Image::zero(self.scaled_size(scale, id)+size2{x:1,y:1/*2*/});
         self.outline_glyph(id, &mut Outline{scale: scale.into(), x_min: x_min as f32, y_max: y_max as f32, target: &mut target.as_mut(), first:None, p0:None}).unwrap();
         raster::fill(&target.as_ref())
