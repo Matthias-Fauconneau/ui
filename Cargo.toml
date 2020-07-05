@@ -35,7 +35,7 @@ rstack-self = { version='', features=["dw"], default-features=false, optional=tr
 memmap = { version='', optional=true }
 signal-hook = { version='', optional=true }
 
-client-toolkit = { package='smithay-client-toolkit', version='', optional=true }
+client-toolkit = { package='smithay-client-toolkit', version='', optional=true, default-features=false }
 
 kurbo = { version='', optional=true }
 ttf-parser = { version='', optional=true }

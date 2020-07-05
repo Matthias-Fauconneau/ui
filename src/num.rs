@@ -22,6 +22,7 @@ pub fn div_trunc(n : u32, d : u32) -> u32 { n/d }
 //pub fn div_rem(n : u32, d : u32) -> (u32, u32) { (n/d, n%d) }
 #[cfg(any(feature="font",feature="window"))]
 pub fn udiv_ceil(n : u32, d : u32) -> u32 { (n+d-1)/d }
+pub fn udiv_round(n : u32, d : u32) -> u32 { (n+d/2)/d }
 
 pub fn div_rem(n : i32, d : u32) -> (i32, i32) { (n/d as i32, n%d as i32) }
 pub fn div_floor(n: i32, d: u32) -> i32 {
@@ -48,6 +49,7 @@ cfg_if::cfg_if! { if #[cfg(feature="font")] {
 impl Ratio {
 	pub fn floor(&self, x: i32) -> i32 { div_floor(x * self.num as i32, self.div) }
 	pub fn ceil(&self, x: i32) -> i32 { div_ceil(x * self.num as i32, self.div) }
+	pub fn round(&self, x: u32) -> u32 { udiv_round(x * self.num, self.div) }
 }
 impl From<Ratio> for f32 { fn from(r: Ratio) -> Self { r.num as f32 / r.div as f32 } }
 impl std::ops::Mul<u32> for Ratio { type Output=u32; #[track_caller] fn mul(self, b: u32) -> Self::Output { b * self.num / self.div } }
