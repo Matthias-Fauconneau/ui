@@ -103,7 +103,7 @@ pub fn fill(edges : &Image<&[f32]>) -> Image<Vec<f32>> {
 
 pub fn line(target : &mut Image<&mut [f32]>, p0: vec2, p1: vec2) {
     #[allow(clippy::float_cmp)] if p0.y == p1.y { return; }
-    let (dir, x0, y0, x1, y1) = if p0.y < p1.y { (1., p0.x, p0.y, p1.x, p1.y) } else { (-1., p1.x, p1.y, p0.x, p0.y) };
+    let (dir, x0, y0, x1, y1) = if p0.y < p1.y { (-1., p0.x, p0.y, p1.x, p1.y) } else { (1., p1.x, p1.y, p0.x, p0.y) };
     let dxdy = (x1-x0)/(y1-y0);
     let mut x = x0;
     // Modified from https://github.com/raphlinus/font-rs Apache 2

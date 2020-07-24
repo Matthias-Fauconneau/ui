@@ -157,7 +157,7 @@ impl Widget for TextEdit<'_,'_> {
     fn size(&mut self, size : size) -> size { Widget::size(&mut self.text, size) }
     #[throws] fn paint(&mut self, target : &mut Target) {
         Widget::paint(&mut self.text, target)?;
-        /*if self.hasFocus()*/ {
+        /*if self.has_focus()*/ {
             let scale = self.text.scale(&target);
             let Self{text: Text{text, font, ..}, cursor} = self;
             let &mut LineColumn{line: line_index, column} = cursor;
