@@ -1,7 +1,7 @@
 #![allow(non_upper_case_globals)]
-use {std::cmp::{min, max}, ttf_parser::{Font,GlyphId,Rect}, crate::{error::{throws, Error}, num::Ratio, font::{self, Rasterize}}};
+use {std::cmp::{min, max}, ttf_parser::{Face,GlyphId,Rect}, crate::{error::{throws, Error}, num::Ratio, font::{self, Rasterize}}};
 
-pub struct FontIter<'t, I: 't> { font: &'t Font<'t>, iter: I }
+pub struct FontIter<'t, I: 't> { font: &'t Face<'t>, iter: I }
 impl<'t, T> std::ops::Deref for FontIter<'t, T> { type Target = T; fn deref(&self) -> &Self::Target { &self.iter } }
 impl<'t, T> std::ops::DerefMut for FontIter<'t, T> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.iter } }
 impl<'t, I:IntoIterator> IntoIterator for FontIter<'t, I> { type Item=I::Item; type IntoIter=I::IntoIter; fn into_iter(self) -> Self::IntoIter { self.iter.into_iter() } }
@@ -11,7 +11,7 @@ impl Char for char { fn char(&self) -> char { *self } }
 impl<T> Char for (T, char) { fn char(&self) -> char { self.1 } }
 type GlyphIDs<'t, I:Iterator> = impl 't+Iterator<Item=(I::Item, GlyphId)>; // Map
 pub trait Glyphs<'t> { fn glyphs<I:'t+Iterator<Item:Char>>(&'t self, iter: I) -> FontIter<'t, GlyphIDs<'t, I>>; }
-impl<'t> Glyphs<'t> for Font<'t> {
+impl<'t> Glyphs<'t> for Face<'t> {
     fn glyphs<I:'t+Iterator<Item:Char>>(&'t self, iter: I) -> FontIter<'t, GlyphIDs<'t, I>> {
 		FontIter{font: self, iter: iter.map(move |item|{let c=item.char(); (item, self.glyph_index(c).unwrap_or_else(||panic!("Missing glyph for '{:?}'",c)))})}
     }
@@ -82,7 +82,7 @@ pub type Color = crate::image::bgrf;
 impl<T> std::ops::Deref for Attribute<T> { type Target=TextRange; fn deref(&self) -> &Self::Target { &self.range } }
 
 lazy_static::lazy_static! {
-	static ref default_font : font::File<'static> = font::open(
+	pub static ref default_font : font::File<'static> = font::open(
 		["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/liberation-fonts/LiberationSans-Regular.ttf"].iter().map(std::path::Path::new)
 			.filter(|x| std::path::Path::exists(x))
 			.next().unwrap()
@@ -92,13 +92,13 @@ lazy_static::lazy_static! {
 }
 
 pub struct Text<'font, 'text> {
-    pub font : &'font Font<'font>,
+    pub font : &'font Face<'font>,
     pub text : &'text str,
     style: &'text [Attribute<Style>],
     //size : Option<size2>
 }
 impl<'font, 'text> Text<'font, 'text> {
-    pub fn new(font: &'font Font<'font>, text : &'text str, style: &'text [Attribute<Style>]) -> Self { Self{font, text, style/*, size: None*/} }
+    pub fn new(font: &'font Face<'font>, text : &'text str, style: &'text [Attribute<Style>]) -> Self { Self{font, text, style/*, size: None*/} }
     pub fn size(&/*mut*/ self) -> size {
         let Self{font, text, /*ref mut size,*/ ..} = self;
         //*size.get_or_insert_with(||{

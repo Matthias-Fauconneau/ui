@@ -1,5 +1,5 @@
 use crate::{error::{throws, Error, Result}, num::Ratio, vector::{self, uint2, size, int2, Zero}, image::Image, font::Rasterize};
-pub use {crate::vector::xy, ttf_parser::Font};
+pub use {crate::vector::xy, ttf_parser::Face};
 
 impl std::ops::Mul<uint2> for Ratio { type Output=uint2; #[track_caller] fn mul(self, b: uint2) -> Self::Output { xy{x:self*b.x, y:self*b.y} } }
 impl std::ops::Div<Ratio> for uint2{ type Output=uint2; #[track_caller] fn div(self, r: Ratio) -> Self::Output { xy{x:self.x/r, y:self.y/r} } }
@@ -33,12 +33,12 @@ pub struct Graphic<'t> {
 	pub scale: Ratio,
 	pub rects: Vec<Rect>,
 	pub parallelograms: Vec<Parallelogram>,
-	pub font: &'t Font<'t>,
+	pub font: &'t Face<'t>,
 	pub glyphs: Vec<Glyph>,
 }
 
 impl<'t> Graphic<'t> {
-	pub fn new(scale: Ratio, font: &'t Font) -> Self {
+	pub fn new(scale: Ratio, font: &'t Face) -> Self {
 		Self{scale, rects: Default::default(), parallelograms: Default::default(), font, glyphs: Default::default() }
 	}
 	pub fn bounds(&self) -> Rect {
