@@ -35,6 +35,7 @@ pub fn atan(y: f32, x: f32) -> f32 { y.atan2(x) }
 pub fn clamp(x:f32) -> f32 { if x > 1. {1.} else if x < 0. {0.} else {x} }
 
 #[derive(Clone,Copy,Debug)] pub struct Ratio { pub num: u32, pub div: u32 }
+impl Default for Ratio { fn default() -> Self { Self{num: 1, div: 1} } }
 impl Ratio {
 	pub fn ceil(&self, x: u32) -> u32 { div_ceil(x * self.num, self.div) }
 	pub fn ifloor(&self, x: i32) -> i32 { idiv_floor(x * self.num as i32, self.div) }

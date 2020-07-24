@@ -5,9 +5,18 @@ pub trait ComponentWiseMinMax {
 pub fn component_wise_min<V: ComponentWiseMinMax>(a: V, b: V) -> V { a.component_wise_min(b) }
 pub fn component_wise_max<V: ComponentWiseMinMax>(a: V, b: V) -> V { a.component_wise_max(b) }
 
-impl<T:Ord> ComponentWiseMinMax for T { // /!\ falsified by impl Ord for Vector
+impl<T:Ord> ComponentWiseMinMax for T { // /!\ semantic break if impl Ord for Vector
 	fn component_wise_min(self, other: Self) -> Self { self.min(other) }
 	fn component_wise_max(self, other: Self) -> Self { self.max(other) }
+}
+
+pub struct MinMax<T> { pub min: T, pub max: T }
+pub trait Bounds<T> { fn bounds(self) -> Option<MinMax<T>>; }
+impl<T: ComponentWiseMinMax+Copy, I:Iterator<Item=MinMax<T>>> Bounds<T> for I {
+	fn bounds(self) -> Option<MinMax<T>> { self.fold_first(|MinMax{min,max}, e| MinMax{
+		min: component_wise_min(min, e.min),
+		max: component_wise_max(max, e.max)
+	}) }
 }
 
 macro_rules! impl_Op { { $v:ident $($c:ident)+: $Op:ident $op:ident $OpAssign:ident $op_assign:ident } => {
@@ -16,7 +25,7 @@ macro_rules! impl_Op { { $v:ident $($c:ident)+: $Op:ident $op:ident $OpAssign:id
 }}
 
 #[macro_export] macro_rules! vector { ($n:literal $v:ident $($tuple:ident)+, $($c:ident)+, $($C:ident)+) => {
-use {$crate::num::Zero, std::ops::{Add,Sub,Mul,Div,AddAssign,SubAssign,MulAssign,DivAssign}};
+use std::ops::{Add,Sub,Mul,Div,AddAssign,SubAssign,MulAssign,DivAssign};
 #[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)] pub struct $v<T> { $( pub $c: T ),+ }
 
 impl<T> From<($($tuple),+)> for $v<T> { fn from(($($c),+): ($($tuple),+)) -> Self { $v{$($c),+} } } // $tuple from $n
@@ -29,7 +38,6 @@ impl<T> $v<T> { pub fn iter(&self) -> impl Iterator<Item=&T> { use crate::array:
 impl<T> std::iter::FromIterator<T> for $v<T> { fn from_iter<I:std::iter::IntoIterator<Item=T>>(into_iter: I) -> Self {
 	use crate::array::FromIterator; <[T; $n]>::from_iter(into_iter).into()
 } }
-//impl<T> $v<T> { pub fn map(&self, f: impl Fn(&T) -> T) -> $v<T> { self.iter().map(f).collect() } }
 
 #[derive(Clone, Copy)] pub enum Component { $($C),+ }
 impl Component {
@@ -55,9 +63,6 @@ impl<T:Ord> $crate::vector::ComponentWiseMinMax for $v<T> {
 	fn component_wise_min(self, other: Self) -> Self { $v{$($c: self.$c .min( other.$c ) ),+} }
 	fn component_wise_max(self, other: Self) -> Self { $v{$($c: self.$c .max( other.$c ) ),+} }
 }
-// Panics on unordered values (i.e NaN)
-//pub fn min<T:PartialOrd>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: std::cmp::min_by(a.$c, b.$c, |a,b| a.partial_cmp(b).unwrap() ) ),+} }
-//pub fn max<T:PartialOrd>(a: $v<T>, b: $v<T>) -> $v<T> { $v{$($c: std::cmp:: max_by(a.$c, b.$c, |a,b| a.partial_cmp(b).unwrap() ) ),+} }
 
 impl_Op!{$v $($c)+: Add add AddAssign add_assign}
 impl_Op!{$v $($c)+: Sub sub SubAssign sub_assign}
@@ -67,8 +72,8 @@ impl_Op!{$v $($c)+: Div div DivAssign div_assign}
 impl<T:Div+Copy> Div<T> for $v<T> { type Output=$v<T::Output>; fn div(self, b: T) -> Self::Output { Self::Output{$($c: self.$c/b),+} } }
 
 impl<T:Copy> From<T> for $v<T> { fn from(v: T) -> Self { $v{$($c:v),+} } }
-impl<T:Copy+Zero> Zero for $v<T> { fn zero() -> Self { T::zero().into() } }
-impl<T:Copy+Zero> $v<T> { pub fn zero() -> Self { Zero::zero() } }
+impl<T:Copy+$crate::num::Zero> $crate::num::Zero for $v<T> { fn zero() -> Self { T::zero().into() } }
+//impl<T:Copy+$crate::num::Zero> $v<T> { pub fn zero() -> Self { $crate::num::Zero::zero() } } // vec::zero without use Zero
 
 fn mul<T:Copy+Mul>(a: T, b: $v<T>) -> $v<T::Output> { $v{$($c: a*b.$c),+} }
 fn div<T:Copy+Div>(a: T, b: $v<T>) -> $v<T::Output> { $v{$($c: a/b.$c),+} }
@@ -81,18 +86,17 @@ impl Div<$v<f32>> for f32 { type Output=$v<f32>; fn div(self, b: $v<f32>) -> Sel
 
 vector!(2 xy T T, x y, X Y);
 
-impl xy<i32> { pub const fn as_u32(self) -> xy<u32> { xy{x: self.x as u32, y: self.y as u32} } }
-impl From<xy<i32>> for xy<u32> { fn from(i: xy<i32>) -> Self { i.as_u32() } }
-impl From<xy<u32>> for xy<i32> { fn from(u: xy<u32>) -> Self { xy{x: u.x as i32, y: u.y as i32} } }
-impl From<xy<u32>> for xy<f32> { fn from(f: xy<u32>) -> Self { xy{x: f.x as f32, y: f.y as f32} } }
-//impl From<xy<f32>> for xy<u32> { fn from(f: xy<f32>) -> Self { xy{x: f.x as u32, y: f.y as u32} } }
+pub use crate::num::Zero;
 
-//impl xy<u32> { pub const fn as_f32(self) -> xy<f32> { xy{x: self.x as f32, y: self.y as f32} } }
-//#[cfg(feature="const_fn")] pub const fn div_f32(a: f32, b: xy<f32>) -> xy<f32> { xy{x: a/b.x, y: a/b.y} }
+impl xy<u32> { pub const fn signed(self) -> xy<i32> { xy{x: self.x as i32, y: self.y as i32} } }
+impl xy<i32> { pub const fn unsigned(self) -> xy<u32> { xy{x: self.x as u32, y: self.y as u32} } }
+impl From<xy<i32>> for xy<u32> { fn from(i: xy<i32>) -> Self { i.unsigned() } }
+impl From<xy<u32>> for xy<i32> { fn from(u: xy<u32>) -> Self { u.signed() } }
+impl From<xy<u32>> for xy<f32> { fn from(f: xy<u32>) -> Self { xy{x: f.x as f32, y: f.y as f32} } }
 
 #[allow(non_camel_case_types)] pub type uint2 = xy<u32>;
 #[allow(non_camel_case_types)] pub type int2 = xy<i32>;
-#[allow(non_camel_case_types)] pub type size2 = xy<u32>;
+#[allow(non_camel_case_types)] pub type size = xy<u32>;
 #[allow(non_camel_case_types)] pub type vec2 = xy<f32>;
 
 pub fn lerp(t: f32, a: vec2, b: vec2) -> xy<f32> { (1.-t)*a + t*b }

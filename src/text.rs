@@ -1,5 +1,5 @@
 #![allow(non_upper_case_globals)]
-use {std::cmp::{min, max}, ttf_parser::{GlyphId,Rect}, crate::{error::{throws, Error}, num::Ratio, font::{self, Font}}};
+use {std::cmp::{min, max}, ttf_parser::{Font,GlyphId,Rect}, crate::{error::{throws, Error}, num::Ratio, font::{self, Rasterize}}};
 
 pub struct FontIter<'t, I: 't> { font: &'t Font<'t>, iter: I }
 impl<'t, T> std::ops::Deref for FontIter<'t, T> { type Target = T; fn deref(&self) -> &Self::Target { &self.iter } }
@@ -10,8 +10,9 @@ pub trait Char { fn char(&self) -> char; }
 impl Char for char { fn char(&self) -> char { *self } }
 impl<T> Char for (T, char) { fn char(&self) -> char { self.1 } }
 type GlyphIDs<'t, I:Iterator> = impl 't+Iterator<Item=(I::Item, GlyphId)>; // Map
-impl<'t> Font<'t> {
-    pub fn glyphs<I:'t+Iterator<Item:Char>>(&'t self, iter: I) -> FontIter<'t, GlyphIDs<'t, I>> {
+pub trait Glyphs<'t> { fn glyphs<I:'t+Iterator<Item:Char>>(&'t self, iter: I) -> FontIter<'t, GlyphIDs<'t, I>>; }
+impl<'t> Glyphs<'t> for Font<'t> {
+    fn glyphs<I:'t+Iterator<Item:Char>>(&'t self, iter: I) -> FontIter<'t, GlyphIDs<'t, I>> {
 		FontIter{font: self, iter: iter.map(move |item|{let c=item.char(); (item, self.glyph_index(c).unwrap_or_else(||panic!("Missing glyph for '{:?}'",c)))})}
     }
 }
@@ -53,7 +54,7 @@ impl<T:DerefGlyphId, I:Iterator<Item=Layout<T>>> FontIter<'_, I> {
 }
 
 pub use text_size::{TextSize, TextRange}; // ~Range<u32> with impl SliceIndex for String
-use {derive_more::Deref, crate::{iter::{Single, PeekableExt}, num::{Zero, div_ceil}, vector::{uint2, size2}, image::{Image, bgra8}}};
+use {derive_more::Deref, crate::{iter::{Single, PeekableExt}, num::{Zero, div_ceil}, vector::{size, xy}, image::{Image, bgra8}}};
 
 #[derive(Deref)] struct LineRange<'t> { #[deref] text: &'t str, range: std::ops::Range<usize>}
 impl LineRange<'_> {
@@ -98,20 +99,20 @@ pub struct Text<'font, 'text> {
 }
 impl<'font, 'text> Text<'font, 'text> {
     pub fn new(font: &'font Font<'font>, text : &'text str, style: &'text [Attribute<Style>]) -> Self { Self{font, text, style/*, size: None*/} }
-    pub fn size(&/*mut*/ self) -> size2 {
+    pub fn size(&/*mut*/ self) -> size {
         let Self{font, text, /*ref mut size,*/ ..} = self;
         //*size.get_or_insert_with(||{
             let (line_count, max_width) = text.lines()
 				.map(|line| font.glyphs(line.chars()).layout().metrics())
 				.fold((0,0),|(line_count, width), line| (line_count+1, max(width, line.width)));
-            size2{x: max_width, y: line_count * (font.height() as u32)}
+            xy{x: max_width, y: line_count * (font.height() as u32)}
         //})
     }
     pub fn paint(&self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
         let (mut style, mut styles) = (None, self.style.iter().peekable());
         for (line_index, line) in self.text.line_ranges().enumerate() {
             for Layout{x, glyph: ((index,_), id), bbox} in self.font.glyphs(line.char_indices()).layout() {
-                let position = uint2{
+                let position = xy{
                     x: (x+self.font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
                     y: (line_index as u32)*(self.font.height() as u32) + (self.font.ascender()-bbox.y_max) as u32
                 };
@@ -123,14 +124,14 @@ impl<'font, 'text> Text<'font, 'text> {
     }
 }
 
-fn fit_width(width: u32, from : size2) -> size2 { size2{x: width, y: div_ceil(width * from.y, from.x)} }
+fn fit_width(width: u32, from : size) -> size { xy{x: width, y: div_ceil(width * from.y, from.x)} }
 
 use crate::widget::{Widget, Target};
 impl Text<'_,'_> {
     pub fn scale(&mut self, target: &Target) -> Ratio { Ratio{num: target.size.x-1, div: Text::size(&self).x-1} } // todo: scroll
 }
 impl Widget for Text<'_,'_> {
-    fn size(&mut self, bounds : size2) -> size2 { fit_width(bounds.x, Text::size(&self)) }
+    fn size(&mut self, bounds : size) -> size { fit_width(bounds.x, Text::size(&self)) }
     #[throws] fn paint(&mut self, target : &mut Target) {
         let scale = self.scale(&target);
         Text::paint(&self, target, scale)
@@ -153,7 +154,7 @@ impl<'font, 'text> TextEdit<'font, 'text> {
 }
 
 impl Widget for TextEdit<'_,'_> {
-    fn size(&mut self, size : size2) -> size2 { Widget::size(&mut self.text, size) }
+    fn size(&mut self, size : size) -> size { Widget::size(&mut self.text, size) }
     #[throws] fn paint(&mut self, target : &mut Target) {
         Widget::paint(&mut self.text, target)?;
         /*if self.hasFocus()*/ {
@@ -173,7 +174,7 @@ impl Widget for TextEdit<'_,'_> {
                 }
             }
             impl<I:Iterator> NthOrLast for I {}
-            let position = uint2{
+            let position = xy{
                 x:
 					font.glyphs(line.chars()).layout().nth_or_last(column).map_or_else(
                         |last| last.map_or(0, |last| last.x+(font.glyph_hor_advance(*last.glyph.id()).unwrap() as i32)),
@@ -182,7 +183,7 @@ impl Widget for TextEdit<'_,'_> {
                 y: (line_index as u32)*(font.height() as u32)
             };
             let height = font.height() as u32;
-            target.slice_mut(scale*position, scale*uint2{x:height/8,y:height}).set(|_| 0xFF.into());
+            target.slice_mut(scale*position, scale*xy{x:height/8,y:height}).set(|_| 0xFF.into());
         }
     }
 }

@@ -7,16 +7,17 @@
 //#![cfg_attr(feature="image", feature(slice_index_methods))]
 #![cfg_attr(feature="font", feature(associated_type_bounds))]
 #![cfg_attr(feature="font", feature(non_ascii_idents))]
-#![cfg_attr(feature="font", allow(uncommon_codepoints,mixed_script_confusables))]
+#![cfg_attr(feature="font", allow(uncommon_codepoints))]
 
+#[allow(non_camel_case_types)] pub type uint = u32;
 #[macro_export] macro_rules! dbg { ( $first:expr $(,$A:expr)* ) => ( eprint!("{} = {:?}", stringify!($first), $first); $( eprint!(", {} = {:?}", stringify!($A), $A); )* eprintln!(""); ) }
 pub mod error; pub use error::{Error, Result/*bail, ensure, Ok*/}; #[cfg(feature="fehler")] pub use error::throws;
 pub use cfg_if::cfg_if;
-mod iter;
+pub mod iter;
 mod slice;
 #[cfg(feature="array")] pub mod array; //pub use array::{Iterator, map};
 cfg_if! { if #[cfg(feature="num")] { pub mod num; pub use num::{Zero, Ratio, abs}; } }
-cfg_if! { if #[cfg(feature="vector")] { #[macro_use] pub mod vector; pub use vector::{xy, int2, uint2, size2, vec2}; }}
+cfg_if! { if #[cfg(feature="vector")] { #[macro_use] pub mod vector; pub use vector::{Bounds, MinMax, xy, int2, uint2, size, vec2}; }}
 cfg_if! { if #[cfg(feature="trace")] { pub mod trace; pub use trace::rstack_self; }}
 #[cfg(feature="timeout")] pub use trace::timeout;
 #[cfg(feature="signal-hook")] pub use trace::sigint_trace;
@@ -29,7 +30,7 @@ cfg_if! { if #[cfg(feature="font")] {
 	mod quad;
 	mod cubic;
 	mod raster;
-	pub mod font; pub use font::Font;
+	pub mod font;
 }}
 cfg_if! { if #[cfg(feature="text")] { pub mod text; pub use text::{Text, default_style}; }}
 cfg_if! { if #[cfg(feature="graphic")] { pub mod graphic; pub use graphic::{Rect, Glyph, Graphic}; }}

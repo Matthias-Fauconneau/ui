@@ -1,9 +1,9 @@
 #![allow(non_upper_case_globals)]
-use crate::vector::size2;
+use crate::vector::size;
 
 pub struct Image<Data> {
     pub stride : u32,
-    pub size : size2,
+    pub size : size,
     pub data : Data,
 }
 
@@ -43,9 +43,9 @@ impl<T, D:std::ops::DerefMut<Target=[T]>> std::ops::IndexMut<uint2> for Image<D>
 impl<T, D:std::ops::Deref<Target=[T]>> Image<D> {
     pub fn rows(&self, rows: std::ops::Range<u32>) -> Image<&[T]> {
         assert!(rows.end <= self.size.y, self.size, rows);
-        Image{size: size2{x:self.size.x, y:rows.len() as u32}, stride: self.stride, data: &self.data[(rows.start*self.stride) as usize..]}
+        Image{size: xy{x: self.size.x, y: rows.len() as u32}, stride: self.stride, data: &self.data[(rows.start*self.stride) as usize..]}
     }
-    pub fn slice(&self, offset: uint2, size: size2) -> Image<&[T]> {
+    pub fn slice(&self, offset: uint2, size: size) -> Image<&[T]> {
         assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, self.size, offset, size);
         Image{size, stride: self.stride, data: &self.data[(offset.y*self.stride+offset.x) as usize..]}
     }
@@ -54,9 +54,9 @@ impl<T, D:std::ops::Deref<Target=[T]>> Image<D> {
 impl<T, D:std::ops::DerefMut<Target=[T]>> Image<D> {
     pub fn rows_mut(&mut self, rows: std::ops::Range<u32>) -> Image<&mut [T]> {
         assert!(rows.end <= self.size.y, self.size, rows);
-        Image{size: size2{x:self.size.x, y:rows.len() as u32}, stride: self.stride, data: &mut self.data[(rows.start*self.stride) as usize..]}
+        Image{size: xy{x: self.size.x, y: rows.len() as u32}, stride: self.stride, data: &mut self.data[(rows.start*self.stride) as usize..]}
     }
-    #[track_caller] pub fn slice_mut(&mut self, offset : uint2, size : size2) -> Image<&mut[T]> {
+    #[track_caller] pub fn slice_mut(&mut self, offset : uint2, size : size) -> Image<&mut[T]> {
         assert!(offset.x+size.x <= self.size.x && offset.y+size.y <= self.size.y, self.size, offset, size);
         Image{size, stride: self.stride, data: &mut self.data[(offset.y*self.stride+offset.x) as usize..]}
     }
@@ -66,7 +66,7 @@ impl<'t, T> Image<&'t [T]> {
     pub fn take<'s>(&'s mut self, mid: u32) -> Image<&'t [T]> {
         assert!(mid <= self.size.y);
         self.size.y -= mid;
-        Image{size: size2{x:self.size.x, y:mid}, stride: self.stride, data: self.data.take((mid*self.stride) as usize)}
+        Image{size: xy{x: self.size.x, y: mid}, stride: self.stride, data: self.data.take((mid*self.stride) as usize)}
     }
 }
 
@@ -74,7 +74,7 @@ impl<'t, T> Image<&'t mut [T]> {
     pub fn take_mut<'s>(&'s mut self, mid: u32) -> Image<&'t mut[T]> {
         assert!(mid <= self.size.y);
         self.size.y -= mid;
-        Image{size: size2{x:self.size.x, y:mid}, stride: self.stride, data: self.data.take_mut((mid*self.stride) as usize)}
+        Image{size: xy{x: self.size.x, y: mid}, stride: self.stride, data: self.data.take_mut((mid*self.stride) as usize)}
     }
 }
 
@@ -102,7 +102,7 @@ impl<'t, T> Iterator for Image<&'t mut [T]> {
 }*/
 
 impl<'t, T> Image<&'t mut [T]> {
-    fn new(data: &'t mut [T], size : size2) -> Self {
+    fn new(data: &'t mut [T], size : size) -> Self {
         assert_eq!(data.len(), (size.x*size.y) as usize, "{:?}", size);
         Self{stride: size.x, size, data}
     }
@@ -177,16 +177,16 @@ impl<T:Send> Image<&mut [T]> {
 }
 
 impl<T> Image<Vec<T>> {
-    pub fn new(size: size2, data: Vec<T>) -> Self {
+    pub fn new(size: size, data: Vec<T>) -> Self {
 		assert_eq!(data.len(), (size.x*size.y) as usize);
 		Self{stride: size.x, size, data}
 	}
-    pub fn from_iter<I:IntoIterator<Item=T>>(size : size2, iter : I) -> Self {
+    pub fn from_iter<I:IntoIterator<Item=T>>(size : size, iter : I) -> Self {
         let mut buffer = Vec::with_capacity((size.y*size.x) as usize);
         buffer.extend(iter.into_iter().take(buffer.capacity()));
         Image::<Vec<T>>::new(size, buffer)
     }
-    pub fn uninitialized(size: size2) -> Self {
+    pub fn uninitialized(size: size) -> Self {
         let len = (size.x * size.y) as usize;
         let mut buffer = Vec::with_capacity(len);
         unsafe{ buffer.set_len(len) };
@@ -197,7 +197,7 @@ impl<T> Image<Vec<T>> {
 }
 
 impl<T:crate::num::Zero> Image<Vec<T>> {
-    pub fn zero(size: size2) -> Self { Image::<Vec<T>>::from_iter(size, std::iter::from_fn(|| Some(Zero::zero()))) }
+    pub fn zero(size: size) -> Self { Image::<Vec<T>>::from_iter(size, std::iter::from_fn(|| Some(crate::num::Zero::zero()))) }
 }
 
 vector!(3 bgr T T T, b g r, Blue Green Red);
@@ -209,7 +209,7 @@ impl bgrf { fn clamp(&self) -> Self { use crate::num::clamp; Self{b:clamp(self.b
 impl std::convert::From<u8> for bgra8 { fn from(v: u8) -> Self { bgra8{b:v,g:v,r:v,a:v} } }
 
 impl<'t> Image<&'t mut [bgra8]> {
-    pub fn from_bytes(slice: &'t mut [u8], size: size2) -> Self { Self::new(unsafe{crate::slice::cast_mut(slice)}, size) }
+    pub fn from_bytes(slice: &'t mut [u8], size: size) -> Self { Self::new(unsafe{crate::slice::cast_mut(slice)}, size) }
 }
 
 cfg_if::cfg_if! { if #[cfg(feature="sRGB")] {

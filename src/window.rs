@@ -13,7 +13,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
             },
         },
     };
-    use crate::{vector::size2, image::bgra8, widget::Target};
+    use crate::{vector::{size, Zero, xy}, image::bgra8, widget::Target};
 
     default_environment!(Compositor,
         fields = [ layer_shell: SimpleGlobal<LayerShell> ],
@@ -29,7 +29,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
     struct State<'w> {
         pool: shm::MemPool,
         widget: &'w mut dyn Widget,
-        unscaled_size: size2
+        unscaled_size: size
     }
 
     use {std::iter::once, futures::{FutureExt, stream::{unfold, iter, StreamExt, SelectAll, Peekable, LocalBoxStream}}};
@@ -39,7 +39,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
     }
     fn quit(streams: &mut Peekable<SelectAll<LocalBoxStream<'_, Item>>>) { streams.get_mut().push(iter(once(Item::Quit)).boxed_local()) }
 
-    #[throws] fn draw(pool: &mut shm::MemPool, surface: &Surface, widget: &mut dyn Widget, size: size2) {
+    #[throws] fn draw(pool: &mut shm::MemPool, surface: &Surface, widget: &mut dyn Widget, size: size) {
 		assert!(size.x < 124839 || size.y < 1443);
         let stride = size.x*4;
         pool.resize((size.y*stride) as usize)?;
@@ -87,7 +87,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
                     surface.commit();
                 } else {
 					layer_surface.ack_configure(serial);
-					*unscaled_size = size2{x:width, y:height};
+					*unscaled_size = xy{x: width, y: height};
 					let scale = if get_surface_outputs(&surface).is_empty() { // get_surface_outputs defaults to 1 instead of first output factor
 						env.get_all_outputs().first().map(|output| with_output_info(output, |info| info.scale_factor)).flatten().unwrap_or(1)
 					} else {
@@ -145,7 +145,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
     let mut state = State {
         pool: env.create_simple_pool(|_|{})?,
         widget,
-        unscaled_size: size2{x:0,y:0}
+        unscaled_size: Zero::zero()
     };
 
     async move /*queue*/ {

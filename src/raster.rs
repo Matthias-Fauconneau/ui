@@ -1,5 +1,5 @@
 /// Rasterize polygon with analytical coverage
-use crate::{vector::{vec2, size2}, image::Image};
+use crate::{vector::{vec2, size}, image::Image};
 
 /*use {crate::num::{floor, sq, fract, abs}, vector::xy};
 #[track_caller] pub fn line(target : &mut Image<&mut [f32]>, xy{x:x0,y:y0}: vec2, xy{x:x1,y:y1}: vec2) {
@@ -150,7 +150,7 @@ pub fn line(target : &mut Image<&mut [f32]>, p0: vec2, p1: vec2) {
 }
 
 pub fn fill(edges : &Image<&[f32]>) -> Image<Vec<f32>> {
-    let mut target = Image::uninitialized(size2{x:edges.size.x-1, y:edges.size.y-1});
+    let mut target = Image::uninitialized(size{x: edges.size.x-1, y: edges.size.y-1});
 	for (target, edges) in target.rows_mut(0..target.size.y).zip(edges.rows(0..edges.size.y-1)) {
 		let mut coverage = 0.;
 		for (target, &edge) in target.iter_mut().zip(edges.iter().skip(1)) {

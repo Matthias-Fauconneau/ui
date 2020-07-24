@@ -1,17 +1,4 @@
-use {derive_more::Deref, crate::{num::Ratio, vector::size2}};
-#[derive(Deref)] pub struct Font<'t>(ttf_parser::Font<'t>);
-impl<'t> Font<'t> {
-	pub fn size(&self, id: ttf_parser::GlyphId) -> size2 {
-		let b = self.glyph_bounding_box(id).unwrap();
-		size2{x: (b.x_max as i32 - b.x_min as i32) as u32, y: (b.y_max as i32 - b.y_min as i32) as u32}
-	}
-	pub fn scaled_size(&self, scale: Ratio, id: ttf_parser::GlyphId) -> size2 {
-		let b = self.glyph_bounding_box(id).unwrap();
-		size2{x: (scale.iceil(b.x_max as i32) - scale.ifloor(b.x_min as i32)) as u32, y: (scale.iceil(b.y_max as i32) - scale.ifloor(b.y_min as i32)) as u32}
-	}
-}
-
-use crate::{Image, vector::vec2, quad::quad, cubic::cubic, raster::{line, self}};
+use crate::{num::Ratio, vector::{size, xy}, Image, vector::vec2, quad::quad, cubic::cubic, raster::{line, self}};
 struct Outline<'t> { scale : Ratio /*f32 loses precision*/, x_min: f32, y_max: f32, target : &'t mut Image<&'t mut[f32]>, first : Option<vec2>, p0 : Option<vec2>}
 impl std::ops::Mul<f32> for Ratio { type Output=f32; #[track_caller] fn mul(self, b: f32) -> Self::Output { b * self.num as f32 / self.div as f32 } } // b*(n/d) loses precision
 impl Outline<'_> { fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-self.x_min, y: -(self.scale*y)+self.y_max} } }
@@ -53,11 +40,24 @@ impl ttf_parser::OutlineBuilder for Outline<'_> {
     fn close(&mut self) { line(&mut self.target, self.p0.unwrap(), self.first.unwrap()); self.first = None; self.p0 = None; }
 }
 
-impl<'t> Font<'t> {
-    pub fn rasterize(&self, scale: Ratio, id: ttf_parser::GlyphId, bbox: ttf_parser::Rect) -> Image<Vec<f32>> {
+pub trait Rasterize {
+	fn glyph_size(&self, id: ttf_parser::GlyphId) -> size;
+	fn glyph_scaled_size(&self, scale: Ratio, id: ttf_parser::GlyphId) -> size;
+	fn rasterize(&self, scale: Ratio, id: ttf_parser::GlyphId, bbox: ttf_parser::Rect) -> Image<Vec<f32>>;
+}
+impl<'t> Rasterize for ttf_parser::Font<'t> {
+	fn glyph_size(&self, id: ttf_parser::GlyphId) -> size {
+		let b = self.glyph_bounding_box(id).unwrap();
+		xy{x: (b.x_max as i32 - b.x_min as i32) as u32, y: (b.y_max as i32 - b.y_min as i32) as u32}
+	}
+	fn glyph_scaled_size(&self, scale: Ratio, id: ttf_parser::GlyphId) -> size {
+		let b = self.glyph_bounding_box(id).unwrap();
+		xy{x: (scale.iceil(b.x_max as i32) - scale.ifloor(b.x_min as i32)) as u32, y: (scale.iceil(b.y_max as i32) - scale.ifloor(b.y_min as i32)) as u32}
+	}
+    fn rasterize(&self, scale: Ratio, id: ttf_parser::GlyphId, bbox: ttf_parser::Rect) -> Image<Vec<f32>> {
 		let x_min = scale.ifloor(bbox.x_min as i32)-1; // Correct rasterization with f32 roundoff without bound checking
         let y_max = scale.iceil(bbox.y_max as i32);
-        let mut target = Image::zero(self.scaled_size(scale, id)+size2{x:1,y:1/*2*/});
+        let mut target = Image::zero(self.glyph_scaled_size(scale, id)+xy{x:1, y:1/*2*/});
         self.outline_glyph(id, &mut Outline{scale: scale.into(), x_min: x_min as f32, y_max: y_max as f32, target: &mut target.as_mut(), first:None, p0:None}).unwrap();
         raster::fill(&target.as_ref())
     }
@@ -65,13 +65,14 @@ impl<'t> Font<'t> {
 
 cfg_if::cfg_if! { if #[cfg(all(feature="owning-ref",feature="memmap"))] {
 use crate::error::{Error, throws};
-#[derive(Deref)]
-pub struct Handle<'t>(Font<'t>); // OwningHandle forwards deref, but Font derefs to ttf_parser::Font, while we want OwningHandle to deref to Font not ttf_parser::Font
+#[derive(derive_more::Deref)] pub struct Handle<'t>(ttf_parser::Font<'t>); // impl Deref for File
 pub type File<'t> = owning_ref::OwningHandle<Box<memmap::Mmap>, Handle<'t>>;
 #[throws] pub fn open(path: &std::path::Path) -> File {
 	owning_ref::OwningHandle::new_with_fn(
 		Box::new(unsafe{memmap::Mmap::map(&std::fs::File::open(path)?)}?),
-		unsafe { |map| Handle(Font(ttf_parser::Font::from_data(&*map, 0).unwrap())) }
+		//unsafe { |map| ttf_parser::Font::from_data(&*map, 0).unwrap() }
+		unsafe { |map| Handle(ttf_parser::Font::from_data(&*map, 0).unwrap()) }
+		//unsafe { |map| Handle(Font(ttf_parser::Font::from_data(&*map, 0).unwrap())) }
 	)
 }
 }}

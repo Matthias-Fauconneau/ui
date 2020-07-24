@@ -1,4 +1,4 @@
-use crate::{error::Result, vector::size2, image::{Image, bgra8}};
+use crate::{error::Result, vector::size, image::{Image, bgra8}};
 
 pub type Target<'t> = Image<&'t mut[bgra8]>;
 #[allow(non_upper_case_globals)] pub static black: bgra8 = bgra8{b:0x00,g:0x00,r:0x00,a:0xFF};
@@ -7,6 +7,6 @@ pub type Target<'t> = Image<&'t mut[bgra8]>;
 #[allow(non_upper_case_globals)] pub static fg: bgra8 = white;
 
 pub trait Widget {
-    fn size(&mut self, size : size2) -> size2 { size }
+    fn size(&mut self, size : size) -> size { size }
     /*#[throws]*/ fn paint(&mut self, target : &mut Target) -> Result;
 }
