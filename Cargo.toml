@@ -9,17 +9,17 @@ trace = ['fehler', 'rstack-self']
 timeout = ['trace'] # thread_spawn_unchecked
 array = []
 num = []
-vector = ['num']
+vector = ['array','num']
 image = ['vector']
 sRGB= ['array','lazy_static']
 widget = ['image']
 window = ['futures','smol','image','client-toolkit','widget']
 font = ['derive-more','fehler','ttf-parser','kurbo']
-graphic = ['fehler','widget','sRGB']
+graphic = ['fehler','widget','sRGB','font']
 font-file = ['font','owning-ref','memmap']
 text = ['font','sRGB','text-size','widget','font-file','lazy_static']
 color = ['vector','image']
-default = ['anyhow','fehler','window','graphic'] # fehler::throws should $crate
+default = ['anyhow','fehler','window'] # fehler::throws should $crate
 
 [dependencies]
 cfg-if = ''

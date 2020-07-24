@@ -103,13 +103,18 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
 
     let handler = move |seat: &client::Attached<Seat>, seat_data: &SeatData| {
         if seat_data.has_keyboard {
-            seat.get_keyboard().quick_assign(move |_, event, mut _data| {
+            seat.get_keyboard().quick_assign(move |_, event, mut data| {
+                let DispatchData{streams, ..} = data.get().unwrap();
                 use keyboard::Event::*;
                 match event {
                     Keymap {..} => {},
                     Enter { /*keysyms,*/ .. } => {},
                     Leave { .. } => {}
-                    Key { key, state, .. } => { todo!("{:?}: {:x}", state, key );  }
+                    Key { key, state, .. } => {
+						enum Key { Escape = 1 }
+						if Key::Escape as u32 == key { quit(streams); }
+						else { todo!("{:?}: {:x}", state, key ); }
+					}
                     Modifiers { /*modifiers*/.. } => {},
                     RepeatInfo {..} => {},
                     _ => unreachable!()
@@ -118,7 +123,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
         }
         if seat_data.has_pointer {
             seat.get_pointer().quick_assign(|_, event, mut data| {
-                let DispatchData{streams, state:State{..}} = data.get().unwrap();
+                let DispatchData{streams, ..} = data.get().unwrap();
                 match event {
                     pointer::Event::Leave{..} => quit(streams),
                     pointer::Event::Motion{/*surface_x, surface_y,*/..} => {},

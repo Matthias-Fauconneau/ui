@@ -105,3 +105,6 @@ pub fn cross(a: vec2, b: vec2) -> f32 { a.x*b.y - a.y*b.x }
 pub fn sq(x:vec2) -> f32 { dot(x, x) }
 pub fn norm(v:vec2) -> f32 { crate::num::sqrt(sq(v)) }
 pub fn atan(v:vec2) -> f32 { crate::num::atan(v.y,v.x) }
+
+impl std::ops::Mul<uint2> for crate::num::Ratio { type Output=uint2; #[track_caller] fn mul(self, b: uint2) -> Self::Output { xy{x:self*b.x, y:self*b.y} } }
+impl std::ops::Div<crate::num::Ratio> for uint2 { type Output=uint2; #[track_caller] fn div(self, r: crate::num::Ratio) -> Self::Output { xy{x:self.x/r, y:self.y/r} } }

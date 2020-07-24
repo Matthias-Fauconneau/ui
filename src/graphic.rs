@@ -1,9 +1,6 @@
 use crate::{error::{throws, Error, Result}, num::Ratio, vector::{self, uint2, size, int2, Zero}, image::Image, font::Rasterize};
 pub use {crate::vector::xy, ttf_parser::Face};
 
-impl std::ops::Mul<uint2> for Ratio { type Output=uint2; #[track_caller] fn mul(self, b: uint2) -> Self::Output { xy{x:self*b.x, y:self*b.y} } }
-impl std::ops::Div<Ratio> for uint2{ type Output=uint2; #[track_caller] fn div(self, r: Ratio) -> Self::Output { xy{x:self.x/r, y:self.y/r} } }
-
 #[derive(Default)] pub struct Rect { pub top_left: int2, pub bottom_right: int2 }
 
 impl Rect {
