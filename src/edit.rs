@@ -11,7 +11,7 @@ trait NthOrLast : Iterator {
 }
 impl<I:Iterator> NthOrLast for I {}
 
-use crate::{error::{throws, Error}, num::Zero, text::{Text, line_ranges, layout, Glyph}, widget::{Widget, size, Target, Event, Key}, vector::xy, image::bgra8};
+use {core::{error::{throws, Error}, num::Zero}, xy::xy, image::bgra8, crate::{widget::{Widget, size, Target, Event, Key}, text::{Text, line_ranges, layout, Glyph}}};
 
 struct LineColumn{line: usize, column: usize}
 impl Zero for LineColumn { fn zero() -> Self { Self{line: 0, column: 0} } }

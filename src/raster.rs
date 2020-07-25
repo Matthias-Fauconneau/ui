@@ -1,7 +1,7 @@
 /// Rasterize polygon with analytical coverage
-use crate::{vector::{vec2, size}, image::Image};
+use {::xy::{xy, vec2}, image::Image};
 
-/*use {crate::num::{floor, sq, fract, abs}, vector::xy};
+/*use crate::num::{floor, sq, fract, abs};
 #[track_caller] pub fn line(target : &mut Image<&mut [f32]>, xy{x:x0,y:y0}: vec2, xy{x:x1,y:y1}: vec2) {
 	crate::assert!(x0 >= 0. && x1 >= 0. && y0 >= 0. && y1 >= 0., x0, x1, y0, y1);
     let δx = x1 - x0;
@@ -110,7 +110,6 @@ pub fn line(target : &mut Image<&mut [f32]>, p0: vec2, p1: vec2) {
     //for (y, row) in target.rows_mut(y0 as u32..y1.ceil() as u32).enumerate() {
     for y in y0 as u32..(y1.ceil() as u32).min(target.size.y) { let row = &mut target.data[(y*target.stride) as usize..]; // May access first column of next line
         let dy = ((y + 1) as f32).min(y1) - (y as f32).max(y0);
-        crate::assert!(x + dxdy * dy >= 0., p0, p1, dxdy, dy, dxdy * dy, x);
         let xnext = x + dxdy * dy;
         let d = dy * dir;
         let (x0, x1) = if x < xnext { (x, xnext) } else { (xnext, x) };
@@ -150,13 +149,13 @@ pub fn line(target : &mut Image<&mut [f32]>, p0: vec2, p1: vec2) {
 }
 
 pub fn fill(edges : &Image<&[f32]>) -> Image<Vec<f32>> {
-    let mut target = Image::uninitialized(size{x: edges.size.x-1, y: edges.size.y-1});
+    let mut target = Image::uninitialized(edges.size-xy{x: 1, y: 1});
 	for (target, edges) in target.rows_mut(0..target.size.y).zip(edges.rows(0..edges.size.y-1)) {
 		let mut coverage = 0.;
 		for (target, &edge) in target.iter_mut().zip(edges.iter().skip(1)) {
 			coverage += edge;
 			//crate::assert!(-0.0000004 <= coverage && coverage <= 1.0000004, coverage);
-			*target = crate::num::clamp(coverage);
+			*target = core::num::clamp(coverage);
 		}
 	}
     target

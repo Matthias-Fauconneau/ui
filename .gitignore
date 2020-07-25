@@ -1,4 +1,5 @@
 .cargo
 Cargo.lock
-debug
-release
+core
+xy
+image

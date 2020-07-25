@@ -1,6 +1,6 @@
-use crate::{num::Ratio, vector::{size, xy}, Image, vector::vec2, quad::quad, cubic::cubic, raster::{line, self}};
+use {core::num::Ratio, ::xy::{xy, size, vec2}, image::Image, crate::{quad::quad, cubic::cubic, raster::{line, self}}};
+
 struct Outline<'t> { scale : Ratio /*f32 loses precision*/, x_min: f32, y_max: f32, target : &'t mut Image<&'t mut[f32]>, first : Option<vec2>, p0 : Option<vec2>}
-impl std::ops::Mul<f32> for Ratio { type Output=f32; #[track_caller] fn mul(self, b: f32) -> Self::Output { b * self.num as f32 / self.div as f32 } } // b*(n/d) loses precision
 impl Outline<'_> { fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-self.x_min, y: -(self.scale*y)+self.y_max} } }
 impl ttf_parser::OutlineBuilder for Outline<'_> {
     fn move_to(&mut self, x: f32, y: f32) {
@@ -52,7 +52,7 @@ impl<'t> Rasterize for ttf_parser::Face<'t> {
 }
 
 cfg_if::cfg_if! { if #[cfg(all(feature="owning-ref",feature="memmap"))] {
-use crate::error::{Error, throws};
+use core::error::{Error, throws};
 #[derive(derive_more::Deref)] pub struct Handle<'t>(ttf_parser::Face<'t>); // impl Deref
 pub type File<'t> = owning_ref::OwningHandle<Box<memmap::Mmap>, Handle<'t>>;
 #[throws] pub fn open(path: &std::path::Path) -> File {

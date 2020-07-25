@@ -1,41 +1,37 @@
 [package]
-name = 'framework'
+name = 'ui'
 version = '0.0.0'
 authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition = '2018'
 
 [features]
-trace = ['fehler', 'rstack-self']
-timeout = [] # thread_spawn_unchecked
-array = []
-vector = ['array']
-image = ['vector']
-sRGB= ['array']
-widget = ['image','num_enum']
-window = ['futures','smol','image','client-toolkit','widget']
-font = ['derive-more','fehler','ttf-parser','kurbo']
-graphic = ['fehler','widget','sRGB','font']
+trace = ['core/trace']
+timeout = ['core/timeout']
+sRGB= ['core/array']
+widget = ['num_enum']
+window = ['futures','smol','client-toolkit','widget']
+font = ['derive-more','core/fehler','ttf-parser','kurbo']
+graphic = ['core/fehler','widget','sRGB','font']
 font-file = ['font','owning-ref','memmap']
 text = ['font','sRGB','text-size','widget','font-file']
 text-edit = ['text','unicode-segmentation']
-color = ['image']
-default = ['anyhow','fehler','window','timeout'] # fehler::throws should $crate
+color = []
+default = ['window']
 
 [dependencies]
 cfg-if = ''
-fehler = { version='', optional=true }
-anyhow = { version='', optional=true }
+fehler = '' # #[throws] expects {{root}}::fehler
 derive-more = { package='derive_more', version='', optional=true }
 owning-ref = { package='owning_ref', version='', optional=true }
+num_enum = { version='', optional=true }
+core = { version='', path='../core' }
 futures = { version='^0.3', optional=true }
 smol = { version='', optional=true }
 
-rstack-self = { version='', features=["dw"], default-features=false, optional=true }
 memmap = { version='', optional=true }
-signal-hook = { version='', optional=true }
-
+xy = { version='', path='../xy' }
+image = { version='', path='../image', features = ['sRGB'] }
 client-toolkit = { package='smithay-client-toolkit', version='', optional=true, default-features=false }
-num_enum = { version='', optional=true }
 
 kurbo = { version='', optional=true }
 ttf-parser = { version='', optional=true }
@@ -52,3 +48,6 @@ required-features = ['window']
 name = 'text'
 path = 'examples/text.rs'
 required-features = ['text']
+
+[profile.dev.package."*"] # Always optimize dependencies (image/core)
+opt-level = 2

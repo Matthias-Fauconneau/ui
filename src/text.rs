@@ -17,7 +17,7 @@ impl LineRange<'_> {
     }
 }
 
-use {std::cmp::{min, max}, ttf_parser::{Face,GlyphId,Rect}, crate::{error::{throws, Error}, num::Ratio, font::{self, Rasterize}}};
+use {std::cmp::{min, max}, ttf_parser::{Face,GlyphId,Rect}, core::{error::{throws, Error}, num::Ratio}, crate::font::{self, Rasterize}};
 
 pub(crate) struct Glyph {pub index: TextSize, pub x: i32, pub id: GlyphId, pub bbox: Rect}
 pub(crate) fn layout<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=(TextSize,char)>+'t) -> impl 't+Iterator<Item=Glyph> {
@@ -41,7 +41,7 @@ pub(crate) fn metrics(font: &Face<'_>, iter: impl Iterator<Item=Glyph>) -> LineM
 	})
 }
 
-pub type Color = crate::image::bgrf;
+pub type Color = image::bgrf;
 #[derive(Clone,Copy)] pub enum FontStyle { Normal, Bold, /*Italic, BoldItalic*/ }
 #[derive(Clone,Copy)] pub struct Style { pub color: Color, pub style: FontStyle }
 #[derive(Clone,Copy)] pub struct Attribute<T> { pub range: TextRange, pub attribute: T }
@@ -61,10 +61,10 @@ pub struct Text<'font, 'text> {
     pub text : &'text str,
     style: &'text [Attribute<Style>],
     //size : Option<size2>
-    cache : Vec<(GlyphId,Image<Vec<f32>>)>
+    cache : Vec<(GlyphId,Image<Vec<u8>>)>
 }
 
-use crate::{vector::{size, xy}, image::{Image, bgra8}, num::div_ceil};
+use {::xy::{xy, size}, image::{Image, bgra8}, core::num::div_ceil};
 
 impl<'font, 'text> Text<'font, 'text> {
     pub fn new(font: &'font Face<'font>, text : &'text str, style: &'text [Attribute<Style>]) -> Self { Self{font, text, style/*, size: None*/, cache: Vec::new()} }
@@ -76,9 +76,8 @@ impl<'font, 'text> Text<'font, 'text> {
         //})
     }
     pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
-		use crate::iter::{Single, PeekableExt};
-        let (mut style, mut styles) = (None, self.style.iter().peekable());
-        crate::time(|| for (line_index, line) in line_ranges(self.text).enumerate() {
+		let (mut style, mut styles) = (None, self.style.iter().peekable());
+        core::time(|| for (line_index, line) in line_ranges(self.text).enumerate() {
             for Glyph{index, x, id, bbox} in layout(self.font, line.char_indices()) {
                 let position = xy{
                     x: (x+self.font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
@@ -86,11 +85,18 @@ impl<'font, 'text> Text<'font, 'text> {
                 };
                 let coverage = self.cache.iter().find(|(key,_)| key == &id);
                 let (_,coverage) = if let Some(coverage) = coverage { coverage } else {
-					self.cache.push( (id, self.font.rasterize(scale, id, bbox)) );
+					#[allow(non_snake_case)] pub fn sRGB(linear : &Image<&[f32]>) -> Image<Vec<u8>> {
+						let mut target = Image::uninitialized(linear.size);
+						target.as_mut().set_map(linear, |_,&linear| image::sRGB(linear));
+						target
+					}
+					self.cache.push( (id, sRGB(&self.font.rasterize(scale, id, bbox).as_ref())) );
 					self.cache.last().unwrap()
                 };
+                use core::iter::{PeekableExt, Single};
                 style = style.filter(|style:&&Attribute<Style>| style.contains(index)).or_else(|| styles.peeking_take_while(|style| style.contains(index)).single());
-                target.slice_mut(scale*position, coverage.size).set_map(coverage, |_,&coverage| bgra8{a : 0xFF, ..(coverage*style.map(|x|x.attribute.color).unwrap()).into()})
+                assert!( style.map(|x|x.attribute.color).unwrap() == image::bgr{b:1., g:1., r:1.}); // todo: approximate linear tint cached sRGB glyphs
+                target.slice_mut(scale*position, coverage.size).set_map(coverage, |_,&coverage| bgra8{a : 0xFF, ..coverage.into()})
             }
         })
     }

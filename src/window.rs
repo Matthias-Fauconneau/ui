@@ -1,5 +1,3 @@
-use crate::{error::{throws, Error, Result}, num, widget::{self, Widget}};
-
 mod nix {
 	pub type RawPollFd = std::os::unix::io::RawFd;
 	pub trait AsRawPollFd { fn as_raw_poll_fd(&self) -> RawPollFd; }
@@ -11,67 +9,64 @@ impl<T:nix::AsRawPollFd> std::os::unix::io::AsRawFd for AsRawFd<T> { fn as_raw_f
 impl<T:nix::AsRawPollFd> Async<T> { fn new(io: T) -> Result<smol::Async<AsRawFd<T>>, std::io::Error> { smol::Async::new(AsRawFd(io)) } }
 impl nix::AsRawPollFd for client_toolkit::reexports::client::EventQueue { fn as_raw_poll_fd(&self) -> nix::RawPollFd { self.display().get_connection_fd() } }
 
-#[throws]
-pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Future<Output=Result<()>>+'w {
-    use client_toolkit::{
-        default_environment, environment::SimpleGlobal, init_default_environment,
-        seat::{SeatData, with_seat_data}, output::with_output_info, get_surface_outputs, get_surface_scale_factor, shm,
-        reexports::{
-            client::{self, protocol::{wl_surface::WlSurface as Surface, wl_seat::WlSeat as Seat, wl_keyboard as keyboard, wl_pointer as pointer}},
-            protocols::wlr::unstable::layer_shell::v1::client::{
-                zwlr_layer_shell_v1::{self as layer_shell, ZwlrLayerShellV1 as LayerShell},
-                zwlr_layer_surface_v1 as layer_surface
-            },
-        },
-    };
-    use crate::{vector::{size, Zero, xy}, image::bgra8, widget::Target};
+use {core::{error::{throws, Error, Result}, num::{Zero, div_ceil}}, ::xy::{xy, size}, image::bgra8, crate::widget::{self, Widget, Target}};
 
-    default_environment!(Compositor,
-        fields = [ layer_shell: SimpleGlobal<LayerShell> ],
-        singles = [ LayerShell => layer_shell ]
-    );
+use client_toolkit::{
+	default_environment, environment::SimpleGlobal, init_default_environment,
+	seat::{SeatData, with_seat_data}, output::with_output_info, get_surface_outputs, get_surface_scale_factor, shm,
+	reexports::{
+		client::{self, protocol::{wl_surface::WlSurface as Surface, wl_seat::WlSeat as Seat, wl_keyboard as keyboard, wl_pointer as pointer}},
+		protocols::wlr::unstable::layer_shell::v1::client::{
+			zwlr_layer_shell_v1::{self as layer_shell, ZwlrLayerShellV1 as LayerShell},
+			zwlr_layer_surface_v1 as layer_surface
+		},
+	},
+};
 
+default_environment!(Compositor,
+	fields = [ layer_shell: SimpleGlobal<LayerShell> ],
+	singles = [ LayerShell => layer_shell ]
+);
+
+enum Item {
+	Apply(std::io::Result<()>),
+	Quit,
+}
+struct State<'w> {
+	pool: shm::MemPool,
+	surface: client::Attached<Surface>,
+	widget: &'w mut dyn Widget,
+	size: size,
+	unscaled_size: size
+}
+
+use {std::iter::once, futures::{FutureExt, stream::{unfold, iter, StreamExt, SelectAll, Peekable, LocalBoxStream}}};
+struct DispatchData<'d, 'q, 'w> {
+	streams: &'d mut Peekable<SelectAll<LocalBoxStream<'q, Item>>>,
+	state: &'d mut State<'w>,
+}
+fn quit(streams: &mut Peekable<SelectAll<LocalBoxStream<'_, Item>>>) { streams.get_mut().push(iter(once(Item::Quit)).boxed_local()) }
+
+#[throws] fn draw(pool: &mut shm::MemPool, surface: &Surface, widget: &mut dyn Widget, size: size) {
+	assert!(size.x < 124839 || size.y < 1443);
+	let stride = size.x*4;
+	pool.resize((size.y*stride) as usize)?;
+	let mut target = Target::from_bytes(pool.mmap(), size);
+	target.set(|_| bgra8{b:0,g:0,r:0,a:0xFF});
+	widget.paint(&mut target)?;
+	let buffer = pool.buffer(0, size.x as i32, size.y as i32, stride as i32, shm::Format::Argb8888);
+	surface.attach(Some(&buffer), 0, 0);
+	surface.damage_buffer(0, 0, size.x as i32, size.y as i32);
+	surface.commit()
+}
+
+// DispatchData wraps using :Any which currently erases lifetimes
+unsafe fn erase_lifetime<'d,'q,'w>(data: DispatchData<'d,'q,'w>) -> DispatchData<'static,'static,'static> {
+	std::mem::transmute::<DispatchData::<'d,'q,'w>, DispatchData::<'static,'static,'static>>(data)
+}
+
+#[throws] pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl std::future::Future<Output=Result<()>>+'w {
     let (env, _, mut queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
-
-    enum Item {
-        Apply(std::io::Result<()>),
-        Quit,
-    }
-    struct State<'w> {
-        pool: shm::MemPool,
-        surface: client::Attached<Surface>,
-        widget: &'w mut dyn Widget,
-        size: size,
-        unscaled_size: size
-    }
-
-    use {std::iter::once, futures::{FutureExt, stream::{unfold, iter, StreamExt, SelectAll, Peekable, LocalBoxStream}}};
-    struct DispatchData<'d, 'q, 'w> {
-        streams: &'d mut Peekable<SelectAll<LocalBoxStream<'q, Item>>>,
-        state: &'d mut State<'w>,
-    }
-    fn quit(streams: &mut Peekable<SelectAll<LocalBoxStream<'_, Item>>>) { streams.get_mut().push(iter(once(Item::Quit)).boxed_local()) }
-
-    #[throws] fn draw(pool: &mut shm::MemPool, surface: &Surface, widget: &mut dyn Widget, size: size) {
-		assert!(size.x < 124839 || size.y < 1443);
-        let stride = size.x*4;
-        pool.resize((size.y*stride) as usize)?;
-        let mut target = Target::from_bytes(pool.mmap(), size);
-        target.set(|_| bgra8{b:0,g:0,r:0,a:0xFF});
-        widget.paint(&mut target)?;
-        let buffer = pool.buffer(0, size.x as i32, size.y as i32, stride as i32, shm::Format::Argb8888);
-        surface.attach(Some(&buffer), 0, 0);
-        surface.damage_buffer(0, 0, size.x as i32, size.y as i32);
-		surface.commit()
-    }
-
-    // DispatchData wraps using :Any which currently erases lifetimes
-    unsafe fn erase_lifetime<'d,'q,'w>(data: DispatchData<'d,'q,'w>) -> DispatchData<'static,'static,'static> {
-        std::mem::transmute::<DispatchData::<'d,'q,'w>, DispatchData::<'static,'static,'static>>(data)
-    }
-    unsafe fn restore_erased_lifetime<'d,'q,'w>(data: &mut DispatchData::<'static,'static,'static>) -> &'d mut DispatchData::<'d,'q,'w> { // fixme: use parent lifetimes
-        std::mem::transmute::<&mut DispatchData::<'static,'static,'static>, &mut DispatchData::<'d,'q,'w>>(data)
-    }
 
     let surface = env.create_surface_with_scale_callback(|scale, surface, mut data| {
         let DispatchData{state:State{pool, widget, ref mut size, unscaled_size, ..}, ..} = data.get().unwrap(); //unsafe{restore_erased_lifetime(data.get().unwrap())};
@@ -132,17 +127,17 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
     };
 
 	layer_surface.quick_assign(move |layer_surface, event, mut data| {
-        let DispatchData{streams, state:State{pool, surface, widget, ref mut size, ref mut unscaled_size, ..}} = unsafe{restore_erased_lifetime(data.get().unwrap())};
+        let DispatchData{streams, state:State{pool, surface, widget, ref mut size, ref mut unscaled_size, ..}} = data.get().unwrap();
         use layer_surface::Event::*;
         match event {
             Closed => quit(streams),
             Configure{serial, width, height} => {
                 if !(width > 0 && height > 0) {
                     let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(),
-																			|info| (info.scale_factor as u32, crate::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
-                    let size = crate::vector::component_wise_min(size, widget.size(size));
+																			|info| (info.scale_factor as u32, ::xy::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
+                    let size = core::vector::component_wise_min(size, widget.size(size));
                     assert!(size.x < 124839 || size.y < 1443, size);
-                    layer_surface.set_size(num::div_ceil(size.x, scale), num::div_ceil(size.y, scale));
+                    layer_surface.set_size(div_ceil(size.x, scale), div_ceil(size.y, scale));
                     layer_surface.ack_configure(serial);
                     surface.commit();
                 } else {

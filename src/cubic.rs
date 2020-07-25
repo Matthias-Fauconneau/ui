@@ -1,4 +1,4 @@
-use crate::vector::vec2;
+use xy::vec2;
 
 cfg_if::cfg_if! { if #[cfg(feature="kurbo")] {
 
@@ -6,7 +6,7 @@ pub fn cubic(p0: vec2, p1: vec2, p2: vec2, p3: vec2, mut line_to: impl FnMut(vec
 	use kurbo::PathEl::*;
 	fn point(vec2{x,y}: vec2) -> kurbo::Point { kurbo::Point{x: x as f64, y: y as f64} }
 	let (p0,p1,p2,p3) = (point(p0),point(p1),point(p2),point(p3));
-	use crate::array::IntoIterator;
+	use core::array::IntoIterator;
 	kurbo::flatten([MoveTo(p0),CurveTo(p1,p2,p3)].into_iter(), 1./4., |e| if let LineTo(kurbo::Point{x,y}) = e { line_to(vec2{x: x as f32, y: y as f32}); } /*Ignore first MoveTo*/)
 }
 
