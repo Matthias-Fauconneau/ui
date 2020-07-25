@@ -140,7 +140,10 @@ impl<T:Send> Image<&mut [T]> {
         .execute()*/
         for y in 0..self.size.y { for x in 0..self.size.x { self[xy{x,y}] = f(xy{x,y}); } }
     }
-    pub fn set_map<U:Send+Sync, D:std::ops::Deref<Target=[U]>+Send, F:Fn(uint2,&U)->T+Copy+Send>(&mut self, source: Image<D>, f: F) {
+    pub fn modify<F:Fn(&T)->T+Copy+Send>(&mut self, f:F) {
+        for y in 0..self.size.y { for x in 0..self.size.x { self[xy{x,y}] = f(&self[xy{x,y}]); } }
+    }
+    pub fn set_map<U:Send+Sync, D:std::ops::Deref<Target=[U]>+Send, F:Fn(uint2,&U)->T+Copy+Send>(&mut self, source: &Image<D>, f: F) {
         assert!(self.size == source.size);
         /*segment(self.size.y, 1/*8*/)
         .map(|segment| {
@@ -202,7 +205,7 @@ impl<T:crate::num::Zero> Image<Vec<T>> {
 
 vector!(3 bgr T T T, b g r, Blue Green Red);
 #[allow(non_camel_case_types)] pub type bgrf = bgr<f32>;
-#[cfg(all(feature="color",feature="sRGB"))]
+#[cfg(feature="color")]
 impl bgrf { fn clamp(&self) -> Self { use crate::num::clamp; Self{b:clamp(self.b), g:clamp(self.g), r:clamp(self.r)} } }
 
 #[allow(non_camel_case_types)] #[derive(Clone, Copy, Debug)] pub struct bgra8 { pub b : u8, pub g : u8, pub r : u8, pub a: u8  }
@@ -212,13 +215,12 @@ impl<'t> Image<&'t mut [bgra8]> {
     pub fn from_bytes(slice: &'t mut [u8], size: size) -> Self { Self::new(unsafe{crate::slice::cast_mut(slice)}, size) }
 }
 
-cfg_if::cfg_if! { if #[cfg(feature="sRGB")] {
-    lazy_static::lazy_static!{
-		static ref sRGB_forward12 : [u8; 0x1000] = crate::array::map(|i| {
-			let linear = i as f64 / 0xFFF as f64;
-			(0xFF as f64 * if linear > 0.0031308 {1.055*linear.powf(1./2.4)-0.055} else {12.92*linear}).round() as u8
-		});
-	}
+cfg_if::cfg_if! { if #[cfg(feature="array")] {
+	use std::lazy::SyncLazy;
+	static sRGB_forward12 : SyncLazy<[u8; 0x1000]> = SyncLazy::new(|| crate::array::map(|i| {
+		let linear = i as f64 / 0xFFF as f64;
+		(0xFF as f64 * if linear > 0.0031308 {1.055*linear.powf(1./2.4)-0.055} else {12.92*linear}).round() as u8
+	}));
     #[allow(non_snake_case)] pub fn sRGB(v : f32) -> u8 { sRGB_forward12[(0xFFF as f32*v) as usize] } // 4K (fixme: interpolation of a smaller table might be faster)
     impl From<bgrf> for super::bgra8 { fn from(v: bgrf) -> Self { Self{b:sRGB(v.b), g:sRGB(v.g), r:sRGB(v.r), a:0xFF} } }
 }}

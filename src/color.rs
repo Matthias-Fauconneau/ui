@@ -19,6 +19,4 @@ impl From<XYZ> for bgrf { fn from(XYZ{X,Y,Z}: XYZ) -> Self { Self{
     g: - 0.9689 * X + 1.8758 * Y + 0.0415 * Z,
     r:    3.2406 * X - 1.5372 * Y - 0.4986 * Z
 }}}
-cfg_if! { if #[cfg(feature="sRGB")] {
-    impl From<LCh> for bgra8 { fn from(v: LCh) -> Self { v.into::<Luv>().into::<XYZ>().into::<bgrf>().clamp().into() } }
-}
+impl From<LCh> for bgra8 { fn from(v: LCh) -> Self { v.into::<Luv>().into::<XYZ>().into::<bgrf>().clamp().into() } }

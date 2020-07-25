@@ -1,4 +1,15 @@
-use crate::{error::{throws, Error, Result}, num, widget::Widget};
+use crate::{error::{throws, Error, Result}, num, widget::{self, Widget}};
+
+mod nix {
+	pub type RawPollFd = std::os::unix::io::RawFd;
+	pub trait AsRawPollFd { fn as_raw_poll_fd(&self) -> RawPollFd; }
+	impl AsRawPollFd for std::os::unix::io::RawFd { fn as_raw_poll_fd(&self) -> RawPollFd { *self } }
+}
+struct Async<T>(T);
+struct AsRawFd<T>(T);
+impl<T:nix::AsRawPollFd> std::os::unix::io::AsRawFd for AsRawFd<T> { fn as_raw_fd(&self) -> std::os::unix::io::RawFd { self.0.as_raw_poll_fd() /*->smol::Reactor*/ } }
+impl<T:nix::AsRawPollFd> Async<T> { fn new(io: T) -> Result<smol::Async<AsRawFd<T>>, std::io::Error> { smol::Async::new(AsRawFd(io)) } }
+impl nix::AsRawPollFd for client_toolkit::reexports::client::EventQueue { fn as_raw_poll_fd(&self) -> nix::RawPollFd { self.display().get_connection_fd() } }
 
 #[throws]
 pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Future<Output=Result<()>>+'w {
@@ -28,7 +39,9 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
     }
     struct State<'w> {
         pool: shm::MemPool,
+        surface: client::Attached<Surface>,
         widget: &'w mut dyn Widget,
+        size: size,
         unscaled_size: size
     }
 
@@ -49,7 +62,7 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
         let buffer = pool.buffer(0, size.x as i32, size.y as i32, stride as i32, shm::Format::Argb8888);
         surface.attach(Some(&buffer), 0, 0);
         surface.damage_buffer(0, 0, size.x as i32, size.y as i32);
-        surface.commit();
+		surface.commit()
     }
 
     // DispatchData wraps using :Any which currently erases lifetimes
@@ -61,59 +74,33 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
     }
 
     let surface = env.create_surface_with_scale_callback(|scale, surface, mut data| {
-        let DispatchData{state:State{pool, widget, unscaled_size, ..}, ..} = unsafe{restore_erased_lifetime(data.get().unwrap())};
+        let DispatchData{state:State{pool, widget, ref mut size, unscaled_size, ..}, ..} = data.get().unwrap(); //unsafe{restore_erased_lifetime(data.get().unwrap())};
+        *size = (scale as u32) * *unscaled_size;
         surface.set_buffer_scale(scale);
-        draw(pool, &surface, *widget, (scale as u32)* *unscaled_size).unwrap()
+        draw(pool, &surface, *widget, *size).unwrap();
     });
 
     let layer_shell = env.require_global::<LayerShell>();
     let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "framework".to_string());
     layer_surface.set_keyboard_interactivity(1);
-
     surface.commit();
-    layer_surface.quick_assign({let env = env.clone(); /*surface*/ move |layer_surface, event, mut data| {
-        let DispatchData{streams, state:State{pool, widget, ref mut unscaled_size, ..}} = unsafe{restore_erased_lifetime(data.get().unwrap())};
-        use layer_surface::Event::*;
-        match event {
-            Closed => quit(streams),
-            Configure{serial, width, height} => {
-                if !(width > 0 && height > 0) {
-                    let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(),
-																			|info| (info.scale_factor as u32, crate::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
-                    let size = crate::vector::component_wise_min(size, widget.size(size));
-                    assert!(size.x < 124839 || size.y < 1443, size);
-                    layer_surface.set_size(num::div_ceil(size.x, scale), num::div_ceil(size.y, scale));
-                    layer_surface.ack_configure(serial);
-                    surface.commit();
-                } else {
-					layer_surface.ack_configure(serial);
-					*unscaled_size = xy{x: width, y: height};
-					let scale = if get_surface_outputs(&surface).is_empty() { // get_surface_outputs defaults to 1 instead of first output factor
-						env.get_all_outputs().first().map(|output| with_output_info(output, |info| info.scale_factor)).flatten().unwrap_or(1)
-					} else {
-						get_surface_scale_factor(&surface)
-					};
-					surface.set_buffer_scale(scale);
-					draw(pool, &surface, *widget, (scale as u32) * *unscaled_size).unwrap();
-				}
-            }
-            _ => unimplemented!(),
-        }
-    }});
 
     let handler = move |seat: &client::Attached<Seat>, seat_data: &SeatData| {
         if seat_data.has_keyboard {
             seat.get_keyboard().quick_assign(move |_, event, mut data| {
-                let DispatchData{streams, ..} = data.get().unwrap();
-                use keyboard::Event::*;
+                let DispatchData{streams, state:State{pool, surface, widget, size, ..}} = data.get().unwrap();
+                use keyboard::{Event::*, KeyState};
                 match event {
                     Keymap {..} => {},
                     Enter { /*keysyms,*/ .. } => {},
                     Leave { .. } => {}
-                    Key { key, state, .. } => {
-						enum Key { Escape = 1 }
-						if Key::Escape as u32 == key { quit(streams); }
-						else { todo!("{:?}: {:x}", state, key ); }
+                    Key { state: KeyState::Released, .. } => {},
+                    Key { key, state: KeyState::Pressed, .. } => {
+						use {std::convert::TryFrom, widget::Key::{self, *}};
+						match Key::try_from(key as u8).unwrap() {
+							Escape => quit(streams),
+							key => if widget.event(key) { draw(pool, surface, *widget, *size).unwrap() },
+						}
 					}
                     Modifiers { /*modifiers*/.. } => {},
                     RepeatInfo {..} => {},
@@ -136,22 +123,44 @@ pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl core::future::Futur
     for seat in env.get_all_seats() { with_seat_data(&seat, |seat_data| handler(&seat, seat_data)); }
     let seat_listener = env.listen_for_seats(move |seat, seat_data, _| handler(&seat, seat_data));
 
-    mod nix {
-        pub type RawPollFd = std::os::unix::io::RawFd;
-        pub trait AsRawPollFd { fn as_raw_poll_fd(&self) -> RawPollFd; }
-        impl AsRawPollFd for std::os::unix::io::RawFd { fn as_raw_poll_fd(&self) -> RawPollFd { *self } }
-    }
-    struct Async<T>(T);
-    struct AsRawFd<T>(T);
-    impl<T:nix::AsRawPollFd> std::os::unix::io::AsRawFd for AsRawFd<T> { fn as_raw_fd(&self) -> std::os::unix::io::RawFd { self.0.as_raw_poll_fd() /*->smol::Reactor*/ } }
-    impl<T:nix::AsRawPollFd> Async<T> { fn new(io: T) -> Result<smol::Async<AsRawFd<T>>, std::io::Error> { smol::Async::new(AsRawFd(io)) } }
-    impl nix::AsRawPollFd for client::EventQueue { fn as_raw_poll_fd(&self) -> nix::RawPollFd { self.display().get_connection_fd() } }
-
     let mut state = State {
         pool: env.create_simple_pool(|_|{})?,
+        surface,
         widget,
+        size: Zero::zero(),
         unscaled_size: Zero::zero()
     };
+
+	layer_surface.quick_assign(move |layer_surface, event, mut data| {
+        let DispatchData{streams, state:State{pool, surface, widget, ref mut size, ref mut unscaled_size, ..}} = unsafe{restore_erased_lifetime(data.get().unwrap())};
+        use layer_surface::Event::*;
+        match event {
+            Closed => quit(streams),
+            Configure{serial, width, height} => {
+                if !(width > 0 && height > 0) {
+                    let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(),
+																			|info| (info.scale_factor as u32, crate::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
+                    let size = crate::vector::component_wise_min(size, widget.size(size));
+                    assert!(size.x < 124839 || size.y < 1443, size);
+                    layer_surface.set_size(num::div_ceil(size.x, scale), num::div_ceil(size.y, scale));
+                    layer_surface.ack_configure(serial);
+                    surface.commit();
+                } else {
+					layer_surface.ack_configure(serial);
+					*unscaled_size = xy{x: width, y: height};
+					let scale = if get_surface_outputs(&surface).is_empty() { // get_surface_outputs defaults to 1 instead of first output factor
+						env.get_all_outputs().first().map(|output| with_output_info(output, |info| info.scale_factor)).flatten().unwrap_or(1)
+					} else {
+						get_surface_scale_factor(&surface)
+					};
+					*size = (scale as u32) * *unscaled_size;
+					surface.set_buffer_scale(scale);
+					draw(pool, &surface, *widget, *size).unwrap();
+				}
+            }
+            _ => unimplemented!(),
+        }
+    });
 
     async move /*queue*/ {
         let poll_queue = Async::new(queue.display().create_event_queue())?;  // Registers in the reactor (borrows after moving queue in the async)
