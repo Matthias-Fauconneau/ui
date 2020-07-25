@@ -49,5 +49,5 @@ name = 'text'
 path = 'examples/text.rs'
 required-features = ['text']
 
-[profile.dev.package."*"] # Always optimize dependencies (image/core)
+[profile.dev.package.image]
 opt-level = 2

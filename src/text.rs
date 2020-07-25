@@ -85,18 +85,13 @@ impl<'font, 'text> Text<'font, 'text> {
                 };
                 let coverage = self.cache.iter().find(|(key,_)| key == &id);
                 let (_,coverage) = if let Some(coverage) = coverage { coverage } else {
-					#[allow(non_snake_case)] pub fn sRGB(linear : &Image<&[f32]>) -> Image<Vec<u8>> {
-						let mut target = Image::uninitialized(linear.size);
-						target.as_mut().set_map(linear, |_,&linear| image::sRGB(linear));
-						target
-					}
-					self.cache.push( (id, sRGB(&self.font.rasterize(scale, id, bbox).as_ref())) );
+					self.cache.push( (id, image::from_linear(&self.font.rasterize(scale, id, bbox).as_ref())) );
 					self.cache.last().unwrap()
                 };
                 use core::iter::{PeekableExt, Single};
                 style = style.filter(|style:&&Attribute<Style>| style.contains(index)).or_else(|| styles.peeking_take_while(|style| style.contains(index)).single());
                 assert!( style.map(|x|x.attribute.color).unwrap() == image::bgr{b:1., g:1., r:1.}); // todo: approximate linear tint cached sRGB glyphs
-                target.slice_mut(scale*position, coverage.size).set_map(coverage, |_,&coverage| bgra8{a : 0xFF, ..coverage.into()})
+                image::set_map(&mut target.slice_mut(scale*position, coverage.size), &coverage.as_ref())
             }
         })
     }

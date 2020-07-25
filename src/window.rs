@@ -52,7 +52,7 @@ fn quit(streams: &mut Peekable<SelectAll<LocalBoxStream<'_, Item>>>) { streams.g
 	let stride = size.x*4;
 	pool.resize((size.y*stride) as usize)?;
 	let mut target = Target::from_bytes(pool.mmap(), size);
-	target.set(|_| bgra8{b:0,g:0,r:0,a:0xFF});
+	image::fill(&mut target, bgra8{b:0,g:0,r:0,a:0xFF});
 	widget.paint(&mut target)?;
 	let buffer = pool.buffer(0, size.x as i32, size.y as i32, stride as i32, shm::Format::Argb8888);
 	surface.attach(Some(&buffer), 0, 0);
