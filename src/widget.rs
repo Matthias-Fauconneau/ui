@@ -7,11 +7,11 @@ pub type Target<'t> = Image<&'t mut[bgra8]>;
 #[allow(non_upper_case_globals)] pub static bg : bgra8 = black;
 #[allow(non_upper_case_globals)] pub static fg: bgra8 = white;*/
 
-#[derive(num_enum::TryFromPrimitive)] #[repr(u8)] pub enum Key { Escape = 1, Right = 0x6A }
+#[derive(PartialEq,Clone,Copy,num_enum::TryFromPrimitive)] #[repr(u8)] pub enum Key { Escape = 1, Right = 0x6A }
 pub type Event = Key;
 
 pub trait Widget {
     fn size(&mut self, size : size) -> size { size }
     /*#[throws]*/ fn paint(&mut self, target : &mut Target) -> Result;
-    fn event(&mut self, _event: Event) -> bool { false }
+    fn event(&mut self, _event: &Event) -> bool { false }
 }

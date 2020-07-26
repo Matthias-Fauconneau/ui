@@ -9,7 +9,7 @@ impl<T:nix::AsRawPollFd> std::os::unix::io::AsRawFd for AsRawFd<T> { fn as_raw_f
 impl<T:nix::AsRawPollFd> Async<T> { fn new(io: T) -> Result<smol::Async<AsRawFd<T>>, std::io::Error> { smol::Async::new(AsRawFd(io)) } }
 impl nix::AsRawPollFd for client_toolkit::reexports::client::EventQueue { fn as_raw_poll_fd(&self) -> nix::RawPollFd { self.display().get_connection_fd() } }
 
-use {core::{error::{throws, Error, Result}, num::{Zero, div_ceil}}, ::xy::{xy, size}, image::bgra8, crate::widget::{self, Widget, Target}};
+use {core::{error::{throws, Error, Result}, num::{Zero, div_ceil}}, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, Key}};
 
 use client_toolkit::{
 	default_environment, environment::SimpleGlobal, init_default_environment,
@@ -30,6 +30,7 @@ default_environment!(Compositor,
 
 enum Item {
 	Apply(std::io::Result<()>),
+	KeyRepeat(Key),
 	Quit,
 }
 struct State<'w> {
@@ -40,12 +41,15 @@ struct State<'w> {
 	unscaled_size: size
 }
 
-use {std::iter::once, futures::{FutureExt, stream::{unfold, iter, StreamExt, SelectAll, Peekable, LocalBoxStream}}};
+use {std::iter::once, futures::{FutureExt, stream::{unfold, iter, StreamExt, SelectAll, LocalBoxStream}}};
+
+type Streams<'q> = SelectAll<LocalBoxStream<'q, Item>>;
 struct DispatchData<'d, 'q, 'w> {
-	streams: &'d mut Peekable<SelectAll<LocalBoxStream<'q, Item>>>,
+	streams: &'d mut Streams<'q>,
 	state: &'d mut State<'w>,
 }
-fn quit(streams: &mut Peekable<SelectAll<LocalBoxStream<'_, Item>>>) { streams.get_mut().push(iter(once(Item::Quit)).boxed_local()) }
+
+fn quit(streams: &mut Streams<'_>) { streams.push(iter(once(Item::Quit)).boxed_local()) }
 
 #[throws] fn draw(pool: &mut shm::MemPool, surface: &Surface, widget: &mut dyn Widget, size: size) {
 	assert!(size.x < 124839 || size.y < 1443);
@@ -65,6 +69,14 @@ unsafe fn erase_lifetime<'d,'q,'w>(data: DispatchData<'d,'q,'w>) -> DispatchData
 	std::mem::transmute::<DispatchData::<'d,'q,'w>, DispatchData::<'static,'static,'static>>(data)
 }
 
+fn key(State{pool, surface, widget, size, ..}: &mut State, key: &Key) -> bool {
+	use Key::*;
+	match key {
+		Escape => true,
+		key => { if widget.event(key) { draw(pool, surface, *widget, *size).unwrap() }; false },
+	}
+}
+
 #[throws] pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl std::future::Future<Output=Result<()>>+'w {
     let (env, _, mut queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
 
@@ -82,21 +94,49 @@ unsafe fn erase_lifetime<'d,'q,'w>(data: DispatchData<'d,'q,'w>) -> DispatchData
 
     let handler = move |seat: &client::Attached<Seat>, seat_data: &SeatData| {
         if seat_data.has_keyboard {
+			use std::{rc::Rc, cell::Cell};
+			let mut repeat : Option<Rc<Cell<_>>> = None;
             seat.get_keyboard().quick_assign(move |_, event, mut data| {
-                let DispatchData{streams, state:State{pool, surface, widget, size, ..}} = data.get().unwrap();
                 use keyboard::{Event::*, KeyState};
                 match event {
                     Keymap {..} => {},
                     Enter { /*keysyms,*/ .. } => {},
                     Leave { .. } => {}
-                    Key { state: KeyState::Released, .. } => {},
-                    Key { key, state: KeyState::Pressed, .. } => {
-						use {std::convert::TryFrom, widget::Key::{self, *}};
-						match Key::try_from(key as u8).unwrap() {
-							Escape => quit(streams),
-							key => if widget.event(key) { draw(pool, surface, *widget, *size).unwrap() },
+                    Key {state, key, .. } => {
+						use std::convert::TryFrom;
+						let key = crate::widget::Key::try_from(key as u8).unwrap();
+						match state {
+							KeyState::Released => if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None },
+							KeyState::Pressed => {
+								let DispatchData{streams, state} = data.get().unwrap();
+								if self::key(state, &key) { quit(streams); }
+								if let Some(repeat) = repeat.as_mut() { // Update existing repeat cell
+									repeat.set(key);
+									// Note: This keeps the same timer on key repeat change. No delay! Nice!
+								} else { // New repeat timer (registers in the reactor on first poll)
+									repeat = {
+										let repeat = Rc::new(Cell::new(key));
+										use futures::stream;
+										streams.push(
+											stream::unfold(std::time::Instant::now()+std::time::Duration::from_millis(300), {
+												let repeat = Rc::downgrade(&repeat);
+												move |last| {
+													let next = last+std::time::Duration::from_millis(100);
+													use async_io::Timer;
+													Timer::at(next).map({
+														let repeat = repeat.clone();
+														move |_| { repeat.upgrade().map(|x| (Item::KeyRepeat(x.get()), next) ) } // Option<Key> (None stops the stream, autodrops from streams)
+													})
+												}
+											}).boxed_local()
+										);
+										Some(repeat)
+									}
+								}
+							},
+							_ => unreachable!(),
 						}
-					}
+					},
                     Modifiers { /*modifiers*/.. } => {},
                     RepeatInfo {..} => {},
                     _ => unreachable!()
@@ -173,7 +213,8 @@ unsafe fn erase_lifetime<'d,'q,'w>(data: DispatchData<'d,'q,'w>) -> DispatchData
             while let Some(item) = /*~poll_next*/ std::pin::Pin::new(&mut streams).peek().now_or_never() {
                 let item = item.ok_or(std::io::Error::new(std::io::ErrorKind::UnexpectedEof,""))?;
                 match item {
-                    Item::Apply(_) => queue.dispatch_pending(/*Any: 'static*/unsafe{&mut erase_lifetime(DispatchData{streams: &mut streams, state: &mut state})}, |_,_,_| ())?,
+                    Item::Apply(_) => { queue.dispatch_pending(/*Any: 'static*/unsafe{&mut erase_lifetime(DispatchData{streams: streams.get_mut(), state: &mut state})}, |_,_,_| ())?; },
+                    Item::KeyRepeat(key) => if self::key(&mut state, key) { break 'run; },
                     Item::Quit => break 'run,
                 };
                 let _next = streams.next();

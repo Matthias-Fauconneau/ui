@@ -43,7 +43,7 @@ impl Widget for TextEdit<'_,'_> {
             target.slice_mut(scale*position, scale*xy{x:height/16,y:height}).modify(|bgra8{b,g,r,..}| bgra8{b:0xFF-b, g:0xFF-g, r:0xFF-r, a:0xFF});
         }
     }
-    fn event(&mut self, event: Event) -> bool {
+    fn event(&mut self, event: &Event) -> bool {
 		use Key::*;
 		match event {
 			Right => {
