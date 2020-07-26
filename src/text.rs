@@ -19,22 +19,25 @@ impl LineRange<'_> {
 
 use {std::cmp::{min, max}, ttf_parser::{Face,GlyphId,Rect}, core::{error::{throws, Error}, num::Ratio}, crate::font::{self, Rasterize}};
 
-pub(crate) struct Glyph {pub index: TextSize, pub x: i32, pub id: GlyphId, pub bbox: Rect}
+pub(crate) struct Glyph {pub index: TextSize, pub x: i32, pub id: GlyphId }
 pub(crate) fn layout<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=(TextSize,char)>+'t) -> impl 't+Iterator<Item=Glyph> {
     iter.scan((None, 0), move |(last_id, x), (index, c)| {
 		let id = font.glyph_index(c).unwrap_or_else(||panic!("Missing glyph for '{:?}'",c));
 		if let Some(last_id) = *last_id { *x += font.kerning_subtables().next().map_or(0, |x| x.glyphs_kerning(last_id, id).unwrap_or(0) as i32); }
 		*last_id = Some(id);
-		let next = (index, *x, id);
+		let next = Glyph{index, x: *x, id};
 		*x += font.glyph_hor_advance(id)? as i32;
 		Some(next)
 	})
-	.filter_map(move |(index, x, id)| Some(Glyph{index, x, id, bbox: font.glyph_bounding_box(id)?}) )
+}
+
+pub(crate) fn bbox<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=Glyph>+'t) -> impl 't+Iterator<Item=(Rect, Glyph)> {
+	iter.filter_map(move |g| Some((font.glyph_bounding_box(g.id)?, g)))
 }
 
 #[derive(Default)] pub(crate) struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
 pub(crate) fn metrics(font: &Face<'_>, iter: impl Iterator<Item=Glyph>) -> LineMetrics {
-	iter.fold(Default::default(), |metrics: LineMetrics, Glyph{x, id, bbox, ..}| LineMetrics{
+	bbox(font, iter).fold(Default::default(), |metrics: LineMetrics, (bbox, Glyph{x, id, ..})| LineMetrics{
 		width: (x + font.glyph_hor_side_bearing(id).unwrap() as i32 + bbox.x_max as i32) as u32,
 		ascent: max(metrics.ascent, bbox.y_max),
 		descent: min(metrics.descent, bbox.y_min)
@@ -77,8 +80,8 @@ impl<'font, 'text> Text<'font, 'text> {
     }
     pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
 		let (mut style, mut styles) = (None, self.style.iter().peekable());
-        core::time(|| for (line_index, line) in line_ranges(self.text).enumerate() {
-            for Glyph{index, x, id, bbox} in layout(self.font, line.char_indices()) {
+        core::call(|| for (line_index, line) in line_ranges(self.text).enumerate() {
+            for (bbox, Glyph{index, x, id}) in bbox(self.font, layout(self.font, line.char_indices())) {
                 let position = xy{
                     x: (x+self.font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
                     y: (line_index as u32)*(self.font.height() as u32) + (self.font.ascender()-bbox.y_max) as u32

@@ -9,8 +9,6 @@ impl<T:nix::AsRawPollFd> std::os::unix::io::AsRawFd for AsRawFd<T> { fn as_raw_f
 impl<T:nix::AsRawPollFd> Async<T> { fn new(io: T) -> Result<smol::Async<AsRawFd<T>>, std::io::Error> { smol::Async::new(AsRawFd(io)) } }
 impl nix::AsRawPollFd for client_toolkit::reexports::client::EventQueue { fn as_raw_poll_fd(&self) -> nix::RawPollFd { self.display().get_connection_fd() } }
 
-use {core::{error::{throws, Error, Result}, num::{Zero, div_ceil}}, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, Key}};
-
 use client_toolkit::{
 	default_environment, environment::SimpleGlobal, init_default_environment,
 	seat::{SeatData, with_seat_data}, output::with_output_info, get_surface_outputs, get_surface_scale_factor, shm,
@@ -33,8 +31,12 @@ enum Item {
 	KeyRepeat(Key),
 	Quit,
 }
+
+use {core::{error::{throws, Error, Result}, num::{Zero, div_ceil}}, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, Key, Event, ModifiersState}};
+
 struct State<'w> {
 	pool: shm::MemPool,
+	modifiers_state: ModifiersState,
 	surface: client::Attached<Surface>,
 	widget: &'w mut dyn Widget,
 	size: size,
@@ -69,11 +71,11 @@ unsafe fn erase_lifetime<'d,'q,'w>(data: DispatchData<'d,'q,'w>) -> DispatchData
 	std::mem::transmute::<DispatchData::<'d,'q,'w>, DispatchData::<'static,'static,'static>>(data)
 }
 
-fn key(State{pool, surface, widget, size, ..}: &mut State, key: &Key) -> bool {
+fn key(State{modifiers_state, pool, surface, widget, size, ..}: &mut State, key: Key) -> bool {
 	use Key::*;
 	match key {
 		Escape => true,
-		key => { if widget.event(key) { draw(pool, surface, *widget, *size).unwrap() }; false },
+		key => { if widget.event(&Event{modifiers_state: *modifiers_state, key}) { draw(pool, surface, *widget, *size).unwrap() }; false },
 	}
 }
 
@@ -97,19 +99,19 @@ fn key(State{pool, surface, widget, size, ..}: &mut State, key: &Key) -> bool {
 			use std::{rc::Rc, cell::Cell};
 			let mut repeat : Option<Rc<Cell<_>>> = None;
             seat.get_keyboard().quick_assign(move |_, event, mut data| {
+				let DispatchData{streams, state} = data.get().unwrap();
                 use keyboard::{Event::*, KeyState};
                 match event {
                     Keymap {..} => {},
                     Enter { /*keysyms,*/ .. } => {},
                     Leave { .. } => {}
-                    Key {state, key, .. } => {
+                    Key {state: key_state, key, .. } => {
 						use std::convert::TryFrom;
 						let key = crate::widget::Key::try_from(key as u8).unwrap_or_else(|_| panic!("{:x}", key));
-						match state {
+						match key_state {
 							KeyState::Released => if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None },
 							KeyState::Pressed => {
-								let DispatchData{streams, state} = data.get().unwrap();
-								if self::key(state, &key) { quit(streams); }
+								if self::key(state, key) { quit(streams); }
 								if let Some(repeat) = repeat.as_mut() { // Update existing repeat cell
 									repeat.set(key);
 									// Note: This keeps the same timer on key repeat change. No delay! Nice!
@@ -118,7 +120,7 @@ fn key(State{pool, surface, widget, size, ..}: &mut State, key: &Key) -> bool {
 										let repeat = Rc::new(Cell::new(key));
 										use futures::stream;
 										streams.push(
-											stream::unfold(std::time::Instant::now()+std::time::Duration::from_millis(150), {
+											stream::unfold(std::time::Instant::now()+std::time::Duration::from_millis(1500), {
 												let repeat = Rc::downgrade(&repeat);
 												move |last| {
 													let next = last+std::time::Duration::from_millis(33);
@@ -137,7 +139,19 @@ fn key(State{pool, surface, widget, size, ..}: &mut State, key: &Key) -> bool {
 							_ => unreachable!(),
 						}
 					},
-                    Modifiers { /*modifiers*/.. } => {},
+                    Modifiers {mods_depressed, mods_latched, mods_locked, group: locked_group, ..} => {
+                        assert_eq!([mods_latched, mods_locked, locked_group], [0,0,0]);
+                        #[macro_export] macro_rules! assert_matches { ($expr:expr, $($pattern:tt)+) => { match $expr {
+							$($pattern)+ => (),
+							ref e => panic!("assertion failed: `{:?}` does not match `{}`", e, stringify!($($pattern)+)),
+						}}}
+						const CTRL : u32 = 0b100;
+                        assert_matches!(mods_depressed, 0|CTRL);
+						state.modifiers_state = ModifiersState {
+							ctrl: mods_depressed&CTRL != 0,
+							..Default::default()
+						}
+                    },
                     RepeatInfo {..} => {},
                     _ => unreachable!()
                 }
@@ -160,6 +174,7 @@ fn key(State{pool, surface, widget, size, ..}: &mut State, key: &Key) -> bool {
 
     let mut state = State {
         pool: env.create_simple_pool(|_|{})?,
+        modifiers_state: Default::default(),
         surface,
         widget,
         size: Zero::zero(),
@@ -214,7 +229,7 @@ fn key(State{pool, surface, widget, size, ..}: &mut State, key: &Key) -> bool {
                 let item = item.ok_or(std::io::Error::new(std::io::ErrorKind::UnexpectedEof,""))?;
                 match item {
                     Item::Apply(_) => { queue.dispatch_pending(/*Any: 'static*/unsafe{&mut erase_lifetime(DispatchData{streams: streams.get_mut(), state: &mut state})}, |_,_,_| ())?; },
-                    Item::KeyRepeat(key) => if self::key(&mut state, key) { break 'run; },
+                    &Item::KeyRepeat(key) => if self::key(&mut state, key) { break 'run; },
                     Item::Quit => break 'run,
                 };
                 let _next = streams.next();
