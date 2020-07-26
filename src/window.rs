@@ -120,7 +120,7 @@ fn key(State{modifiers_state, pool, surface, widget, size, ..}: &mut State, key:
 										let repeat = Rc::new(Cell::new(key));
 										use futures::stream;
 										streams.push(
-											stream::unfold(std::time::Instant::now()+std::time::Duration::from_millis(1500), {
+											stream::unfold(std::time::Instant::now()+std::time::Duration::from_millis(150), {
 												let repeat = Rc::downgrade(&repeat);
 												move |last| {
 													let next = last+std::time::Duration::from_millis(33);

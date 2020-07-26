@@ -100,7 +100,8 @@ impl<'font, 'text> Text<'font, 'text> {
     }
 }
 
-fn fit_width(width: u32, from : size) -> size { xy{x: width, y: div_ceil(width * from.y, from.x)} }
+use core::num::{IsZero, Zero};
+fn fit_width(width: u32, from : size) -> size { if from.is_zero() { return Zero::zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
 
 use crate::widget::{Widget, Target};
 impl Text<'_,'_> {
