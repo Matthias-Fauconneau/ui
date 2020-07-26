@@ -1,17 +1,4 @@
-use crate::{error::{throws, Error, Result}, num::Ratio, vector::{self, uint2, size, int2, Zero}, image::Image, font::Rasterize};
-pub use {crate::vector::xy, ttf_parser::Face};
-
-#[derive(Default)] pub struct Rect { pub top_left: int2, pub bottom_right: int2 }
-
-impl Rect {
-	pub fn horizontal(y: i32, dy: u8, left: i32, right: i32) -> Rect { Self{ top_left: xy{ y: y-(dy/2) as i32, x: left }, bottom_right: xy{ y: y+(dy/2) as i32, x: right     } } }
-	pub fn vertical(x: i32, dx: u8, top: i32, bottom: i32) -> Rect { Self{ top_left: xy{ x: x-(dx/2) as i32, y: top }, bottom_right: xy{ x: x+(dx/2) as i32, y: bottom } } }
-}
-
-impl Rect {
-	pub fn translate(&mut self, offset: int2) { self.top_left += offset; self.bottom_right += offset; }
-}
-
+pub use ::xy::int2;
 
 pub struct Parallelogram { pub top_left: int2, pub bottom_right: int2, pub vertical_thickness: u8 }
 
@@ -19,12 +6,13 @@ impl Parallelogram {
 	pub fn translate(&mut self, offset: int2) { self.top_left += offset; self.bottom_right += offset; }
 }
 
-
 pub struct Glyph { pub top_left: int2, pub id: ttf_parser::GlyphId }
 
 impl Glyph {
 	pub fn translate(&mut self, offset: int2) { self.top_left += offset; }
 }
+
+pub use {core::num::Ratio, xy::Rect, ttf_parser::Face};
 
 pub struct Graphic<'t> {
 	pub scale: Ratio,
@@ -39,18 +27,18 @@ impl<'t> Graphic<'t> {
 		Self{scale, rects: Default::default(), parallelograms: Default::default(), font, glyphs: Default::default() }
 	}
 	pub fn bounds(&self) -> Rect {
-	    use vector::Bounds;
-					self.rects.iter().map(|r| vector::MinMax{min: r.top_left, max: r.top_left.iter().zip(r.bottom_right.iter()).map(|(&o,&s)| if s < i32::MAX { s } else { o }).collect()})
-		.chain( self.glyphs.iter().map(|g| vector::MinMax{min: g.top_left, max: g.top_left + self.font.glyph_size(g.id).into()}) )
+	    use core::vector::{Bounds, MinMax};
+					self.rects.iter().map(|r| MinMax{min: r.top_left, max: r.top_left.iter().zip(r.bottom_right.iter()).map(|(&o,&s)| if s < i32::MAX { s } else { o }).collect()})
+		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + self.font.glyph_size(g.id).into()}) )
 		.bounds()
-		.map(|vector::MinMax{min, max}| Rect{top_left: min, bottom_right: max})
+		.map(|MinMax{min, max}| Rect{top_left: min, bottom_right: max})
 		.unwrap_or_default()
 	}
 }
 
 pub struct View<'t> { graphic: Graphic<'t>, view: Rect }
 
-use crate::{widget::{self, Target}, image::{bgra8, sRGB}};
+use {core::{error::{throws, Error, Result}, num::Zero}, ::xy::{size, uint2}, image::{Image, sRGB, bgra8} crate::{widget::{self, Target}, font::Rasterize}};
 
 impl widget::Widget for View<'_> {
     fn size(&mut self, _: size) -> size { self.graphic.scale * (self.view.bottom_right-self.view.top_left).unsigned() }
@@ -81,10 +69,10 @@ impl widget::Widget for View<'_> {
 
 impl<'t> View<'t> { pub fn new(graphic: Graphic<'t>) -> Self { Self{view: graphic.bounds(), graphic} } }
 
-impl Ratio { #[track_caller] fn ceil2(&self, v: uint2) -> uint2 { xy{x:self.ceil(v.x), y:self.ceil(v.y)} } }
+fn ceil(scale: &Ratio, v: uint2) -> uint2 { xy{x:scale.ceil(v.x), y:scale.ceil(v.y)} } }
 
 pub struct Widget<T>(pub T);
 impl<'t, T:Fn(size)->Result<Graphic<'t>>> widget::Widget for Widget<T> {
-    fn size(&mut self, size: size) -> size { let graphic = self.0(size).unwrap(); let view = graphic.bounds(); graphic.scale.ceil2((view.bottom_right-view.top_left).unsigned()) }
+    fn size(&mut self, size: size) -> size { let graphic = self.0(size).unwrap(); let view = graphic.bounds(); ceil(graphic.scale, (view.bottom_right-view.top_left).unsigned()) }
     #[throws] fn paint(&mut self, target : &mut Target) { View::new(self.0(target.size)?).paint(target)? }
 }

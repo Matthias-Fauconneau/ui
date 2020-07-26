@@ -104,7 +104,7 @@ fn key(State{pool, surface, widget, size, ..}: &mut State, key: &Key) -> bool {
                     Leave { .. } => {}
                     Key {state, key, .. } => {
 						use std::convert::TryFrom;
-						let key = crate::widget::Key::try_from(key as u8).unwrap();
+						let key = crate::widget::Key::try_from(key as u8).unwrap_or_else(|_| panic!("{:x}", key));
 						match state {
 							KeyState::Released => if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None },
 							KeyState::Pressed => {
@@ -118,10 +118,10 @@ fn key(State{pool, surface, widget, size, ..}: &mut State, key: &Key) -> bool {
 										let repeat = Rc::new(Cell::new(key));
 										use futures::stream;
 										streams.push(
-											stream::unfold(std::time::Instant::now()+std::time::Duration::from_millis(300), {
+											stream::unfold(std::time::Instant::now()+std::time::Duration::from_millis(150), {
 												let repeat = Rc::downgrade(&repeat);
 												move |last| {
-													let next = last+std::time::Duration::from_millis(100);
+													let next = last+std::time::Duration::from_millis(33);
 													use async_io::Timer;
 													Timer::at(next).map({
 														let repeat = repeat.clone();
