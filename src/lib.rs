@@ -3,7 +3,7 @@
 //#![cfg_attr(feature="font", feature(non_ascii_idents))]
 //#![cfg_attr(feature="font", allow(uncommon_codepoints))]
 #![cfg_attr(feature="text", feature(once_cell,in_band_lifetimes))]
-#![cfg_attr(feature="text-edit", feature(or_patterns))]
+//#![cfg_attr(feature="text-edit", feature(or_patterns))]
 
 pub use image::{Image, bgra8};
 use cfg_if::cfg_if;

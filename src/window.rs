@@ -140,14 +140,11 @@ fn key(State{modifiers_state, pool, surface, widget, size, ..}: &mut State, key:
 						}
 					},
                     Modifiers {mods_depressed, mods_latched, mods_locked, group: locked_group, ..} => {
-                        assert_eq!([mods_latched, mods_locked, locked_group], [0,0,0]);
-                        #[macro_export] macro_rules! assert_matches { ($expr:expr, $($pattern:tt)+) => { match $expr {
-							$($pattern)+ => (),
-							ref e => panic!("assertion failed: `{:?}` does not match `{}`", e, stringify!($($pattern)+)),
-						}}}
+                        const SHIFT : u32 = 0b001;
 						const CTRL : u32 = 0b100;
-                        assert_matches!(mods_depressed, 0|CTRL);
-						state.modifiers_state = ModifiersState {
+                        assert_eq!([mods_depressed&!(SHIFT|CTRL), mods_latched, mods_locked, locked_group], [0,0,0,0]);
+                        state.modifiers_state = ModifiersState {
+							shift: mods_depressed&SHIFT != 0,
 							ctrl: mods_depressed&CTRL != 0,
 							..Default::default()
 						}

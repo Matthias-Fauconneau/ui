@@ -14,7 +14,7 @@ font = ['derive-more','core/fehler','ttf-parser','kurbo']
 graphic = ['core/fehler','widget','sRGB','font']
 font-file = ['font','owning-ref','memmap']
 text = ['font','sRGB','text-size','widget','font-file']
-text-edit = ['text','unicode-segmentation']
+text-edit = ['text','core/unicode-segmentation']
 color = []
 default = ['window']
 
@@ -38,7 +38,6 @@ kurbo = { version='', optional=true }
 ttf-parser = { version='', optional=true }
 
 text-size = { version='', optional=true }
-unicode-segmentation = { version='', optional=true }
 
 [[example]]
 name = 'window'
