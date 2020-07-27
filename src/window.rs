@@ -28,11 +28,11 @@ default_environment!(Compositor,
 
 enum Item {
 	Apply(std::io::Result<()>),
-	KeyRepeat(Key),
+	KeyRepeat(char),
 	Quit,
 }
 
-use {core::{error::{throws, Error, Result}, num::{Zero, div_ceil}}, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, Key, Event, ModifiersState}};
+use {core::{error::{throws, Error, Result}, num::{Zero, div_ceil}}, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, Event, ModifiersState}};
 
 struct State<'w> {
 	pool: shm::MemPool,
@@ -71,13 +71,19 @@ unsafe fn erase_lifetime<'d,'q,'w>(data: DispatchData<'d,'q,'w>) -> DispatchData
 	std::mem::transmute::<DispatchData::<'d,'q,'w>, DispatchData::<'static,'static,'static>>(data)
 }
 
-fn key(State{modifiers_state, pool, surface, widget, size, ..}: &mut State, key: Key) -> bool {
-	use Key::*;
-	match key {
-		Escape => true,
-		key => { if widget.event(&Event{modifiers_state: *modifiers_state, key}) { draw(pool, surface, *widget, *size).unwrap() }; false },
-	}
+fn key(State{modifiers_state, pool, surface, widget, size, ..}: &mut State, key: char) -> bool {
+	if widget.event(&Event{modifiers_state: *modifiers_state, key}) { draw(pool, surface, *widget, *size).unwrap(); false }
+	else if key == '⎋' { true }
+	else { false }
 }
+
+use std::convert::TryFrom;
+use std::lazy::SyncLazy;
+#[allow(non_upper_case_globals)] static usb_hid_usage_table: SyncLazy<Vec<char>> = SyncLazy::new(|| [
+	&['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪'],
+	&(1..=10).map(|i| char::try_from(0xF700u32+i).unwrap()).collect::<Vec<_>>()[..], &['\0'; 20], &['\u{F70B}','\u{F70C}'], &['\0'; 8],
+	&['\n','⌃',' ','⎇','⇱','↑','⇞','←','→','⇲','↓','⇟','\u{8}','⌦']
+].concat());
 
 #[throws] pub fn window<'w>(widget: &'w mut (dyn Widget + 'w)) -> impl std::future::Future<Output=Result<()>>+'w {
     let (env, _, mut queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
@@ -106,8 +112,7 @@ fn key(State{modifiers_state, pool, surface, widget, size, ..}: &mut State, key:
                     Enter { /*keysyms,*/ .. } => {},
                     Leave { .. } => {}
                     Key {state: key_state, key, .. } => {
-						use std::convert::TryFrom;
-						let key = crate::widget::Key::try_from(key as u8).unwrap_or_else(|_| panic!("{:x}", key));
+						let key = *usb_hid_usage_table.get(key as usize).unwrap_or_else(|| panic!("{:x}", key));
 						match key_state {
 							KeyState::Released => if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None },
 							KeyState::Pressed => {

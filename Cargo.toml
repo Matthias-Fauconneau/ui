@@ -8,7 +8,7 @@ edition = '2018'
 trace = ['core/trace']
 timeout = ['core/timeout']
 sRGB= ['core/array']
-widget = ['num_enum']
+widget = ['client-toolkit']
 window = ['futures','async-io','smol','client-toolkit','widget']
 font = ['derive-more','core/fehler','ttf-parser','kurbo']
 graphic = ['core/fehler','widget','sRGB','font']
@@ -23,7 +23,6 @@ cfg-if = ''
 fehler = '' # #[throws] expects {{root}}::fehler
 derive-more = { package='derive_more', version='', optional=true }
 owning-ref = { package='owning_ref', version='', optional=true }
-num_enum = { version='', optional=true }
 core = { version='', path='../core' }
 futures = { version='^0.3', optional=true }
 async-io = { version='', path="../async-io", optional=true }

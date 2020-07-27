@@ -16,7 +16,7 @@ impl Span {
 	fn min(&self) -> LineColumn { min(self.start, self.end) }
 	fn max(&self) -> LineColumn { max(self.start, self.end) }
 }
-use crate::{text::{Text, line_ranges, layout, Glyph}, widget::{Widget, size, Target, Event, Key, ModifiersState}};
+use crate::{text::{Text, line_ranges, layout, Glyph}, widget::{Widget, size, Target, Event, ModifiersState}};
 
 fn position(font: &ttf_parser::Face<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 { xy{
 	x: layout(font, line_ranges(text).nth(line).unwrap().char_indices()).nth_or_last(column).map_or_else(
@@ -58,25 +58,24 @@ impl Widget for TextEdit<'_,'_> {
 		let Self{text: Text{text, ..}, selection} = self;
 		if text.is_empty() { return false; }
 		if selection.start != selection.end && !shift { // Left|Right clear moves caret to selection min/max
-			if key == Left { *selection=Span::new(selection.min()); return true }
-			if key == Right { *selection=Span::new(selection.max()); return true }
+			if key == '←' { *selection=Span::new(selection.min()); return true }
+			if key == '→' { *selection=Span::new(selection.max()); return true }
 		}
 		let LineColumn{line, column} = selection.end;
 		let (line_text, line_count) = { let mut line_iterator = line_ranges(text); (line_iterator.nth(line).unwrap(), line+1+line_iterator.count()) };
 		let line = line as i32;
 		use core::unicode_segmentation::{prev_boundary,next_boundary,prev_word,next_word};
-		use Key::*;
 		let (line, column) = match key {
-			Up => (line - 1, column),
-			Down => (line + 1, column),
-			PageUp => (line - 30, column),
-			PageDown => (line + 30, column),
-			Left => if column == 0 { if line == 0 { return false; } (line-1, line_ranges(text).nth((line-1) as usize).unwrap().len()) }
+			'↑' => (line - 1, column),
+			'↓' => (line + 1, column),
+			'⇞' => (line - 30, column),
+			'⇟' => (line + 30, column),
+			'←' => if column == 0 { if line == 0 { return false; } (line-1, line_ranges(text).nth((line-1) as usize).unwrap().len()) }
 						else { (line, if ctrl {prev_word} else {prev_boundary}(&line_text, column)) },
-			Right => if column >= line_text.len() { if line >= line_count as i32-1 { return false; } (line+1, 0) }
+			'→' => if column >= line_text.len() { if line >= line_count as i32-1 { return false; } (line+1, 0) }
 						else { (line, if ctrl {next_word} else {next_boundary}(&line_text, column)) },
-			Home => (if ctrl {0} else {line}, 0),
-			End => if ctrl {(line_count as i32-1, line_ranges(text).nth(line_count-1).unwrap().len())} else {(line, line_text.len())},
+			'⇱' => (if ctrl {0} else {line}, 0),
+			'⇲' => if ctrl {(line_count as i32-1, line_ranges(text).nth(line_count-1).unwrap().len())} else {(line, line_text.len())},
 			_ => return false,
 		};
 		let end = LineColumn{line: clamp(0, line, line_count as i32-1) as usize, column};
