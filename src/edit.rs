@@ -16,7 +16,7 @@ impl Span {
 	fn min(&self) -> LineColumn { min(self.start, self.end) }
 	fn max(&self) -> LineColumn { max(self.start, self.end) }
 }
-use crate::{text::{Text, line_ranges, layout, Glyph}, widget::{Widget, size, Target, Event, ModifiersState}};
+use crate::{text::{self, Attribute, Style, line_ranges, layout, Glyph, TextView}, widget::{Event, Widget, size, Target, ModifiersState}};
 
 fn position(font: &ttf_parser::Face<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 { xy{
 	x: layout(font, line_ranges(text).nth(line).unwrap().char_indices()).nth_or_last(column).map_or_else(
@@ -29,21 +29,42 @@ fn span(font: &ttf_parser::Face<'_>, text: &str, min: LineColumn, max: LineColum
 	Rect{min: position(font, text, min).signed(), max: (position(font, text, max)+xy{x:0, y: font.height() as u32}).signed()}
 }
 
-pub struct TextEdit<'font, 'text> {
-	text: Text<'font, 'text>,
+struct Buffer {
+	text : String,
+    style: Vec<Attribute<Style>>,
+}
+impl<'t> std::borrow::Borrow<text::Buffer<'t>> for Buffer {
+	fn borrow(&self) -> &text::Buffer<'t> { &crate::text::Buffer{
+		text: std::borrow::Borrow::<str>::borrow(&self.text),
+		style: std::borrow::Borrow::<[Attribute<Style>]>::borrow(&self.style),
+	}}
+}
+impl ToOwned for text::Buffer<'_> {
+	type Owned = Buffer;
+	fn to_owned(&self) -> Self::Owned { Self::Owned{text: self.text.to_owned(), style: self.style.to_owned()} }
+}
+use std::borrow::Cow;
+pub struct TextEdit<'f, 't> {
+	font : &'f ttf_parser::Face<'f>,
+	buffer: Cow<'t, text::Buffer<'t>>,
 	selection: Span,
 }
 
-impl<'font, 'text> TextEdit<'font, 'text> { pub fn new(text : Text<'font, 'text>) -> Self { Self{text, selection: Zero::zero()} } }
+impl<'font, 'text> TextEdit<'font, 'text> {
+	//pub fn new(font: &'font ttf_parser::Face<'font>, buffer: text::Buffer<'text>) -> Self { Self{font, buffer: Cow::Borrowed(&buffer), selection: Zero::zero()} }
+	pub fn new(font: &'font ttf_parser::Face<'font>, buffer: text::Buffer<'text>) -> Self { Self{font, buffer: Buffer{text: Cow::Borrowed(&buffer.text), style: Cow::Borrowed(&buffer.style)}, selection: Zero::zero()} }
+}
 
 impl Widget for TextEdit<'_,'_> {
-	fn size(&mut self, size : size) -> size { Widget::size(&mut self.text, size) }
+	fn size(&mut self, size : size) -> size { Widget::size(&mut TextView{font: self.font, buffer: self.buffer.as_ref()}, size) }
 	#[throws] fn paint(&mut self, target : &mut Target) {
-		Widget::paint(&mut self.text, target)?;
-		/*if self.has_focus()*/ {
-			let scale = self.text.scale(&target);
-			let Self{text: Text{text, font, ..}, selection} = self;
+		let Self{font, buffer, selection} = self;
+		let text = TextView{font, buffer};
+		let scale = text.scale(&target);
+		text.paint(target, scale);
+		/*if has_focus*/ {
 			let [min, max] = [selection.min(), selection.max()];
+			let &text::Buffer{text,..} = buffer.as_ref();
 			if min.line < max.line { image::invert(&mut target.slice_mut_clip(scale*span(font,text,min,LineColumn{line: min.line, column: usize::MAX}))); }
 			if min.line == max.line { image::invert(&mut target.slice_mut_clip(scale*span(font,text,min,max))); }
 			else { for line in min.line+1..max.line {
@@ -55,11 +76,12 @@ impl Widget for TextEdit<'_,'_> {
 		}
 	}
 	fn event(&mut self, &Event{key, modifiers_state: ModifiersState{ctrl,shift,..}}: &Event) -> bool {
-		let Self{text: Text{text, ..}, selection} = self;
+		let Self{buffer, selection, ..} = self;
+		let &text::Buffer{text, ..} = &buffer;
 		if text.is_empty() { return false; }
 		if selection.start != selection.end && !shift { // Left|Right clear moves caret to selection min/max
-			if key == '←' { *selection=Span::new(selection.min()); return true }
-			if key == '→' { *selection=Span::new(selection.max()); return true }
+			if key == '←' { *selection=Span::new(selection.min()); return true; }
+			if key == '→' { *selection=Span::new(selection.max()); return true; }
 		}
 		let LineColumn{line, column} = selection.end;
 		let (line_text, line_count) = { let mut line_iterator = line_ranges(text); (line_iterator.nth(line).unwrap(), line+1+line_iterator.count()) };
@@ -76,7 +98,10 @@ impl Widget for TextEdit<'_,'_> {
 						else { (line, if ctrl {next_word} else {next_boundary}(&line_text, column)) },
 			'⇱' => (if ctrl {0} else {line}, 0),
 			'⇲' => if ctrl {(line_count as i32-1, line_ranges(text).nth(line_count-1).unwrap().len())} else {(line, line_text.len())},
-			_ => return false,
+			c if !key.is_control() => {
+				buffer.to_mut().text.insert(line_text.range.start+column, c);
+				(line, column+1)
+			}
 		};
 		let end = LineColumn{line: clamp(0, line, line_count as i32-1) as usize, column};
 		let next = Span{start: if shift { selection.start } else { end }, end};

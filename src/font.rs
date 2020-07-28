@@ -1,4 +1,5 @@
-use {core::num::Ratio, ::xy::{xy, size, vec2}, image::Image, crate::{quad::quad, cubic::cubic, raster::{line, self}}};
+mod quad; mod cubic; mod raster;
+use {core::num::Ratio, ::xy::{xy, size, vec2}, image::Image, quad::quad, cubic::cubic, raster::line};
 
 struct Outline<'t> { scale : Ratio /*f32 loses precision*/, x_min: f32, y_max: f32, target : &'t mut Image<&'t mut[f32]>, first : Option<vec2>, p0 : Option<vec2>}
 impl Outline<'_> { fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-self.x_min, y: -(self.scale*y)+self.y_max} } }
