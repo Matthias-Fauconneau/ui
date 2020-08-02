@@ -9,14 +9,14 @@ trace = ['core/trace']
 timeout = ['core/timeout']
 sRGB= ['core/array']
 widget = ['client-toolkit']
-window = ['core/fehler','futures','async-io','smol','client-toolkit','widget']
+app = ['core/fehler','futures','async-io','smol','client-toolkit','widget']
 font = ['derive-more','core/fehler','ttf-parser','kurbo']
 graphic = ['xy/iter','core/fehler','widget','sRGB','font']
 font-file = ['font','owning-ref','memmap']
 text = ['font','sRGB','text-size','widget','font-file']
 text-edit = ['text','core/unicode-segmentation']
 color = []
-default = ['window']
+default = ['app']
 
 [dependencies]
 cfg-if = ''
@@ -24,7 +24,8 @@ fehler = '' # #[throws] expects {{root}}::fehler
 derive-more = { package='derive_more', version='', optional=true }
 owning-ref = { package='owning_ref', version='', optional=true }
 core = { version='', path='../core' }
-futures = { version='^0.3', optional=true }
+futures = { version='^0.3', optional=true } # SelectAll, select_all, LocalBoxStream
+#futures = { version='', optional=true, package = 'futures-lite' }
 async-io = { version='', path="../async-io", optional=true }
 smol = { version='', optional=true }
 
@@ -41,12 +42,12 @@ text-size = { version='', optional=true }
 [[example]]
 name = 'window'
 path = 'examples/window.rs'
-required-features = ['window']
+required-features = ['app']
 
 [[example]]
 name = 'text'
 path = 'examples/text.rs'
-required-features = ['text']
+required-features = ['app','text']
 
 [profile.dev.package.image]
 opt-level = 2

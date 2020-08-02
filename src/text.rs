@@ -61,32 +61,37 @@ use std::lazy::SyncLazy;
 use std::sync::RwLock;
 #[allow(non_upper_case_globals)] pub static cache: SyncLazy<RwLock<Vec<(GlyphId,Image<Vec<u8>>)>>> = SyncLazy::new(|| RwLock::new(Vec::new()));
 
-pub struct Buffer<'t> {
-	pub text : &'t str,
+use std::cell::RefCell;
+pub struct Buffer<'t, T> {
+	pub text : &'t RefCell<T>,
     pub style: &'t [Attribute<Style>],
 }
-impl Buffer<'t> { pub fn new(text: &'t str) -> Self { Self{text, style: &*default_style} } }
+impl<'t, T> Buffer<'t, T> { pub fn new(text: &'t RefCell<T>) -> Self { Self{text, style: &*default_style} } }
 
-pub struct TextView<'f, 't> {
+pub struct TextView<'f, 't, T> {
     pub font : &'f Face<'f>,
-    pub buffer: Buffer<'t>,
+    pub buffer: Buffer<'t, T>,
     //size : Option<size2>
 }
 
 use {::xy::{xy, size}, image::{Image, bgra8}, core::num::div_ceil};
 
-impl<'f, 't> TextView<'f, 't> {
-    pub fn new(font: &'f Face<'f>, buffer: Buffer<'t>) -> Self { Self{font, buffer/*, size: None*/} }
+use core::num::{IsZero, Zero};
+fn fit_width(width: u32, from : size) -> size { if from.is_zero() { return Zero::zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
+
+impl<'f, 't, T:std::ops::Deref<Target=str>> TextView<'f, 't, T> {
+    pub fn new(font: &'f Face<'f>, buffer: Buffer<'t, T>) -> Self { Self{font, buffer/*, size: None*/} }
     pub fn size(&/*mut*/ self) -> size {
         let Self{font, buffer: Buffer{text, ..}, /*ref mut size,*/ ..} = self;
         //*size.get_or_insert_with(||{
-            let (line_count, max_width) = line_ranges(text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(font, layout(font, line.char_indices())).width)));
+            let (line_count, max_width) = line_ranges(&text.borrow()).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(font, layout(font, line.char_indices())).width)));
             xy{x: max_width, y: line_count * (font.height() as u32)}
         //})
     }
+    pub fn scale(&mut self, size: size) -> Ratio { Ratio{num: size.x-1, div: Self::size(&self).x-1} } // todo: scroll
     pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
 		let (mut style, mut styles) = (None, self.buffer.style.iter().peekable());
-        for (line_index, line) in line_ranges(self.buffer.text).enumerate() {
+        for (line_index, line) in line_ranges(&self.buffer.text.borrow()).enumerate() {
             for (bbox, Glyph{index, x, id}) in bbox(self.font, layout(self.font, line.char_indices())) {
 				use core::iter::{PeekableExt, Single};
 				style = style.filter(|style:&&Attribute<Style>| style.contains(index)).or_else(|| styles.peeking_take_while(|style| style.contains(index)).single());
@@ -108,17 +113,11 @@ impl<'f, 't> TextView<'f, 't> {
     }
 }
 
-use core::num::{IsZero, Zero};
-fn fit_width(width: u32, from : size) -> size { if from.is_zero() { return Zero::zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
-
 use crate::widget::{Widget, Target};
-impl TextView<'_,'_> {
-    pub fn scale(&mut self, target: &Target) -> Ratio { Ratio{num: target.size.x-1, div: TextView::size(&self).x-1} } // todo: scroll
-}
-impl Widget for TextView<'_,'_> {
+impl<T:std::ops::Deref<Target=str>> Widget for TextView<'_,'_,T> {
     fn size(&mut self, bounds : size) -> size { fit_width(bounds.x, TextView::size(&self)) }
     #[throws] fn paint(&mut self, target : &mut Target) {
-        let scale = self.scale(&target);
+        let scale = self.scale(target.size);
         TextView::paint(self, target, scale)
     }
 }
