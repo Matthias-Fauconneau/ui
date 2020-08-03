@@ -61,14 +61,6 @@ use std::lazy::SyncLazy;
 use std::sync::RwLock;
 #[allow(non_upper_case_globals)] pub static cache: SyncLazy<RwLock<Vec<(GlyphId,Image<Vec<u8>>)>>> = SyncLazy::new(|| RwLock::new(Vec::new()));
 
-//pub(crate) trait Text { fn text(&self) -> &str; }
-//pub(crate) trait TextStyle : Text { fn style(&self) -> &[Attribute<Style>]; }
-/*pub struct Buffer<T, S> {
-	pub text : T,
-    pub style: S,
-}
-impl<T> Buffer<T, &'static [Attribute<Style>]> { pub fn new(text: T) -> Self { Self{text, style: &*default_style} } }*/
-
 pub struct View<'f, D> {
     pub font : &'f Face<'f>,
     pub data: D,
@@ -80,24 +72,18 @@ use {::xy::{xy, size}, image::{Image, bgra8}, core::num::div_ceil};
 use core::num::{IsZero, Zero};
 fn fit_width(width: u32, from : size) -> size { if from.is_zero() { return Zero::zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
 
-//use std::{borrow::Borrow, ops::Deref};
-//impl<'f, T, S, BT:Deref<Target=str>, BS:Deref<Target=[Attribute<Style>]>> TextView<'f, T, S> where Buffer<T,S>:Borrow<Buffer<BT,BS>> {
-    //pub fn new(font: &'f Face<'f>, buffer: Buffer<T, S>) -> Self { Self{font, buffer/*, size: None*/} }
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
-//T, S, B:Borrow<Buffer<T,S>>
- //, BT:Deref<Target=str>, BS:Deref<Target=[Attribute<Style>]> where Buffer<T,S>:Borrow<Buffer<BT,BS>> {
-    pub fn size(&/*mut*/ self) -> size { //where B:Buffer {//Borrow<Buffer<&'t str,S>> {
+    pub fn size(&/*mut*/ self) -> size {
         let Self{font, data, /*ref mut size,*/ ..} = self;
         //*size.get_or_insert_with(||{
-            let text = data.as_ref(); //let Buffer{text, ..} = buffer.borrow();
+            let text = data.as_ref(); 
             let (line_count, max_width) = line_ranges(&text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(font, layout(font, line.char_indices())).width)));
             xy{x: max_width, y: line_count * (font.height() as u32)}
         //})
     }
-    pub fn scale(&mut self, size: size) -> Ratio /*where B:Borrow<Buffer<&'t str,S>>*/ { Ratio{num: size.x-1, div: Self::size(&self).x-1} } // todo: scroll
-    pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) { //where B:Buffer { Deref<Target=Buffer<&'t str,&'s [Attribute<Style>]>> {
+    pub fn scale(&mut self, size: size) -> Ratio { Ratio{num: size.x-1, div: Self::size(&self).x-1} } // todo: scroll
+    pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
         let Self{font, data} = &*self;
-        //let &Buffer{text, style} = buffer.deref();
 				let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
         for (line_index, line) in line_ranges(&data.as_ref()).enumerate() {
             for (bbox, Glyph{index, x, id}) in bbox(font, layout(font, line.char_indices())) {
@@ -122,9 +108,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 }
 
 use crate::widget::{Widget, Target};
-impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> /*Borrow<Buffer<&'t str,&'s [Attribute<Style>]>>+Deref<Target=Buffer<&'t str,&'s [Attribute<Style>]>>*/ {
-//T, S, B:Borrow<Buffer<T,S>>
-//BT:Deref<Target=str>, BS:Deref<Target=[Attribute<Style>]> where Buffer<T,S>:Borrow<Buffer<BT,BS>> {
+impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
     fn size(&mut self, bounds : size) -> size { fit_width(bounds.x, Self::size(&self)) }
     #[throws] fn paint(&mut self, target : &mut Target) {
         let scale = self.scale(target.size);

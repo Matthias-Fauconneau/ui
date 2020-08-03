@@ -35,51 +35,28 @@ pub struct Buffer<T, S> {
 }
 type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
 type Owned = Buffer<String, Vec<Attribute<Style>>>;
-//use std::borrow::Borrow; 
-//impl std::borrow::Borrow<Borrowed<'_>> for Owned {	fn borrow(&self) -> &Borrowed<'_> { &Borrowed{ text: self.text.borrow(), style: self.style.borrow() } } }
-//impl<'t> Borrow<Borrowed<'t>> for Owned { fn borrow(&self) -> &Borrowed<'t> { use std::borrow::Borrow; &Borrowed{text: self.text.borrow(), style: self.style.borrow()} } }
-//impl<'t> Borrow<Borrowed<'t>> for Owned { fn borrow(&self) -> &Borrowed<'t> { &Borrowed{text: &self.text, style: &self.style} } }
-//impl<'t> Borrow<Borrowed<'t>> for Owned { fn borrow(&self) -> &Borrowed<'t> { &Borrowed{text: self.text.borrow(), style: self.style.borrow()} } }
-//impl<'t> Borrow<Borrowed<'t>> for &'t Owned { fn borrow(&self) -> &Borrowed<'t> { &Borrowed{text: self.text.borrow(), style: self.style.borrow()} } }
-
-trait ToOwned { type Owned /*: Borrow<Self>*/; fn to_owned(&self) -> Self::Owned; }
+trait ToOwned { type Owned; fn to_owned(&self) -> Self::Owned; }
 impl ToOwned for Borrowed<'_> {
 	type Owned = Owned;
 	fn to_owned(&self) -> Self::Owned { Self::Owned{text: self.text.to_owned(), style: self.style.to_owned()} }
 }
-//type Cow<'t> = std::borrow::Cow<'t, Borrowed<'t>>;
 pub enum Cow<'t> { 
     Borrowed(Borrowed<'t>),
     Owned(Owned)
 }
-
-//impl std::ops::Deref for Cow<'t> {	 type Target = Borrowed<'t>; fn deref(&self) -> &Self::Target { match self { Cow::Borrowed(b) => b, Cow::Owned(o) => &Buffer{text: &o.text, style: &o.style} } } }
-//impl std::convert::AsRef<Borrowed<'t>> for Cow<'t> {	fn as_ref(&self) -> &Borrowed<'t> { match self { Cow::Borrowed(b) => b, Cow::Owned(o) => &Buffer{text: o.text.as_ref(), style: o.style.as_ref()} } } }
-//impl<'b> From<&'_ Cow<'_>> for Buffer { fn from(c: &'b Cow<'_>) -> Borrowed { match c { Cow::Borrowed(b) => b, Cow::Owned(o) => Buffer{text: o.text, style: o.style} } } }
-//impl Cow<'_> { fn borrow(&self) -> Borrowed { match self { Cow::Borrowed(b) => b, Cow::Owned(o) => Buffer{text: &o.text, style: &o.style} } } }
-//impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { self.borrow().text } }
-//impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { self.borrow().style } }
-impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { match self { Cow::Borrowed(b) => b.text, Cow::Owned(o) => &o.text} } }
-impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { match self { Cow::Borrowed(b) => b.style, Cow::Owned(o) => &o.style} } }
-
 impl Cow<'_> { fn get_mut(&mut self) -> &mut Owned { if let Cow::Borrowed(b) = self  { *self = Cow::Owned(b.to_owned()) } if let Cow::Owned(o) = self { o } else { unreachable!() } }  }
 
-//impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { AsRef::<Borrowed>::as_ref(&self).text } }
-//impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { self.as_ref::<Borrowed>().style } }
+impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { match self { Cow::Borrowed(b) => b.text, Cow::Owned(o) => &o.text} } }
+impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { match self { Cow::Borrowed(b) => b.style, Cow::Owned(o) => &o.style} } }
 
 impl Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed{text, style: &*default_style}) } }
 
 pub struct Edit<'f, 't> {
-	//font : &'f ttf_parser::Face<'f>,
-	//buffer: Cow<'t, Borrowed<'t>>,
 	view: View<'f, Cow<'t>>,
 	selection: Span,
 }
 
-impl<'f, 't> Edit<'f, 't> {
-	//pub fn new(font: &'f ttf_parser::Face<'font>, buffer: Borrowed<'t>) -> Self { Self{font, buffer: Cow::Borrowed(&buffer), selection: Zero::zero()} }
-	pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>) -> Self { Self{view: View{font, data}, selection: Zero::zero()} }
-}
+impl<'f, 't> Edit<'f, 't> {	pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>) -> Self { Self{view: View{font, data}, selection: Zero::zero()} } }
 
 impl Widget for Edit<'_,'_> {
 	fn size(&mut self, size : size) -> size { Widget::size(&mut self.view, size) }
