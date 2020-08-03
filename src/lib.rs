@@ -10,5 +10,5 @@ pub use image::{Image, bgra8};
 #[cfg(feature="app")] pub mod app;
 #[cfg(feature="font")] pub mod font;
 #[cfg(feature="text")] pub mod text; //cfg_if! { if #[cfg(feature="text")] { pub mod text; pub use text::{Text, default_font, default_style}; }}
-#[cfg(feature="text-edit")] pub mod edit; //cfg_if! { if #[cfg(feature="text-edit")] { pub mod edit; pub use edit::TextEdit; }}
+#[cfg(feature="edit")] pub mod edit; //cfg_if! { if #[cfg(feature="text-edit")] { pub mod edit; pub use edit::TextEdit; }}
 #[cfg(feature="graphic")] pub mod graphic; //cfg_if! { if #[cfg(feature="graphic")] { pub mod graphic; pub use graphic::{Glyph, Graphic}; }}

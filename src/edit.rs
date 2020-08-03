@@ -16,7 +16,7 @@ impl Span {
 	fn min(&self) -> LineColumn { min(self.start, self.end) }
 	fn max(&self) -> LineColumn { max(self.start, self.end) }
 }
-use crate::{text::{self, Attribute, Style, line_ranges, layout, Glyph, TextView}, widget::{Event, Widget, size, Target, ModifiersState}};
+use crate::{text::{Attribute, Style, line_ranges, layout, Glyph, View, default_style}, widget::{Event, Widget, size, Target, ModifiersState}};
 
 fn position(font: &ttf_parser::Face<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 { xy{
 	x: layout(font, line_ranges(text).nth(line).unwrap().char_indices()).nth_or_last(column).map_or_else(
@@ -29,42 +29,68 @@ fn span(font: &ttf_parser::Face<'_>, text: &str, min: LineColumn, max: LineColum
 	Rect{min: position(font, text, min).signed(), max: (position(font, text, max)+xy{x:0, y: font.height() as u32}).signed()}
 }
 
-struct Buffer {
-	text : String,
-    style: Vec<Attribute<Style>>,
+pub struct Buffer<T, S> {
+	pub text : T,
+	pub style: S,
 }
-impl<'t> std::borrow::Borrow<text::Buffer<'t>> for Buffer {
-	fn borrow(&self) -> &text::Buffer<'t> { &crate::text::Buffer{
-		text: std::borrow::Borrow::<str>::borrow(&self.text),
-		style: std::borrow::Borrow::<[Attribute<Style>]>::borrow(&self.style),
-	}}
-}
-impl ToOwned for text::Buffer<'_> {
-	type Owned = Buffer;
+type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
+type Owned = Buffer<String, Vec<Attribute<Style>>>;
+//use std::borrow::Borrow; 
+//impl std::borrow::Borrow<Borrowed<'_>> for Owned {	fn borrow(&self) -> &Borrowed<'_> { &Borrowed{ text: self.text.borrow(), style: self.style.borrow() } } }
+//impl<'t> Borrow<Borrowed<'t>> for Owned { fn borrow(&self) -> &Borrowed<'t> { use std::borrow::Borrow; &Borrowed{text: self.text.borrow(), style: self.style.borrow()} } }
+//impl<'t> Borrow<Borrowed<'t>> for Owned { fn borrow(&self) -> &Borrowed<'t> { &Borrowed{text: &self.text, style: &self.style} } }
+//impl<'t> Borrow<Borrowed<'t>> for Owned { fn borrow(&self) -> &Borrowed<'t> { &Borrowed{text: self.text.borrow(), style: self.style.borrow()} } }
+//impl<'t> Borrow<Borrowed<'t>> for &'t Owned { fn borrow(&self) -> &Borrowed<'t> { &Borrowed{text: self.text.borrow(), style: self.style.borrow()} } }
+
+trait ToOwned { type Owned /*: Borrow<Self>*/; fn to_owned(&self) -> Self::Owned; }
+impl ToOwned for Borrowed<'_> {
+	type Owned = Owned;
 	fn to_owned(&self) -> Self::Owned { Self::Owned{text: self.text.to_owned(), style: self.style.to_owned()} }
 }
-use std::borrow::Cow;
-pub struct TextEdit<'f, 't> {
-	font : &'f ttf_parser::Face<'f>,
-	buffer: Cow<'t, text::Buffer<'t>>,
+//type Cow<'t> = std::borrow::Cow<'t, Borrowed<'t>>;
+pub enum Cow<'t> { 
+    Borrowed(Borrowed<'t>),
+    Owned(Owned)
+}
+
+//impl std::ops::Deref for Cow<'t> {	 type Target = Borrowed<'t>; fn deref(&self) -> &Self::Target { match self { Cow::Borrowed(b) => b, Cow::Owned(o) => &Buffer{text: &o.text, style: &o.style} } } }
+//impl std::convert::AsRef<Borrowed<'t>> for Cow<'t> {	fn as_ref(&self) -> &Borrowed<'t> { match self { Cow::Borrowed(b) => b, Cow::Owned(o) => &Buffer{text: o.text.as_ref(), style: o.style.as_ref()} } } }
+//impl<'b> From<&'_ Cow<'_>> for Buffer { fn from(c: &'b Cow<'_>) -> Borrowed { match c { Cow::Borrowed(b) => b, Cow::Owned(o) => Buffer{text: o.text, style: o.style} } } }
+//impl Cow<'_> { fn borrow(&self) -> Borrowed { match self { Cow::Borrowed(b) => b, Cow::Owned(o) => Buffer{text: &o.text, style: &o.style} } } }
+//impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { self.borrow().text } }
+//impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { self.borrow().style } }
+impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { match self { Cow::Borrowed(b) => b.text, Cow::Owned(o) => &o.text} } }
+impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { match self { Cow::Borrowed(b) => b.style, Cow::Owned(o) => &o.style} } }
+
+impl Cow<'_> { fn get_mut(&mut self) -> &mut Owned { if let Cow::Borrowed(b) = self  { *self = Cow::Owned(b.to_owned()) } if let Cow::Owned(o) = self { o } else { unreachable!() } }  }
+
+//impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { AsRef::<Borrowed>::as_ref(&self).text } }
+//impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { self.as_ref::<Borrowed>().style } }
+
+impl Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed{text, style: &*default_style}) } }
+
+pub struct Edit<'f, 't> {
+	//font : &'f ttf_parser::Face<'f>,
+	//buffer: Cow<'t, Borrowed<'t>>,
+	view: View<'f, Cow<'t>>,
 	selection: Span,
 }
 
-impl<'font, 'text> TextEdit<'font, 'text> {
-	//pub fn new(font: &'font ttf_parser::Face<'font>, buffer: text::Buffer<'text>) -> Self { Self{font, buffer: Cow::Borrowed(&buffer), selection: Zero::zero()} }
-	pub fn new(font: &'font ttf_parser::Face<'font>, buffer: text::Buffer<'text>) -> Self { Self{font, buffer: Buffer{text: Cow::Borrowed(&buffer.text), style: Cow::Borrowed(&buffer.style)}, selection: Zero::zero()} }
+impl<'f, 't> Edit<'f, 't> {
+	//pub fn new(font: &'f ttf_parser::Face<'font>, buffer: Borrowed<'t>) -> Self { Self{font, buffer: Cow::Borrowed(&buffer), selection: Zero::zero()} }
+	pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>) -> Self { Self{view: View{font, data}, selection: Zero::zero()} }
 }
 
-impl Widget for TextEdit<'_,'_> {
-	fn size(&mut self, size : size) -> size { Widget::size(&mut TextView{font: self.font, buffer: self.buffer.as_ref()}, size) }
+impl Widget for Edit<'_,'_> {
+	fn size(&mut self, size : size) -> size { Widget::size(&mut self.view, size) }
 	#[throws] fn paint(&mut self, target : &mut Target) {
-		let Self{font, buffer, selection} = self;
-		let text = TextView{font, buffer};
-		let scale = text.scale(&target);
-		text.paint(target, scale);
+		let Self{view, selection} = self;
+		let scale = view.scale(target.size);
+		view.paint(target, scale);
 		/*if has_focus*/ {
 			let [min, max] = [selection.min(), selection.max()];
-			let &text::Buffer{text,..} = buffer.as_ref();
+			let View{font, data} = view;
+			let text = AsRef::<str>::as_ref(&data);
 			if min.line < max.line { image::invert(&mut target.slice_mut_clip(scale*span(font,text,min,LineColumn{line: min.line, column: usize::MAX}))); }
 			if min.line == max.line { image::invert(&mut target.slice_mut_clip(scale*span(font,text,min,max))); }
 			else { for line in min.line+1..max.line {
@@ -76,13 +102,15 @@ impl Widget for TextEdit<'_,'_> {
 		}
 	}
 	fn event(&mut self, &Event{key, modifiers_state: ModifiersState{ctrl,shift,..}}: &Event) -> bool {
-		let Self{buffer, selection, ..} = self;
-		let &text::Buffer{text, ..} = &buffer;
+		let Self{view: View{data, ..}, selection, ..} = self;
+		let text = AsRef::<str>::as_ref(&data);
 		if text.is_empty() { return false; }
 		if selection.start != selection.end && !shift { // Left|Right clear moves caret to selection min/max
 			if key == '←' { *selection=Span::new(selection.min()); return true; }
 			if key == '→' { *selection=Span::new(selection.max()); return true; }
 		}
+		let mut edit = None;
+		enum Change { Insert(usize, char) } use Change::*;
 		let LineColumn{line, column} = selection.end;
 		let (line_text, line_count) = { let mut line_iterator = line_ranges(text); (line_iterator.nth(line).unwrap(), line+1+line_iterator.count()) };
 		let line = line as i32;
@@ -98,11 +126,19 @@ impl Widget for TextEdit<'_,'_> {
 						else { (line, if ctrl {next_word} else {next_boundary}(&line_text, column)) },
 			'⇱' => (if ctrl {0} else {line}, 0),
 			'⇲' => if ctrl {(line_count as i32-1, line_ranges(text).nth(line_count-1).unwrap().len())} else {(line, line_text.len())},
-			c if !key.is_control() => {
-				buffer.to_mut().text.insert(line_text.range.start+column, c);
+			char if !key.is_control() => {
+				edit = Some(Insert(line_text.range.start+column, char));
 				(line, column+1)
 			}
+			_ => unimplemented!(),
 		};
+		drop(text);
+		if let Some(edit) = edit { 
+			let text = &mut data.get_mut().text; // todo: style
+			match edit {
+				Insert(at, char) => text.insert(at, char),
+			}
+		}
 		let end = LineColumn{line: clamp(0, line, line_count as i32-1) as usize, column};
 		let next = Span{start: if shift { selection.start } else { end }, end};
 		if next == *selection { false } else { *selection = next; true }

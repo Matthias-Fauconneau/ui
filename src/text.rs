@@ -1,6 +1,6 @@
 pub use text_size::{TextSize, TextRange}; // ~Range<u32> with impl SliceIndex for String
 
-#[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, range: std::ops::Range<usize> }
+#[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, pub(crate) range: std::ops::Range<usize> }
 
 pub(crate) fn line_ranges(text: &'t str) -> impl Iterator<Item=LineRange<'t>> {
 	let mut iter = text.char_indices().peekable();
@@ -61,16 +61,17 @@ use std::lazy::SyncLazy;
 use std::sync::RwLock;
 #[allow(non_upper_case_globals)] pub static cache: SyncLazy<RwLock<Vec<(GlyphId,Image<Vec<u8>>)>>> = SyncLazy::new(|| RwLock::new(Vec::new()));
 
-use std::cell::RefCell;
-pub struct Buffer<'t, T> {
-	pub text : &'t RefCell<T>,
-    pub style: &'t [Attribute<Style>],
+//pub(crate) trait Text { fn text(&self) -> &str; }
+//pub(crate) trait TextStyle : Text { fn style(&self) -> &[Attribute<Style>]; }
+/*pub struct Buffer<T, S> {
+	pub text : T,
+    pub style: S,
 }
-impl<'t, T> Buffer<'t, T> { pub fn new(text: &'t RefCell<T>) -> Self { Self{text, style: &*default_style} } }
+impl<T> Buffer<T, &'static [Attribute<Style>]> { pub fn new(text: T) -> Self { Self{text, style: &*default_style} } }*/
 
-pub struct TextView<'f, 't, T> {
+pub struct View<'f, D> {
     pub font : &'f Face<'f>,
-    pub buffer: Buffer<'t, T>,
+    pub data: D,
     //size : Option<size2>
 }
 
@@ -79,20 +80,27 @@ use {::xy::{xy, size}, image::{Image, bgra8}, core::num::div_ceil};
 use core::num::{IsZero, Zero};
 fn fit_width(width: u32, from : size) -> size { if from.is_zero() { return Zero::zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
 
-impl<'f, 't, T:std::ops::Deref<Target=str>> TextView<'f, 't, T> {
-    pub fn new(font: &'f Face<'f>, buffer: Buffer<'t, T>) -> Self { Self{font, buffer/*, size: None*/} }
-    pub fn size(&/*mut*/ self) -> size {
-        let Self{font, buffer: Buffer{text, ..}, /*ref mut size,*/ ..} = self;
+//use std::{borrow::Borrow, ops::Deref};
+//impl<'f, T, S, BT:Deref<Target=str>, BS:Deref<Target=[Attribute<Style>]>> TextView<'f, T, S> where Buffer<T,S>:Borrow<Buffer<BT,BS>> {
+    //pub fn new(font: &'f Face<'f>, buffer: Buffer<T, S>) -> Self { Self{font, buffer/*, size: None*/} }
+impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
+//T, S, B:Borrow<Buffer<T,S>>
+ //, BT:Deref<Target=str>, BS:Deref<Target=[Attribute<Style>]> where Buffer<T,S>:Borrow<Buffer<BT,BS>> {
+    pub fn size(&/*mut*/ self) -> size { //where B:Buffer {//Borrow<Buffer<&'t str,S>> {
+        let Self{font, data, /*ref mut size,*/ ..} = self;
         //*size.get_or_insert_with(||{
-            let (line_count, max_width) = line_ranges(&text.borrow()).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(font, layout(font, line.char_indices())).width)));
+            let text = data.as_ref(); //let Buffer{text, ..} = buffer.borrow();
+            let (line_count, max_width) = line_ranges(&text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(font, layout(font, line.char_indices())).width)));
             xy{x: max_width, y: line_count * (font.height() as u32)}
         //})
     }
-    pub fn scale(&mut self, size: size) -> Ratio { Ratio{num: size.x-1, div: Self::size(&self).x-1} } // todo: scroll
-    pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
-		let (mut style, mut styles) = (None, self.buffer.style.iter().peekable());
-        for (line_index, line) in line_ranges(&self.buffer.text.borrow()).enumerate() {
-            for (bbox, Glyph{index, x, id}) in bbox(self.font, layout(self.font, line.char_indices())) {
+    pub fn scale(&mut self, size: size) -> Ratio /*where B:Borrow<Buffer<&'t str,S>>*/ { Ratio{num: size.x-1, div: Self::size(&self).x-1} } // todo: scroll
+    pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) { //where B:Buffer { Deref<Target=Buffer<&'t str,&'s [Attribute<Style>]>> {
+        let Self{font, data} = &*self;
+        //let &Buffer{text, style} = buffer.deref();
+				let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
+        for (line_index, line) in line_ranges(&data.as_ref()).enumerate() {
+            for (bbox, Glyph{index, x, id}) in bbox(font, layout(font, line.char_indices())) {
 				use core::iter::{PeekableExt, Single};
 				style = style.filter(|style:&&Attribute<Style>| style.contains(index)).or_else(|| styles.peeking_take_while(|style| style.contains(index)).single());
                 assert!( style.map(|x|x.attribute.color).unwrap() == image::bgr{b:1., g:1., r:1.}); // todo: approximate linear tint cached sRGB glyphs
@@ -104,8 +112,8 @@ impl<'f, 't, T:std::ops::Deref<Target=str>> TextView<'f, 't, T> {
                 let coverage = &cache_read.iter().find(|(key,_)| key == &id).unwrap().1;
 
 				let position = xy{
-                    x: (x+self.font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
-                    y: (line_index as u32)*(self.font.height() as u32) + (self.font.ascender()-bbox.y_max) as u32
+                    x: (x+font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
+                    y: (line_index as u32)*(font.height() as u32) + (font.ascender()-bbox.y_max) as u32
                 };
                 image::set_map(&mut target.slice_mut(scale*position, coverage.size), &coverage.as_ref())
             }
@@ -114,10 +122,12 @@ impl<'f, 't, T:std::ops::Deref<Target=str>> TextView<'f, 't, T> {
 }
 
 use crate::widget::{Widget, Target};
-impl<T:std::ops::Deref<Target=str>> Widget for TextView<'_,'_,T> {
-    fn size(&mut self, bounds : size) -> size { fit_width(bounds.x, TextView::size(&self)) }
+impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> /*Borrow<Buffer<&'t str,&'s [Attribute<Style>]>>+Deref<Target=Buffer<&'t str,&'s [Attribute<Style>]>>*/ {
+//T, S, B:Borrow<Buffer<T,S>>
+//BT:Deref<Target=str>, BS:Deref<Target=[Attribute<Style>]> where Buffer<T,S>:Borrow<Buffer<BT,BS>> {
+    fn size(&mut self, bounds : size) -> size { fit_width(bounds.x, Self::size(&self)) }
     #[throws] fn paint(&mut self, target : &mut Target) {
         let scale = self.scale(target.size);
-        TextView::paint(self, target, scale)
+        Self::paint(self, target, scale)
     }
 }

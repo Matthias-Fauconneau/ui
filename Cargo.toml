@@ -14,7 +14,7 @@ font = ['derive-more','core/fehler','ttf-parser','kurbo']
 graphic = ['xy/iter','core/fehler','widget','sRGB','font']
 font-file = ['font','owning-ref','memmap']
 text = ['font','sRGB','text-size','widget','font-file']
-text-edit = ['text','core/unicode-segmentation']
+edit = ['text','core/unicode-segmentation']
 color = []
 default = ['app']
 
@@ -48,6 +48,11 @@ required-features = ['app']
 name = 'text'
 path = 'examples/text.rs'
 required-features = ['app','text']
+
+[[example]]
+name = 'edit'
+path = 'examples/edit.rs'
+required-features = ['app','edit']
 
 [profile.dev.package.image]
 opt-level = 2
