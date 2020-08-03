@@ -144,7 +144,7 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> Attached<Surface> {
     let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "framework".to_string());
     layer_surface.set_keyboard_interactivity(1);
     surface.commit();
-    
+
     layer_surface.quick_assign(move /*env*/ |layer_surface, event, mut app| {
         let App{display, pool, surface, widget, ref mut size, ref mut unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
         use layer_surface::Event::*;
@@ -176,8 +176,8 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> Attached<Surface> {
     });
     surface
 }
-        
-impl<W:Widget> App<'_, W> {
+
+impl<'t, W:Widget> App<'t, W> {
 #[throws] pub fn new(widget: W) -> Self {
     let (env, display, queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
     for seat in env.get_all_seats() { with_seat_data(&seat, |seat_data| self::seat::<W>(&seat, seat_data)); }
@@ -199,9 +199,9 @@ impl<W:Widget> App<'_, W> {
         q.borrow().read_with(|q| q.0.prepare_read().ok_or(std::io::Error::new(std::io::ErrorKind::Interrupted, "Dispatch all events before polling"))?.read_events()).await.unwrap();
         Some((
             {
-                let q = q.clone(); 
+                let q = q.clone();
                 (box move |mut app: &mut Self| {
-                    q.borrow_mut().get_mut().dispatch_pending(/*Any: 'static*/unsafe{std::mem::transmute::<&mut Self, &mut App<'static,&mut dyn Widget>>(&mut app)}, |_,_,_| ()).unwrap(); 
+                    q.borrow_mut().get_mut().dispatch_pending(/*Any: 'static*/unsafe{std::mem::transmute::<&mut Self, &mut App<'static,&mut dyn Widget>>(&mut app)}, |_,_,_| ()).unwrap();
                     app.display.as_ref().map(|d| d.flush().unwrap());
                 }) as Box<dyn Fn(&mut Self)>
             },
@@ -212,8 +212,8 @@ impl<W:Widget> App<'_, W> {
 #[throws(std::io::Error)] pub async fn display(&mut self) { while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await { event(self); if self.display.is_none() { break; } } }
 pub fn draw(&mut self) { let Self{pool, surface, widget, size,..} = self; draw(pool, &surface, widget, *size).unwrap(); }
 fn key(&mut self, key: char) {
-    let Self{display, modifiers_state, widget, ..} = self; 
-    if widget.event(&Event{modifiers_state: *modifiers_state, key}) { self.draw();/*draw(pool, surface, widget, *size).unwrap();*/ }
+    let Self{display, modifiers_state, widget, ..} = self;
+    if widget.event(&Event{modifiers_state: *modifiers_state, key}) { self.draw(); }
 	else if key == '⎋' { *display = None }
 }
 }
