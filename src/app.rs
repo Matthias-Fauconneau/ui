@@ -91,12 +91,14 @@ fn seat<'t, W:Widget>(seat: &Attached<Seat>, seat_data: &SeatData) {
                                         unfold(std::time::Instant::now()+std::time::Duration::from_millis(150), {
                                             let repeat = Rc::downgrade(&repeat);
                                             move |last| {
-                                                let next = last+std::time::Duration::from_millis(33);
+                                                let next = last+std::time::Duration::from_millis(67);
                                                 use async_io::Timer;
                                                 Timer::at(next).map({
                                                     let repeat = repeat.clone();
                                                     // stops and autodrops from streams when weak link fails to upgrade (repeat cell dropped)
-                                                    move |_| { repeat.upgrade().map(|x| ({let key = x.get(); (box move |app| app.key(key)) as Box::<dyn Fn(&mut App<'t,_>)>}, next) ) }
+                                                    move |_| { repeat.upgrade().map(|x| ({let key = x.get(); (box move |app| {
+																											if app.key(key) { app.display.as_ref().map(|d| d.flush().unwrap()); }
+																										}) as Box::<dyn Fn(&mut App<'t,_>)>}, next) ) }
                                                 })
                                             }
                                         }).boxed_local()
@@ -218,7 +220,7 @@ impl<'t, W:Widget> App<'t, W> {
 }
 #[throws(std::io::Error)] pub async fn display(&mut self) { while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await { event(self); if self.display.is_none() { break; } } }
 pub fn draw(&mut self) { let Self{pool, surface, widget, size,..} = self; draw(pool, &surface, widget, *size).unwrap(); }
-fn key(&mut self, key: char) {
+fn key(&mut self, key: char) -> bool {
 	let Self{display, modifiers_state, widget, size, surface, unscaled_size, ..} = self;
 	if widget.event(&Event{modifiers_state: *modifiers_state, key}) {
 		let widget_size = widget.size(*size);
@@ -229,8 +231,10 @@ fn key(&mut self, key: char) {
 			*size = (scale as u32) * *unscaled_size;
 		}
 		self.draw();
+		true
 	}
-	else if key == '⎋' { *display = None }
+	else if key == '⎋' { *display = None; false }
+	else { false }
 }
 }
 #[throws] pub fn run(widget: impl Widget) { smol::run(App::new(widget)?.display())? }

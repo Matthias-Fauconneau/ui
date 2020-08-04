@@ -92,7 +92,7 @@ impl Widget for Edit<'_,'_> {
 			if key == '→' { *selection=Span::new(selection.max()); return true; }
 		}
 
-		#[derive(Default,PartialEq)] struct ReplaceRange { range: std::ops::Range<usize>, replace_with: Option<char> }
+		#[derive(Default,PartialEq)] struct ReplaceRange { range: std::ops::Range<usize>, replace_with: String }
 		impl core::none::Default for ReplaceRange {}
 		let mut replace_range = core::none::None::none();
 
@@ -127,34 +127,36 @@ impl Widget for Edit<'_,'_> {
 				else {LineColumn{line, column: line_text(line).len()}}
 			},
 			'\n' => {
-				replace_range = ReplaceRange{range: index(selection), replace_with: Some('\n')};
+				replace_range = ReplaceRange{range: index(selection), replace_with: '\n'.to_string()};
 				// todo: indentation
 				LineColumn{line: line+1, column: 0}
 			}
 			'⌫' => {
 				if selection.start == selection.end { selection.end = prev(); }
-				replace_range = ReplaceRange{range: index(selection), replace_with: None};
+				replace_range = ReplaceRange{range: index(selection), replace_with: Default::default()};
 				selection.min()
 			}
 			'⌦' => {
 				if selection.start == selection.end { selection.end = next(); }
-				replace_range = ReplaceRange{range: index(selection), replace_with: None};
+				replace_range = ReplaceRange{range: index(selection), replace_with: Default::default()};
 				selection.min() // after deletion
 			}
 			char if !key.is_control() => {
-				replace_range = ReplaceRange{range: index(selection), replace_with: Some(char)};
-				LineColumn{line, column: column+1} // after insertion
+				replace_range = ReplaceRange{range: index(selection), replace_with: if shift { char.to_uppercase().to_string() } else { char.to_string() }};
+				LineColumn{line: selection.min().line, column: selection.min().column+1} // after insertion
 			}
 			_ => unimplemented!(),
 		};
 		drop(text);
-		//if replace_range.is_some() { let ReplaceRange{range, replace_with} = replace_range;
-		if let Some(ReplaceRange{range, replace_with}) = replace_range.into() {
+		use core::none::IsNone;
+		if let Some(ReplaceRange{range, replace_with}) = replace_range.to_option() {
 			// todo: style, history
-			let mut slot = [0;3];
-			data.get_mut().text.replace_range(range, if let Some(c) = replace_with { c.encode_utf8(&mut slot) } else { Default::default() });
+			data.get_mut().text.replace_range(range, &replace_with);
+			*selection = Span::new(end);
+			true
+		} else {
+			let next = Span{start: if shift { selection.start } else { end }, end};
+			if next == *selection { false } else { *selection = next; true }
 		}
-		let next = Span{start: if shift { selection.start } else { end }, end};
-		if next == *selection { false } else { *selection = next; true }
 	}
 }
