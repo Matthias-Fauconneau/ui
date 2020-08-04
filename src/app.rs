@@ -34,7 +34,7 @@ default_environment!(Compositor,
 );
 
 use futures::{FutureExt, stream::{unfold, StreamExt, LocalBoxStream, SelectAll, select_all}};
-use {core::{error::{throws, Error, Result}, num::{Zero, div_ceil}}, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, Event, ModifiersState}};
+use {core::{error::{throws, Error, Result}, num::Zero}, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, Event, ModifiersState}};
 pub struct App<'t, W> {
 	display: Option<Display>,
 	pub streams: SelectAll<LocalBoxStream<'t, Box<dyn Fn(&mut Self)+'t>>>,
@@ -133,81 +133,83 @@ fn seat<'t, W:Widget>(seat: &Attached<Seat>, seat_data: &SeatData) {
 }
 
 fn surface<'t, W:Widget>(env: Environment<Compositor>) -> Attached<Surface> {
-    let surface = env.create_surface_with_scale_callback(|scale, surface, mut app| {
-        let App{pool, widget, ref mut size, unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
-        *size = (scale as u32) * *unscaled_size;
-        surface.set_buffer_scale(scale);
-        draw(pool, &surface, widget, *size).unwrap()
-    });
+	let surface = env.create_surface_with_scale_callback(|scale, surface, mut app| {
+		let App{pool, widget, ref mut size, unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
+		*size = (scale as u32) * *unscaled_size;
+		surface.set_buffer_scale(scale);
+		draw(pool, &surface, widget, *size).unwrap()
+	});
 
-    let layer_shell = env.require_global::<LayerShell>();
-    let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "framework".to_string());
-    layer_surface.set_keyboard_interactivity(1);
-    surface.commit();
+	let layer_shell = env.require_global::<LayerShell>();
+	let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "framework".to_string());
+	layer_surface.set_keyboard_interactivity(1);
+	surface.commit();
 
-    layer_surface.quick_assign(move /*env*/ |layer_surface, event, mut app| {
-        let App{display, pool, surface, widget, ref mut size, ref mut unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
-        use layer_surface::Event::*;
-        match event {
-            Closed => *display = None,
-            Configure{serial, width, height} => {
-                if !(width > 0 && height > 0) {
-                    let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(), |info| (info.scale_factor as u32, ::xy::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
-                    let size = core::vector::component_wise_min(size, widget.size(size));
-                    assert!(size.x < 124839 || size.y < 1443, size);
-                    layer_surface.set_size(div_ceil(size.x, scale), div_ceil(size.y, scale));
-                    layer_surface.ack_configure(serial);
-                    surface.commit();
-                } else {
-                    layer_surface.ack_configure(serial);
-                    *unscaled_size = xy{x: width, y: height};
-                    let scale = if get_surface_outputs(&surface).is_empty() { // get_surface_outputs defaults to 1 instead of first output factor
-                        env.get_all_outputs().first().map(|output| with_output_info(output, |info| info.scale_factor)).flatten().unwrap_or(1)
-                    } else {
-                        get_surface_scale_factor(&surface)
-                    };
-                    *size = (scale as u32) * *unscaled_size;
-                    surface.set_buffer_scale(scale);
-                    draw(pool, &surface, widget, *size).unwrap();
-                }
-            }
-            _ => unimplemented!(),
-        }
-    });
-    surface
+	layer_surface.quick_assign(move /*env*/ |layer_surface, event, mut app| {
+		let App{display, pool, surface, widget, ref mut size, ref mut unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
+		use layer_surface::Event::*;
+		match event {
+			Closed => *display = None,
+			Configure{serial, width, height} => {
+				if !(width > 0 && height > 0) {
+					let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(), |info| (info.scale_factor as u32, ::xy::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
+					let size = core::vector::component_wise_min(size, widget.size(size));
+					assert!(size.x < 124839 || size.y < 1443, size);
+					*unscaled_size = ::xy::div_ceil(size, scale);
+					layer_surface.set_size(unscaled_size.x, unscaled_size.y);
+					layer_surface.ack_configure(serial);
+					surface.commit();
+				} else {
+					layer_surface.ack_configure(serial);
+					*unscaled_size = xy{x: width, y: height};
+				}
+				let scale = if get_surface_outputs(&surface).is_empty() { // get_surface_outputs defaults to 1 instead of first output factor
+					env.get_all_outputs().first().map(|output| with_output_info(output, |info| info.scale_factor)).flatten().unwrap_or(1)
+				} else {
+					get_surface_scale_factor(&surface)
+				};
+				*size = (scale as u32) * *unscaled_size;
+				surface.set_buffer_scale(scale);
+				draw(pool, &surface, widget, *size).unwrap();
+			}
+			_ => unimplemented!(),
+		}
+	});
+	surface
 }
 
 impl<'t, W:Widget> App<'t, W> {
 #[throws] pub fn new(widget: W) -> Self {
     let (env, display, queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
-    for seat in env.get_all_seats() { with_seat_data(&seat, |seat_data| self::seat::<W>(&seat, seat_data)); }
+    for s in env.get_all_seats() { with_seat_data(&s, |seat_data| seat::<W>(&s, seat_data)); }
+	let _seat_listener = env.listen_for_seats(|s, seat_data, _| seat::<W>(&s, seat_data));
+	let pool = env.create_simple_pool(|_|{})?;
+    let surface = surface::<W>(env);
+    display.flush().unwrap();
     Self {
         display: Some(display),
         streams: select_all({let mut v=Vec::new(); v.push(Self::queue(queue)?); v}),
-        pool: env.create_simple_pool(|_|{})?,
-        _seat_listener: env.listen_for_seats(|seat, seat_data, _| self::seat::<W>(&seat, seat_data)),
+        _seat_listener,
         modifiers_state: Default::default(),
-        surface: surface::<W>(env),
+        pool,
+        surface,
         widget,
         size: Zero::zero(),
         unscaled_size: Zero::zero()
     }
 }
 #[throws] fn queue(queue: EventQueue) -> LocalBoxStream<'t, Box<dyn Fn(&mut Self)+'t>> {
-    let queue = Rc::new(RefCell::new(Async::new(queue)?)); // Rc simpler than an App.streams:&queue self-ref
-    unfold(queue, async move |q| {
-        q.borrow().read_with(|q| q.0.prepare_read().ok_or(std::io::Error::new(std::io::ErrorKind::Interrupted, "Dispatch all events before polling"))?.read_events()).await.unwrap();
-        Some((
-            {
-                let q = q.clone();
-                (box move |mut app: &mut Self| {
-                    q.borrow_mut().get_mut().dispatch_pending(/*Any: 'static*/unsafe{std::mem::transmute::<&mut Self, &mut App<'static,&mut dyn Widget>>(&mut app)}, |_,_,_| ()).unwrap();
-                    app.display.as_ref().map(|d| d.flush().unwrap());
-                }) as Box<dyn Fn(&mut Self)>
-            },
-            q
-        ))
-    }).boxed_local()
+	let queue = Rc::new(RefCell::new(Async::new(queue)?)); // Rc simpler than an App.streams:&queue self-ref
+	unfold(queue, async move |q| {
+		q.borrow().read_with(|q| q.0.prepare_read().ok_or(std::io::Error::new(std::io::ErrorKind::Interrupted, "Dispatch all events before polling"))?.read_events()).await.unwrap();
+		Some(({
+						let q = q.clone();
+						(box move |mut app: &mut Self| {
+								q.borrow_mut().get_mut().dispatch_pending(/*Any: 'static*/unsafe{std::mem::transmute::<&mut Self, &mut App<'static,&mut dyn Widget>>(&mut app)}, |_,_,_| ()).unwrap();
+								app.display.as_ref().map(|d| d.flush().unwrap());
+						}) as Box<dyn Fn(&mut Self)>
+				}, q))
+	}).boxed_local()
 }
 #[throws(std::io::Error)] pub async fn display(&mut self) { while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await { event(self); if self.display.is_none() { break; } } }
 pub fn draw(&mut self) { let Self{pool, surface, widget, size,..} = self; draw(pool, &surface, widget, *size).unwrap(); }
