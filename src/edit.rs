@@ -49,7 +49,7 @@ impl Cow<'_> { fn get_mut(&mut self) -> &mut Owned { if let Cow::Borrowed(b) = s
 impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { match self { Cow::Borrowed(b) => b.text, Cow::Owned(o) => &o.text} } }
 impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { match self { Cow::Borrowed(b) => b.style, Cow::Owned(o) => &o.style} } }
 
-impl Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed{text, style: &*default_style}) } }
+impl Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed{text, style: &default_style}) } }
 
 pub struct Edit<'f, 't> {
 	view: View<'f, Cow<'t>>,
@@ -57,6 +57,9 @@ pub struct Edit<'f, 't> {
 }
 
 impl<'f, 't> Edit<'f, 't> {	pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>) -> Self { Self{view: View{font, data}, selection: Zero::zero()} } }
+
+const fn nothing() -> String { String::new() }
+use std::{sync::Mutex, lazy::SyncLazy}; pub static CLIPBOARD : SyncLazy<Mutex<String>> = SyncLazy::new(|| Mutex::new(nothing()));
 
 impl Widget for Edit<'_,'_> {
 	fn size(&mut self, size : size) -> size { Widget::size(&mut self.view, size) }
@@ -133,19 +136,35 @@ impl Widget for Edit<'_,'_> {
 			}
 			'⌫' => {
 				if selection.start == selection.end { selection.end = prev(); }
-				replace_range = ReplaceRange{range: index(selection), replace_with: Default::default()};
+				replace_range = ReplaceRange{range: index(selection), replace_with: nothing()};
 				selection.min()
 			}
 			'⌦' => {
 				if selection.start == selection.end { selection.end = next(); }
-				replace_range = ReplaceRange{range: index(selection), replace_with: Default::default()};
+				replace_range = ReplaceRange{range: index(selection), replace_with: nothing()};
 				selection.min() // after deletion
 			}
-			char if !key.is_control() => {
+			'c' if ctrl && selection.start != selection.end => {
+				*CLIPBOARD.lock().unwrap() = text[index(selection)].to_owned();
+				selection.end
+			}
+			'x' if ctrl && selection.start != selection.end => {
+				*CLIPBOARD.lock().unwrap() = text[index(selection)].to_owned();
+					replace_range = ReplaceRange{range: index(selection), replace_with: nothing()};
+					selection.min()
+			}
+			'v' if ctrl => {
+				let clipboard = CLIPBOARD.lock().unwrap();
+				let line_count = line_ranges(&clipboard).count();
+				let column = if line_count == 1 { selection.min().column+clipboard.len() } else { line_ranges(&clipboard).nth(line_count-1).unwrap().len() };
+				replace_range = ReplaceRange{range: index(selection), replace_with: clipboard.clone()};
+				LineColumn{line: selection.min().line+line_count-1, column} // after deletion+insertion
+			}
+			char if !key.is_control() && !ctrl => {
 				replace_range = ReplaceRange{range: index(selection), replace_with: if shift { char.to_uppercase().to_string() } else { char.to_string() }};
 				LineColumn{line: selection.min().line, column: selection.min().column+1} // after insertion
 			}
-			_ => unimplemented!(),
+			key => { println!("{} {}", key, ctrl); selection.end },
 		};
 		drop(text);
 		use core::none::IsNone;

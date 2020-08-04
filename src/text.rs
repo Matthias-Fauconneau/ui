@@ -1,4 +1,4 @@
-pub use text_size::{TextSize, TextRange}; // ~Range<u32> with impl SliceIndex for String
+//pub use text_size::{TextSize, TextRange}; // ~Range<u32> with impl SliceIndex for String (fixme: const)
 
 #[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, pub(crate) range: std::ops::Range<usize> }
 
@@ -18,7 +18,7 @@ impl LineRange<'_> {
 }
 
 use {std::cmp::{min, max}, ttf_parser::{Face,GlyphId,Rect}, core::{error::{throws, Error}, num::Ratio}, crate::font::{self, Rasterize}};
-
+type TextSize = u32;
 pub struct Glyph {pub index: TextSize, pub x: i32, pub id: GlyphId }
 pub fn layout<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=(usize,char)>+'t) -> impl 't+Iterator<Item=Glyph> {
     iter.scan((None, 0), move |(last_id, x), (index, c)| {
@@ -47,7 +47,8 @@ pub(crate) fn metrics(font: &Face<'_>, iter: impl Iterator<Item=Glyph>) -> LineM
 pub type Color = image::bgrf;
 #[derive(Clone,Copy)] pub enum FontStyle { Normal, Bold, /*Italic, BoldItalic*/ }
 #[derive(Clone,Copy)] pub struct Style { pub color: Color, pub style: FontStyle }
-#[derive(Clone,Copy)] pub struct Attribute<T> { pub range: TextRange, pub attribute: T }
+pub type TextRange = std::ops::Range<u32>;
+#[derive(Clone)] pub struct Attribute<T> { pub range: TextRange, pub attribute: T }
 impl<T> std::ops::Deref for Attribute<T> { type Target=TextRange; fn deref(&self) -> &Self::Target { &self.range } }
 
 use std::lazy::SyncLazy;
@@ -56,11 +57,10 @@ use std::lazy::SyncLazy;
 			.filter(|x| std::path::Path::exists(x))
 			.next().unwrap()
 	).unwrap());
-#[allow(non_upper_case_globals)] pub static default_style: SyncLazy<[Attribute::<Style>; 1]> = SyncLazy::new(||
-		[Attribute::<Style>{range: TextRange::up_to(u32::MAX.into()), attribute: Style{color: Color{b:1.,r:1.,g:1.}, style: FontStyle::Normal}}] );
-use std::sync::RwLock;
-//#[derive(PartialEq)] struct Key(core::num::Ratio, GlyphId);
-#[allow(non_upper_case_globals)] pub static cache: SyncLazy<RwLock<Vec<((core::num::Ratio, GlyphId),Image<Vec<u8>>)>>> = SyncLazy::new(|| RwLock::new(Vec::new()));
+#[allow(non_upper_case_globals)]
+pub const default_style: [Attribute::<Style>; 1] = [Attribute{range: 0..u32::MAX, attribute: Style{color: Color{b:1.,r:1.,g:1.}, style: FontStyle::Normal}}];
+use std::sync::Mutex;
+pub static CACHE: SyncLazy<Mutex<Vec<((Ratio, GlyphId),Image<Vec<u8>>)>>> = SyncLazy::new(|| Mutex::new(Vec::new()));
 
 pub struct View<'f, D> {
     pub font : &'f Face<'f>,
@@ -91,13 +91,13 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate() {
 			for (bbox, Glyph{index, x, id}) in bbox(font, layout(font, line.char_indices())) {
 				use core::iter::{PeekableExt, Single};
-				style = style.filter(|style:&&Attribute<Style>| style.contains(index)).or_else(|| styles.peeking_take_while(|style| style.contains(index)).single());
+				style = style.filter(|style:&&Attribute<Style>| style.contains(&index)).or_else(|| styles.peeking_take_while(|style| style.contains(&index)).single());
 				assert!( style.map(|x|x.attribute.color).unwrap() == image::bgr{b:1., g:1., r:1.}); // todo: approximate linear tint cached sRGB glyphs
-				if cache.read().unwrap().iter().find(|(key,_)| key == &(scale, id)).is_none() {
-					cache.write().unwrap().push( ((scale, id), image::from_linear(&self.font.rasterize(scale, id, bbox).as_ref())) );
+				let mut cache = CACHE.lock().unwrap();
+				if cache.iter().find(|(key,_)| key == &(scale, id)).is_none() {
+					cache.push( ((scale, id), image::from_linear(&self.font.rasterize(scale, id, bbox).as_ref())) );
 				};
-				let cache_read = cache.read().unwrap();
-				let coverage = &cache_read.iter().find(|(key,_)| key == &(scale, id)).unwrap().1;
+				let coverage = &cache.iter().find(|(key,_)| key == &(scale, id)).unwrap().1;
 				let position = xy{
 					x: (x+font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
 					y: (line_index as u32)*(font.height() as u32) + (font.ascender()-bbox.y_max) as u32

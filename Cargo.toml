@@ -33,6 +33,7 @@ memmap = { version='', optional=true }
 xy = { version='', path='../xy' }
 image = { version='', path='../image', features = ['sRGB'] }
 client-toolkit = { package='smithay-client-toolkit', version='', optional=true, default-features=false }
+#clipboard = { package='smithay-clipboard' } # fixme: looks complicated
 
 kurbo = { version='', optional=true }
 ttf-parser = { version='', optional=true }
