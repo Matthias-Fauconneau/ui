@@ -59,7 +59,8 @@ use std::lazy::SyncLazy;
 #[allow(non_upper_case_globals)] pub static default_style: SyncLazy<[Attribute::<Style>; 1]> = SyncLazy::new(||
 		[Attribute::<Style>{range: TextRange::up_to(u32::MAX.into()), attribute: Style{color: Color{b:1.,r:1.,g:1.}, style: FontStyle::Normal}}] );
 use std::sync::RwLock;
-#[allow(non_upper_case_globals)] pub static cache: SyncLazy<RwLock<Vec<(GlyphId,Image<Vec<u8>>)>>> = SyncLazy::new(|| RwLock::new(Vec::new()));
+//#[derive(PartialEq)] struct Key(core::num::Ratio, GlyphId);
+#[allow(non_upper_case_globals)] pub static cache: SyncLazy<RwLock<Vec<((core::num::Ratio, GlyphId),Image<Vec<u8>>)>>> = SyncLazy::new(|| RwLock::new(Vec::new()));
 
 pub struct View<'f, D> {
     pub font : &'f Face<'f>,
@@ -73,38 +74,38 @@ use core::num::{IsZero, Zero};
 fn fit_width(width: u32, from : size) -> size { if from.is_zero() { return Zero::zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
 
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
-    pub fn size(&/*mut*/ self) -> size {
-        let Self{font, data, /*ref mut size,*/ ..} = self;
-        //*size.get_or_insert_with(||{
-            let text = data.as_ref(); 
-            let (line_count, max_width) = line_ranges(&text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(font, layout(font, line.char_indices())).width)));
-            xy{x: max_width, y: line_count * (font.height() as u32)}
-        //})
-    }
-    pub fn scale(&mut self, size: size) -> Ratio { Ratio{num: size.x-1, div: Self::size(&self).x-1} } // todo: scroll
-    pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
-        let Self{font, data} = &*self;
-				let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
-        for (line_index, line) in line_ranges(&data.as_ref()).enumerate() {
-            for (bbox, Glyph{index, x, id}) in bbox(font, layout(font, line.char_indices())) {
+	pub fn size(&/*mut*/ self) -> size {
+		let Self{font, data, /*ref mut size,*/ ..} = self;
+		//*size.get_or_insert_with(||{
+			let text = data.as_ref();
+			let (line_count, max_width) = line_ranges(&text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(font, layout(font, line.char_indices())).width)));
+			xy{x: max_width, y: line_count * (font.height() as u32)}
+		//})
+	}
+	pub fn scale(&mut self, size: size) -> Ratio { Ratio{num: size.x-1, div: Self::size(&self).x-1} } // todo: scroll
+	pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
+		if target.size < self.size(target.size) { return; }
+		core::assert!(target.size >= self.size(target.size), target.size, self.size(target.size));
+		let Self{font, data} = &*self;
+		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
+		for (line_index, line) in line_ranges(&data.as_ref()).enumerate() {
+			for (bbox, Glyph{index, x, id}) in bbox(font, layout(font, line.char_indices())) {
 				use core::iter::{PeekableExt, Single};
 				style = style.filter(|style:&&Attribute<Style>| style.contains(index)).or_else(|| styles.peeking_take_while(|style| style.contains(index)).single());
-                assert!( style.map(|x|x.attribute.color).unwrap() == image::bgr{b:1., g:1., r:1.}); // todo: approximate linear tint cached sRGB glyphs
-
-                if cache.read().unwrap().iter().find(|(key,_)| key == &id).is_none() {
-					cache.write().unwrap().push( (id, image::from_linear(&self.font.rasterize(scale, id, bbox).as_ref())) );
-                };
-                let cache_read = cache.read().unwrap();
-                let coverage = &cache_read.iter().find(|(key,_)| key == &id).unwrap().1;
-
+				assert!( style.map(|x|x.attribute.color).unwrap() == image::bgr{b:1., g:1., r:1.}); // todo: approximate linear tint cached sRGB glyphs
+				if cache.read().unwrap().iter().find(|(key,_)| key == &(scale, id)).is_none() {
+					cache.write().unwrap().push( ((scale, id), image::from_linear(&self.font.rasterize(scale, id, bbox).as_ref())) );
+				};
+				let cache_read = cache.read().unwrap();
+				let coverage = &cache_read.iter().find(|(key,_)| key == &(scale, id)).unwrap().1;
 				let position = xy{
-                    x: (x+font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
-                    y: (line_index as u32)*(font.height() as u32) + (font.ascender()-bbox.y_max) as u32
-                };
-                image::set_map(&mut target.slice_mut(scale*position, coverage.size), &coverage.as_ref())
-            }
-        }
-    }
+					x: (x+font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
+					y: (line_index as u32)*(font.height() as u32) + (font.ascender()-bbox.y_max) as u32
+				};
+				image::set_map(&mut target.slice_mut(scale*position, coverage.size), &coverage.as_ref())
+			}
+		}
+	}
 }
 
 use crate::widget::{Widget, Target};

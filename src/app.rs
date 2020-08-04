@@ -16,15 +16,18 @@ use std::lazy::SyncLazy;
 #[allow(non_upper_case_globals)] static usb_hid_usage_table: SyncLazy<Vec<char>> = SyncLazy::new(|| [
 	&['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪'],
 	&(1..=10).map(|i| char::try_from(0xF700u32+i).unwrap()).collect::<Vec<_>>()[..], &['\0'; 20], &['\u{F70B}','\u{F70C}'], &['\0'; 8],
-	&['\n','⌃',' ','⎇','⇱','↑','⇞','←','→','⇲','↓','⇟','\u{8}','⌦']
+	&['\n','⌃',' ','⇱','↑','⇞','←','→','⇲','↓','⇟','\u{8}','⌦']
 ].concat());
 
 use client_toolkit::{
 	default_environment, environment::{Environment, SimpleGlobal}, init_default_environment,
 	seat::{SeatListener, SeatData, with_seat_data}, output::with_output_info, get_surface_outputs, get_surface_scale_factor, shm::{MemPool, Format},
 	reexports::{
-		client::{Display, EventQueue, Attached, protocol::{wl_surface::WlSurface as Surface, wl_seat::WlSeat as Seat, wl_keyboard as keyboard, wl_pointer as pointer}},
-		protocols::wlr::unstable::layer_shell::v1::client::{zwlr_layer_shell_v1::{self as layer_shell, ZwlrLayerShellV1 as LayerShell}, zwlr_layer_surface_v1 as layer_surface},
+		client::{Display, EventQueue, Main, Attached, protocol::{wl_surface::WlSurface as Surface, wl_seat::WlSeat as Seat, wl_keyboard as keyboard, wl_pointer as pointer}},
+		protocols::wlr::unstable::layer_shell::v1::client::{
+			zwlr_layer_shell_v1::{self as layer_shell, ZwlrLayerShellV1 as LayerShell},
+			zwlr_layer_surface_v1::{self  as layer_surface, ZwlrLayerSurfaceV1 as LayerSurface},
+		},
 	},
 };
 
@@ -41,6 +44,7 @@ pub struct App<'t, W> {
 	pool: MemPool,
 	_seat_listener: SeatListener,
 	modifiers_state: ModifiersState,
+	layer_surface: Main<LayerSurface>,
 	surface: Attached<Surface>,
 	widget: W,
 	size: size,
@@ -132,7 +136,7 @@ fn seat<'t, W:Widget>(seat: &Attached<Seat>, seat_data: &SeatData) {
     }
 }
 
-fn surface<'t, W:Widget>(env: Environment<Compositor>) -> Attached<Surface> {
+fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Main<LayerSurface>) {
 	let surface = env.create_surface_with_scale_callback(|scale, surface, mut app| {
 		let App{pool, widget, ref mut size, unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
 		*size = (scale as u32) * *unscaled_size;
@@ -175,28 +179,29 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> Attached<Surface> {
 			_ => unimplemented!(),
 		}
 	});
-	surface
+	(surface, layer_surface)
 }
 
 impl<'t, W:Widget> App<'t, W> {
 #[throws] pub fn new(widget: W) -> Self {
-    let (env, display, queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
-    for s in env.get_all_seats() { with_seat_data(&s, |seat_data| seat::<W>(&s, seat_data)); }
+	let (env, display, queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
+	for s in env.get_all_seats() { with_seat_data(&s, |seat_data| seat::<W>(&s, seat_data)); }
 	let _seat_listener = env.listen_for_seats(|s, seat_data, _| seat::<W>(&s, seat_data));
 	let pool = env.create_simple_pool(|_|{})?;
-    let surface = surface::<W>(env);
-    display.flush().unwrap();
-    Self {
-        display: Some(display),
-        streams: select_all({let mut v=Vec::new(); v.push(Self::queue(queue)?); v}),
-        _seat_listener,
-        modifiers_state: Default::default(),
-        pool,
-        surface,
-        widget,
-        size: Zero::zero(),
-        unscaled_size: Zero::zero()
-    }
+	let (surface, layer_surface) = surface::<W>(env);
+	display.flush().unwrap();
+	Self {
+			display: Some(display),
+			streams: select_all({let mut v=Vec::new(); v.push(Self::queue(queue)?); v}),
+			_seat_listener,
+			modifiers_state: Default::default(),
+			pool,
+			layer_surface,
+			surface,
+			widget,
+			size: Zero::zero(),
+			unscaled_size: Zero::zero()
+	}
 }
 #[throws] fn queue(queue: EventQueue) -> LocalBoxStream<'t, Box<dyn Fn(&mut Self)+'t>> {
 	let queue = Rc::new(RefCell::new(Async::new(queue)?)); // Rc simpler than an App.streams:&queue self-ref
@@ -214,8 +219,17 @@ impl<'t, W:Widget> App<'t, W> {
 #[throws(std::io::Error)] pub async fn display(&mut self) { while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await { event(self); if self.display.is_none() { break; } } }
 pub fn draw(&mut self) { let Self{pool, surface, widget, size,..} = self; draw(pool, &surface, widget, *size).unwrap(); }
 fn key(&mut self, key: char) {
-    let Self{display, modifiers_state, widget, ..} = self;
-    if widget.event(&Event{modifiers_state: *modifiers_state, key}) { self.draw(); }
+	let Self{display, modifiers_state, widget, size, surface, unscaled_size, ..} = self;
+	if widget.event(&Event{modifiers_state: *modifiers_state, key}) {
+		let widget_size = widget.size(*size);
+		if *size != widget_size {
+			let scale = get_surface_scale_factor(&surface) as u32;
+			*unscaled_size = ::xy::div_ceil(widget_size, scale);
+			self.layer_surface.set_size(unscaled_size.x, unscaled_size.y);
+			*size = (scale as u32) * *unscaled_size;
+		}
+		self.draw();
+	}
 	else if key == '⎋' { *display = None }
 }
 }

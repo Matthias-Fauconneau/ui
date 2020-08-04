@@ -1,6 +1,6 @@
 #![cfg_attr(feature="app", feature(async_closure,box_syntax))]
 #![cfg_attr(any(feature="app",feature="text"), feature(once_cell))]
-//#![cfg_attr(feature="text", feature(in_band_lifetimes))]
+#![cfg_attr(feature="text", feature(in_band_lifetimes))]
 //#![cfg_attr(feature="font", feature(non_ascii_idents))]//#![cfg_attr(feature="font", allow(uncommon_codepoints))]
 
 //pub use image::{Image, bgra8};

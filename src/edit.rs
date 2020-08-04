@@ -1,4 +1,4 @@
-use {std::cmp::{min,max}, core::{error::{throws, Error}, num::{Zero, clamp}, iter::NthOrLast}, ::xy::{xy, uint2, Rect}};
+use {std::cmp::{min,max}, core::{error::{throws, Error}, num::Zero, iter::NthOrLast}, ::xy::{xy, uint2, Rect}};
 
 #[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Copy)] struct LineColumn {
 	line: usize,
@@ -40,7 +40,7 @@ impl ToOwned for Borrowed<'_> {
 	type Owned = Owned;
 	fn to_owned(&self) -> Self::Owned { Self::Owned{text: self.text.to_owned(), style: self.style.to_owned()} }
 }
-pub enum Cow<'t> { 
+pub enum Cow<'t> {
     Borrowed(Borrowed<'t>),
     Owned(Owned)
 }
@@ -82,41 +82,78 @@ impl Widget for Edit<'_,'_> {
 		let Self{view: View{data, ..}, selection, ..} = self;
 		let text = AsRef::<str>::as_ref(&data);
 		if text.is_empty() { return false; }
+		match key {
+			'⎋' => if selection.start != selection.end && !shift { *selection=Span::new(selection.end); return true; } else { return false; }
+			'⇧'|'⌃' => return false,
+			_ => {}
+		}
 		if selection.start != selection.end && !shift { // Left|Right clear moves caret to selection min/max
 			if key == '←' { *selection=Span::new(selection.min()); return true; }
 			if key == '→' { *selection=Span::new(selection.max()); return true; }
 		}
-		let mut edit = None;
-		enum Change { Insert(usize, char) } use Change::*;
-		let LineColumn{line, column} = selection.end;
-		let (line_text, line_count) = { let mut line_iterator = line_ranges(text); (line_iterator.nth(line).unwrap(), line+1+line_iterator.count()) };
-		let line = line as i32;
+
+		#[derive(Default,PartialEq)] struct ReplaceRange { range: std::ops::Range<usize>, replace_with: Option<char> }
+		impl core::none::Default for ReplaceRange {}
+		let mut replace_range = core::none::None::none();
+
 		use core::unicode_segmentation::{prev_boundary,next_boundary,prev_word,next_word};
-		let (line, column) = match key {
-			'↑' => (line - 1, column),
-			'↓' => (line + 1, column),
-			'⇞' => (line - 30, column),
-			'⇟' => (line + 30, column),
-			'←' => if column == 0 { if line == 0 { return false; } (line-1, line_ranges(text).nth((line-1) as usize).unwrap().len()) }
-						else { (line, if ctrl {prev_word} else {prev_boundary}(&line_text, column)) },
-			'→' => if column >= line_text.len() { if line >= line_count as i32-1 { return false; } (line+1, 0) }
-						else { (line, if ctrl {next_word} else {next_boundary}(&line_text, column)) },
-			'⇱' => (if ctrl {0} else {line}, 0),
-			'⇲' => if ctrl {(line_count as i32-1, line_ranges(text).nth(line_count-1).unwrap().len())} else {(line, line_text.len())},
+		let index = |LineColumn{line, column}| line_ranges(text).nth(line).unwrap().range.start+column;
+		let index = |span:&Span| index(span.min())..index(span.max());
+
+		let line_count = line_ranges(text).count();
+		let line_text = |line| line_ranges(text).nth(line).unwrap();
+		let LineColumn{line, column} = selection.end;
+		let prev = || {
+			if column > 0 { LineColumn{line, column: if ctrl {prev_word} else {prev_boundary}(&line_text(line), column)} }
+			else if line > 0 { LineColumn{line: line-1, column: line_text(line-1).len()} }
+			else { LineColumn{line, column} }
+		};
+		let next = || {
+			if column < line_text(line).len() { LineColumn{line, column: if ctrl {next_word} else {next_boundary}(&line_text(line), column)} }
+			else if line < line_count-1 { LineColumn{line: line+1, column: 0} }
+			else { LineColumn{line, column} }
+		};
+
+		let end = match key {
+			'↑' => LineColumn{line: max(line as i32 - 1, 0) as usize, column},
+			'↓' => LineColumn{line: min(line+1, line_count-1), column},
+			'⇞' => LineColumn{line: max(line as i32 - 30, 0) as usize, column},
+			'⇟' => LineColumn{line: min(line+30, line_count-1), column},
+			'←' => prev(),
+			'→' => next(),
+			'⇱' => LineColumn{line: if ctrl {0} else {line}, column: 0},
+			'⇲' => {
+				if ctrl {LineColumn{line: line_count-1, column: line_text(line_count-1).len()}}
+				else {LineColumn{line, column: line_text(line).len()}}
+			},
+			'\n' => {
+				replace_range = ReplaceRange{range: index(selection), replace_with: Some('\n')};
+				// todo: indentation
+				LineColumn{line: line+1, column: 0}
+			}
+			'⌫' => {
+				if selection.start == selection.end { selection.end = prev(); }
+				replace_range = ReplaceRange{range: index(selection), replace_with: None};
+				selection.min()
+			}
+			'⌦' => {
+				if selection.start == selection.end { selection.end = next(); }
+				replace_range = ReplaceRange{range: index(selection), replace_with: None};
+				selection.min() // after deletion
+			}
 			char if !key.is_control() => {
-				edit = Some(Insert(line_text.range.start+column, char));
-				(line, column+1)
+				replace_range = ReplaceRange{range: index(selection), replace_with: Some(char)};
+				LineColumn{line, column: column+1} // after insertion
 			}
 			_ => unimplemented!(),
 		};
 		drop(text);
-		if let Some(edit) = edit { 
-			let text = &mut data.get_mut().text; // todo: style
-			match edit {
-				Insert(at, char) => text.insert(at, char),
-			}
+		//if replace_range.is_some() { let ReplaceRange{range, replace_with} = replace_range;
+		if let Some(ReplaceRange{range, replace_with}) = replace_range.into() {
+			// todo: style, history
+			let mut slot = [0;3];
+			data.get_mut().text.replace_range(range, if let Some(c) = replace_with { c.encode_utf8(&mut slot) } else { Default::default() });
 		}
-		let end = LineColumn{line: clamp(0, line, line_count as i32-1) as usize, column};
 		let next = Span{start: if shift { selection.start } else { end }, end};
 		if next == *selection { false } else { *selection = next; true }
 	}
