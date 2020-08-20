@@ -87,7 +87,7 @@ impl Widget for Edit<'_,'_> {
 		if text.is_empty() { return false; }
 		match key {
 			'⎋' => if selection.start != selection.end && !shift { *selection=Span::new(selection.end); return true; } else { return false; }
-			'⇧'|'⌃' => return false,
+			'⇧'|'⇪'|'⌃'|'⌘'|'⎇'|'⎀'|'⎙' => return false,
 			_ => {}
 		}
 		if selection.start != selection.end && !shift { // Left|Right clear moves caret to selection min/max
@@ -124,8 +124,8 @@ impl Widget for Edit<'_,'_> {
 			'⇟' => LineColumn{line: min(line+30, line_count-1), column},
 			'←' => prev(),
 			'→' => next(),
-			'⇱' => LineColumn{line: if ctrl {0} else {line}, column: 0},
-			'⇲' => {
+			'⇤' => LineColumn{line: if ctrl {0} else {line}, column: 0},
+			'⇥' => {
 				if ctrl {LineColumn{line: line_count-1, column: line_text(line_count-1).len()}}
 				else {LineColumn{line, column: line_text(line).len()}}
 			},
@@ -164,7 +164,7 @@ impl Widget for Edit<'_,'_> {
 				replace_range = ReplaceRange{range: index(selection), replace_with: if shift { char.to_uppercase().to_string() } else { char.to_string() }};
 				LineColumn{line: selection.min().line, column: selection.min().column+1} // after insertion
 			}
-			key => { println!("{} {}", key, ctrl); selection.end },
+			key => { println!("{:?}", key); selection.end },
 		};
 		drop(text);
 		use core::none::IsNone;

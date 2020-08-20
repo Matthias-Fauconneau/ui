@@ -8,6 +8,8 @@
 //#[cfg(feature="core/array")] pub use image::sRGB;
 #[cfg(feature="color")] pub mod color;
 #[cfg(feature="widget")] pub mod widget; //cfg_if! { if #[cfg(feature="widget")] { pub mod widget; pub use widget::{Target, Widget}; }}
+#[cfg(feature="app")] mod as_raw_poll_fd;
+#[cfg(feature="app")] mod input;
 #[cfg(feature="app")] pub mod app;
 #[cfg(feature="font")] pub mod font;
 #[cfg(feature="text")] pub mod text; //cfg_if! { if #[cfg(feature="text")] { pub mod text; pub use text::{Text, default_font, default_style}; }}

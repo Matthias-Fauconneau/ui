@@ -26,7 +26,8 @@ owning-ref = { package='owning_ref', version='', optional=true }
 core = { version='', path='../core' }
 futures = { version='^0.3', optional=true } # SelectAll, select_all, LocalBoxStream
 #futures = { version='', optional=true, package = 'futures-lite' }
-async-io = { version='', path="../async-io", optional=true }
+async-io = { version='', git='https://github.com/stjepang/async-io', optional=true }
+#async-io = { version='', path="../async-io", optional=true }
 smol = { version='', optional=true }
 
 memmap = { version='', optional=true }
