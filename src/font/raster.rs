@@ -155,7 +155,7 @@ pub fn fill(edges : &Image<&[f32]>) -> Image<Vec<f32>> {
 		for (target, &edge) in target.iter_mut().zip(edges.iter().skip(1)) {
 			coverage += edge;
 			//crate::assert!(-0.0000004 <= coverage && coverage <= 1.0000004, coverage);
-			*target = core::num::clamp(0., coverage, 1.);
+			*target = num::clamp(0., coverage, 1.);
 		}
 	}
     target

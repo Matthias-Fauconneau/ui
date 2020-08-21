@@ -10,7 +10,7 @@ use client_toolkit::{
 		},
 	},
 };
-use {core::{error::{throws, Error, Result}, num::Zero}, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
+use {fehler::throws, error::Error, num::Zero, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
 
 default_environment!(Compositor,
 	fields = [ layer_shell: SimpleGlobal<LayerShell> ],
@@ -64,7 +64,7 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 			Configure{serial, width, height} => {
 				if !(width > 0 && height > 0) {
 					let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(), |info| (info.scale_factor as u32, ::xy::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
-					let size = core::vector::component_wise_min(size, widget.size(size));
+					let size = vector::component_wise_min(size, widget.size(size));
 					assert!(size.x < 124839 || size.y < 1443, size);
 					*unscaled_size = ::xy::div_ceil(size, scale);
 					layer_surface.set_size(unscaled_size.x, unscaled_size.y);

@@ -5,42 +5,44 @@ authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition = '2018'
 
 [features]
-trace = ['core/trace']
-timeout = ['core/timeout']
-sRGB= ['core/array']
-widget = ['client-toolkit']
-app = ['core/fehler','futures','async-io','smol','client-toolkit','widget','sc']
-font = ['derive-more','core/fehler','ttf-parser','kurbo']
-graphic = ['xy/iter','core/fehler','widget','sRGB','font']
+#trace = ['core/trace']
+#timeout = ['core/timeout']
+widget = ['fehler','error','client-toolkit']
+app = ['fehler','num','futures','async-io','smol','client-toolkit','widget','sc','vector']
+font = ['derive-more','fehler','ttf-parser','kurbo','array','image/num']
+graphic = ['xy/iter','fehler','widget','image/sRGB','font']
 font-file = ['font','owning-ref','memmap']
-text = ['font','sRGB','text-size','widget','font-file']
-edit = ['text','core/unicode-segmentation']
+text = ['iter','font','image/sRGB','widget','font-file']
+edit = ['text','unicode-segmentation']
 color = []
 default = ['app']
 
 [dependencies]
+iter = { path='../iter', optional=true }
+array = { path='../array', optional=true }
+num = { path='../num', optional=true }
+vector = { path='../vector', optional=true }
 cfg-if = ''
-fehler = '' # #[throws] expects {{root}}::fehler
-derive-more = { package='derive_more', version='', optional=true }
-owning-ref = { package='owning_ref', version='', optional=true }
-core = { path='../core' }
+fehler = { version='', optional=true } # #[throws] expects {{root}}::fehler
+derive-more = { version='', package='derive_more', optional=true }
+owning-ref = { version='', package='owning_ref', optional=true }
+error = { version='', package='anyhow', optional=true }
 futures = { version='^0.3', optional=true } # SelectAll, select_all, LocalBoxStream
 #futures = { version='', optional=true, package = 'futures-lite' }
-sc = { optional=true } #''
+sc = { version='', optional=true } #''
 async-io = { git='https://github.com/stjepang/async-io', optional=true }
 #async-io = { version='', path="../async-io", optional=true }
-smol = { optional=true }
+smol = { version='', optional=true }
 
-memmap = { optional=true }
+memmap = { version='', optional=true }
 xy = { path='../xy' }
-image = { path='../image', features = ['sRGB'] }
-client-toolkit = { package='smithay-client-toolkit', optional=true, default-features=false }
+image = { path='../image' }
+client-toolkit = { version='', package='smithay-client-toolkit', optional=true, default-features=false }
 #clipboard = { package='smithay-clipboard' } # fixme: looks complicated
 
-kurbo = { optional=true }
-ttf-parser = { optional=true }
-
-text-size = { optional=true }
+kurbo = { version='', optional=true }
+ttf-parser = { version='', optional=true }
+unicode-segmentation = { version='', optional=true }
 
 [[example]]
 name = 'window'

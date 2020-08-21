@@ -16,7 +16,7 @@ impl LineRange<'_> {
     pub(crate) fn text_char_indices(&self) -> impl Iterator<Item=(usize,char)>+'_ { self.char_indices().map(move |(offset,c)| (self.range.start+offset, c)) }
 }
 
-use {std::cmp::{min, max}, ttf_parser::{Face,GlyphId,Rect}, core::{error::{throws, Error}, num::Ratio}, crate::font::{self, Rasterize}};
+use {std::cmp::{min, max}, ttf_parser::{Face,GlyphId,Rect}, fehler::throws, error::Error, num::Ratio, crate::font::{self, Rasterize}};
 pub struct Glyph {pub index: usize, pub x: i32, pub id: GlyphId }
 pub fn layout<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=(usize,char)>+'t) -> impl 't+Iterator<Item=Glyph> {
     iter.scan((None, 0), move |(last_id, x), (index, c)| {
@@ -66,7 +66,7 @@ pub struct View<'f, D> {
     //size : Option<size2>
 }
 
-use {::xy::{xy, size, uint2}, image::{Image, bgra8}, core::num::{IsZero, Zero, div_ceil, clamp}};
+use {::xy::{xy, size, uint2}, image::{Image, bgra8}, num::{IsZero, Zero, div_ceil, clamp}};
 
 fn fit_width(width: u32, from : size) -> size { if from.is_zero() { return Zero::zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
 
@@ -105,12 +105,12 @@ impl<D:AsRef<str>> View<'_, D> {
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 	pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
 		if target.size < self.size(target.size) { return; }
-		core::assert!(target.size >= self.size(target.size), target.size, self.size(target.size));
+		assert!(target.size >= self.size(target.size), target.size);
 		let Self{font, data} = &*self;
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate() {
 			for (bbox, Glyph{index, x, id}) in bbox(font, layout(font, line.text_char_indices())) {
-				use core::iter::{PeekableExt, Single};
+				use iter::{PeekableExt, Single};
 				style = style.filter(|style:&&Attribute<Style>| style.contains(&(index as u32))).or_else(|| styles.peeking_take_while(|style| style.contains(&(index as u32))).single());
 				assert!( style.map(|x|x.attribute.color).unwrap() == image::bgr{b:1., g:1., r:1.}); // todo: approximate linear tint cached sRGB glyphs
 				let mut cache = CACHE.lock().unwrap();

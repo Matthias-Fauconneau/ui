@@ -1,5 +1,5 @@
 mod quad; mod cubic; mod raster;
-use {core::num::Ratio, ::xy::{xy, size, vec2}, image::Image, quad::quad, cubic::cubic, raster::line};
+use {num::Ratio, ::xy::{xy, size, vec2}, image::Image, quad::quad, cubic::cubic, raster::line};
 
 struct Outline<'t> { scale : Ratio /*f32 loses precision*/, x_min: f32, y_max: f32, target : &'t mut Image<&'t mut[f32]>, first : Option<vec2>, p0 : Option<vec2>}
 impl Outline<'_> { fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-self.x_min, y: -(self.scale*y)+self.y_max} } }
@@ -53,7 +53,7 @@ impl<'t> Rasterize for ttf_parser::Face<'t> {
 }
 
 cfg_if::cfg_if! { if #[cfg(all(feature="owning-ref",feature="memmap"))] {
-use core::error::{Error, throws};
+use {fehler::throws, error::Error};
 #[derive(derive_more::Deref)] pub struct Handle<'t>(ttf_parser::Face<'t>); // impl Deref
 pub type File<'t> = owning_ref::OwningHandle<Box<memmap::Mmap>, Handle<'t>>;
 #[throws] pub fn open(path: &std::path::Path) -> File {

@@ -1,4 +1,6 @@
-use {std::cmp::{min,max}, core::{error::{throws, Error}, num::Zero, iter::NthOrLast}, ::xy::{xy, uint2, Rect}};
+mod none;
+mod unicode_segmentation;
+use {std::cmp::{min,max}, fehler::throws, error::Error, num::Zero, iter::NthOrLast, ::xy::{xy, uint2, Rect}};
 use crate::{text::{LineColumn, Attribute, Style, line_ranges, layout, Glyph, View, default_style}, widget::{Event, EventContext, Widget, size, Target, ModifiersState, ButtonState::Pressed}};
 
 #[derive(PartialEq,Clone,Copy)] struct Span {
@@ -126,12 +128,12 @@ impl Widget for Edit<'_,'_> {
 				if text.is_empty() { return Change::None; }
 
 				#[derive(Default,PartialEq)] struct ReplaceRange { range: std::ops::Range<usize>, replace_with: String }
-				impl core::none::Default for ReplaceRange {}
-				let mut replace_range = core::none::None::none();
+				impl none::Default for ReplaceRange {}
+				let mut replace_range = none::None::none();
 
 				let mut change = Change::Other;
 
-				use core::unicode_segmentation::{prev_boundary,next_boundary,prev_word,next_word};
+				use self::unicode_segmentation::{prev_boundary,next_boundary,prev_word,next_word};
 				let index = |LineColumn{line, column}| line_ranges(text).nth(line).unwrap().range.start+column;
 				let index = |span:&Span| index(span.min())..index(span.max());
 
@@ -205,7 +207,7 @@ impl Widget for Edit<'_,'_> {
 					}
 					key => { println!("{:?}", key); selection.end },
 				};
-				use core::none::IsNone;
+				use none::IsNone;
 				if let Some(ReplaceRange{range, replace_with}) = replace_range.to_option() {
 					history.truncate(*history_index);
 					if !((change==Change::Insert || change==Change::Remove) && change == *last_change) { history.push(State{text: text.to_owned(), cursor: selection.end}); }
