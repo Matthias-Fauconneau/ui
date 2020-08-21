@@ -10,7 +10,7 @@ use client_toolkit::{
 		},
 	},
 };
-use {core::{error::{throws, Error, Result}, num::Zero}, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, ModifiersState, Event}};
+use {core::{error::{throws, Error, Result}, num::Zero}, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
 
 default_environment!(Compositor,
 	fields = [ layer_shell: SimpleGlobal<LayerShell> ],
@@ -18,15 +18,15 @@ default_environment!(Compositor,
 );
 
 pub struct App<'t, W> {
-	pub display: Option<Display>,
+	display: Option<Display>,
 	pub streams: SelectAll<LocalBoxStream<'t, Box<dyn Fn(&mut Self)+'t>>>,
 	pool: MemPool,
 	_seat_listener: SeatListener,
 	pub(crate) modifiers_state: ModifiersState,
 	layer_surface: Main<LayerSurface>,
-	surface: Attached<Surface>,
-	widget: W,
-	size: size,
+	pub(crate) surface: Attached<Surface>,
+	pub(crate) widget: W,
+	pub(crate) size: size,
 	unscaled_size: size
 }
 
@@ -52,7 +52,7 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 	});
 
 	let layer_shell = env.require_global::<LayerShell>();
-	let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "framework".to_string());
+	let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "ui".to_string());
 	layer_surface.set_keyboard_interactivity(1);
 	surface.commit();
 
@@ -107,8 +107,9 @@ use std::{rc::Rc, cell::RefCell};
 impl<'t, W:Widget> App<'t, W> {
 #[throws] pub fn new(widget: W) -> Self {
 	let (env, display, queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
-	for s in env.get_all_seats() { with_seat_data(&s, |seat_data| crate::input::seat::<W>(&s, seat_data)); }
-	let _seat_listener = env.listen_for_seats(|s, seat_data, _| crate::input::seat::<W>(&s, seat_data));
+	let theme_manager = client_toolkit::seat::pointer::ThemeManager::init(client_toolkit::seat::pointer::ThemeSpec::System, env.require_global(), env.require_global());
+	for s in env.get_all_seats() { with_seat_data(&s, |seat_data| crate::input::seat::<W>(&theme_manager, &s, seat_data)); }
+	let _seat_listener = env.listen_for_seats(move /*theme_manager*/ |s, seat_data, _| crate::input::seat::<W>(&theme_manager, &s, seat_data));
 	let pool = env.create_simple_pool(|_|{})?;
 	let (surface, layer_surface) = surface::<W>(env);
 	display.flush().unwrap();
@@ -126,22 +127,23 @@ impl<'t, W:Widget> App<'t, W> {
 	}
 }
 #[throws(std::io::Error)] pub async fn display(&mut self) { while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await { event(self); if self.display.is_none() { break; } } }
-pub fn draw(&mut self) { let Self{pool, surface, widget, size,..} = self; draw(pool, &surface, widget, *size).unwrap(); }
-pub fn key(&mut self, key: char) -> bool {
-	let Self{display, modifiers_state, widget, size, surface, unscaled_size, ..} = self;
-	if widget.event(&Event{modifiers_state: *modifiers_state, key}) {
-		let widget_size = widget.size(*size);
-		if *size != widget_size {
-			let scale = get_surface_scale_factor(&surface) as u32;
-			*unscaled_size = ::xy::div_ceil(widget_size, scale);
-			self.layer_surface.set_size(unscaled_size.x, unscaled_size.y);
-			*size = (scale as u32) * *unscaled_size;
-		}
-		self.draw();
-		self.display.as_ref().map(|d| d.flush().unwrap());
-		true
+pub fn draw(&mut self) {
+	let Self{display, pool, widget, size, surface, unscaled_size, ..} = self;
+	let widget_size = widget.size(*size);
+	if *size != widget_size {
+		let scale = get_surface_scale_factor(&surface) as u32;
+		*unscaled_size = ::xy::div_ceil(widget_size, scale);
+		self.layer_surface.set_size(unscaled_size.x, unscaled_size.y);
+		*size = (scale as u32) * *unscaled_size;
 	}
-	else if key == '⎋' { *display = None; false }
+	draw(pool, &surface, widget, *size).unwrap();
+	display.as_ref().map(|d| d.flush().unwrap());
+}
+pub fn quit(&mut self) { self.display = None }
+pub fn key(&mut self, key: char) -> bool {
+	let Self{size, modifiers_state, widget, ..} = self;
+	if widget.event(*size, EventContext{modifiers_state: *modifiers_state, pointer: None}, &Event::Key{key}) { self.draw(); true }
+	else if key == '⎋' { self.quit(); false }
 	else { false }
 }
 }

@@ -4,14 +4,14 @@ use std::lazy::SyncLazy;
 	&['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪'],
 	&(1..=10).map(|i| char::try_from(0xF700u32+i).unwrap()).collect::<Vec<_>>()[..], &['\0'; 20], &['\u{F70B}','\u{F70C}'], &['\0'; 8],
 	&['⎙','⌃',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘']].concat());
+#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 1] = [272];
 
-//use {core::{error::{throws, Error, Result}, num::Zero}, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, Event, ModifiersState}};
 use std::{rc::Rc, cell::Cell};
 use futures::{FutureExt, stream::{unfold, StreamExt}};
-use client_toolkit::{seat::SeatData, reexports::client::{Attached, protocol::{wl_seat::WlSeat as Seat, wl_keyboard as keyboard, wl_pointer as pointer}}};
-use crate::{app::App, widget::{Widget, ModifiersState}};
+use client_toolkit::{seat::{SeatData, pointer::ThemeManager}, get_surface_scale_factor, reexports::client::{Attached, protocol::{wl_seat::WlSeat as Seat, wl_keyboard as keyboard, wl_pointer as pointer}}};
+use {xy::xy, crate::{app::App, widget::{Widget, EventContext, Event, ModifiersState}}};
 
-pub fn seat<'t, W:Widget>(seat: &Attached<Seat>, seat_data: &SeatData) {
+pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, seat_data: &SeatData) {
     if seat_data.has_keyboard {
         let mut repeat : Option<Rc<Cell<_>>> = None;
         seat.get_keyboard().quick_assign(move |_, event, mut app| {
@@ -73,14 +73,25 @@ pub fn seat<'t, W:Widget>(seat: &Attached<Seat>, seat_data: &SeatData) {
         });
     }
     if seat_data.has_pointer {
-        seat.get_pointer().quick_assign(|_, event, mut app| {
-						let App{display, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
-            match event {
-                pointer::Event::Leave{..} => *display = None,
-                pointer::Event::Motion{/*surface_x, surface_y,*/..} => {},
-                pointer::Event::Button{/*button, state,*/..} => {},
-                _ => {},
-            }
+			  //seat.get_pointer().quick_assign(|_, event, mut app| {
+			  let mut position = Default::default();
+			  let mut mouse_buttons = Default::default();
+			  theme_manager.theme_pointer_with_impl(&seat, move |event, mut pointer, mut app| {
+					let app = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
+					let event_context = EventContext{modifiers_state: app.modifiers_state, pointer: Some(&mut pointer)};
+					match event {
+							//pointer::Event::Leave{..} => app.quit(),
+							pointer::Event::Motion{surface_x, surface_y, ..} => {
+								position = {let p = get_surface_scale_factor(&app.surface) as f64*xy{x: surface_x, y: surface_y}; xy{x: p.x as u32, y: p.y as u32}};
+								if app.widget.event(app.size, event_context, &Event::Motion{position, mouse_buttons}) { app.draw(); }
+							},
+							pointer::Event::Button{button, state, ..} => {
+								let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
+								if state == pointer::ButtonState::Pressed { mouse_buttons |= 1<<button; } else { mouse_buttons &= !(1<<button); }
+								if app.widget.event(app.size, event_context, &Event::Button{button, state, position}) { app.draw(); }
+							},
+							_ => {},
+					}
         });
     }
 }
