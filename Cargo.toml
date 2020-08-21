@@ -9,7 +9,7 @@ trace = ['core/trace']
 timeout = ['core/timeout']
 sRGB= ['core/array']
 widget = ['client-toolkit']
-app = ['core/fehler','futures','async-io','smol','client-toolkit','widget']
+app = ['core/fehler','futures','async-io','smol','client-toolkit','widget','sc']
 font = ['derive-more','core/fehler','ttf-parser','kurbo']
 graphic = ['xy/iter','core/fehler','widget','sRGB','font']
 font-file = ['font','owning-ref','memmap']
@@ -23,23 +23,24 @@ cfg-if = ''
 fehler = '' # #[throws] expects {{root}}::fehler
 derive-more = { package='derive_more', version='', optional=true }
 owning-ref = { package='owning_ref', version='', optional=true }
-core = { version='', path='../core' }
+core = { path='../core' }
 futures = { version='^0.3', optional=true } # SelectAll, select_all, LocalBoxStream
 #futures = { version='', optional=true, package = 'futures-lite' }
-async-io = { version='', git='https://github.com/stjepang/async-io', optional=true }
+sc = { optional=true } #''
+async-io = { git='https://github.com/stjepang/async-io', optional=true }
 #async-io = { version='', path="../async-io", optional=true }
-smol = { version='', optional=true }
+smol = { optional=true }
 
-memmap = { version='', optional=true }
-xy = { version='', path='../xy' }
-image = { version='', path='../image', features = ['sRGB'] }
-client-toolkit = { package='smithay-client-toolkit', version='', optional=true, default-features=false }
+memmap = { optional=true }
+xy = { path='../xy' }
+image = { path='../image', features = ['sRGB'] }
+client-toolkit = { package='smithay-client-toolkit', optional=true, default-features=false }
 #clipboard = { package='smithay-clipboard' } # fixme: looks complicated
 
-kurbo = { version='', optional=true }
-ttf-parser = { version='', optional=true }
+kurbo = { optional=true }
+ttf-parser = { optional=true }
 
-text-size = { version='', optional=true }
+text-size = { optional=true }
 
 [[example]]
 name = 'window'

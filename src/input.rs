@@ -21,34 +21,36 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
                 Keymap {..} => {},
                 Enter { /*keysyms,*/ .. } => {},
                 Leave { .. } => {}
-                Key {state, key, .. } => {
+                Key {state, key, time, .. } => {
                     let key = *usb_hid_usage_table.get(key as usize).unwrap_or_else(|| panic!("{:x}", key));
                     match state {
                         KeyState::Released => if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None },
                         KeyState::Pressed => {
-                            app.key(key);
-                            if let Some(repeat) = repeat.as_mut() { // Update existing repeat cell
-                                repeat.set(key); // Note: This keeps the same timer on key repeat change. No delay! Nice!
-                            } else { // New repeat timer (registers in the reactor on first poll)
-                                repeat = {
-                                    let repeat = Rc::new(Cell::new(key));
-                                    app.streams.push(
-                                        unfold(std::time::Instant::now()+std::time::Duration::from_millis(150), {
-                                            let repeat = Rc::downgrade(&repeat);
-                                            move |last| {
-                                                let next = last+std::time::Duration::from_millis(67);
-                                                use async_io::Timer;
-                                                Timer::at(next).map({
-                                                    let repeat = repeat.clone();
-                                                    // stops and autodrops from streams when weak link fails to upgrade (repeat cell dropped)
-                                                    move |_| { repeat.upgrade().map(|x| ({let key = x.get(); (box move |app| { app.key(key); }) as Box::<dyn Fn(&mut App<'t,_>)>}, next) ) }
-                                                })
-                                            }
-                                        }).boxed_local()
-                                    );
-                                    Some(repeat)
-                                }
-                            }
+													app.key(key);
+													repeat = {
+														let repeat = Rc::new(Cell::new(key));
+														let from_monotonic_millis = |t| {
+															pub const MONOTONIC: i32 = 1; #[derive(Clone, Copy)]#[repr(C)] pub struct timespec { pub tv_sec: u64, pub tv_nsec: u64 } // include/uapi/linux/time.h
+															let now = {let mut t = timespec{ tv_sec: 0, tv_nsec: 0}; unsafe { sc::syscall!(CLOCK_GETTIME, MONOTONIC, &mut t as *mut timespec); }; t};
+															let now = now.tv_sec * 1000 + now.tv_nsec / 1000_000;
+															std::time::Instant::now() - std::time::Duration::from_millis(now - t as u64)
+														};
+														app.streams.push(
+																unfold(from_monotonic_millis(time)+std::time::Duration::from_millis(150), {
+																		let repeat = Rc::downgrade(&repeat);
+																		move |last| {
+																				let next = last+std::time::Duration::from_millis(33);
+																				use async_io::Timer;
+																				Timer::at(next).map({
+																						let repeat = repeat.clone();
+																						// stops and autodrops from streams when weak link fails to upgrade (repeat cell dropped)
+																						move |_| { repeat.upgrade().map(|x| ({let key = x.get(); (box move |app| { app.key(key); }) as Box::<dyn Fn(&mut App<'t,_>)>}, next) ) }
+																				})
+																		}
+																}).boxed_local()
+														);
+														Some(repeat)
+													};
                         },
                         _ => unreachable!(),
                     }

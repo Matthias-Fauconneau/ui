@@ -183,7 +183,7 @@ impl Widget for Edit<'_,'_> {
 					}
 					'c' if ctrl && selection.start != selection.end => {
 						*CLIPBOARD.lock().unwrap() = text[index(selection)].to_owned();
-						selection.end
+						return Change::None;
 					}
 					'x' if ctrl && selection.start != selection.end => {
 						change = Change::Remove;
