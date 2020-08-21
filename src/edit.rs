@@ -1,7 +1,7 @@
 use {std::cmp::{min,max}, core::{error::{throws, Error}, num::Zero, iter::NthOrLast}, ::xy::{xy, uint2, Rect}};
 use crate::{text::{LineColumn, Attribute, Style, line_ranges, layout, Glyph, View, default_style}, widget::{Event, EventContext, Widget, size, Target, ModifiersState, ButtonState::Pressed}};
 
-#[derive(PartialEq)] struct Span {
+#[derive(PartialEq,Clone,Copy)] struct Span {
 	start: LineColumn,
 	end: LineColumn,
 }
@@ -45,12 +45,26 @@ impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Sty
 
 impl Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed{text, style: &default_style}) } }
 
+struct State {
+	text: String, // fixme: diff
+	cursor: LineColumn
+}
+
+#[derive(PartialEq)] enum Change { None, Cursor, Insert, Remove, Other }
+
 pub struct Edit<'f, 't> {
 	view: View<'f, Cow<'t>>,
 	selection: Span,
+	history: Vec<State>,
+	history_index: usize,
+	last_change: Change,
 }
 
-impl<'f, 't> Edit<'f, 't> {	pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>) -> Self { Self{view: View{font, data}, selection: Zero::zero()} } }
+impl<'f, 't> Edit<'f, 't> {
+	pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>) -> Self {
+		Self{view: View{font, data}, selection: Zero::zero(), history: Vec::new(), history_index: 0, last_change: Change::Other}
+	}
+}
 
 const fn nothing() -> String { String::new() }
 use std::{sync::Mutex, lazy::SyncLazy}; pub static CLIPBOARD : SyncLazy<Mutex<String>> = SyncLazy::new(|| Mutex::new(nothing()));
@@ -58,7 +72,7 @@ use std::{sync::Mutex, lazy::SyncLazy}; pub static CLIPBOARD : SyncLazy<Mutex<St
 impl Widget for Edit<'_,'_> {
 	fn size(&mut self, size : size) -> size { Widget::size(&mut self.view, size) }
 	#[throws] fn paint(&mut self, target : &mut Target) {
-		let Self{view, selection} = self;
+		let Self{view, selection, ..} = self;
 		let scale = view.scale(target.size);
 		view.paint(target, scale);
 		/*if has_focus*/ {
@@ -82,24 +96,40 @@ impl Widget for Edit<'_,'_> {
 		}
 	}
 	fn event(&mut self, size : size, EventContext{modifiers_state: ModifiersState{ctrl,shift,..}, pointer}: EventContext, event: &Event) -> bool {
-		let Self{view, selection, ..} = self;
-		let text = AsRef::<str>::as_ref(&view.data);
-		if text.is_empty() { return false; }
-		match event {
-			&Event::Key{key} => {
+		let Self{view, selection, history, history_index, last_change, ..} = self;
+		let change = match event {
+			&Event::Key{key} => (||{
 				match key {
-					'⎋' => if selection.start != selection.end && !shift { *selection=Span::new(selection.end); return true; } else { return false; }
-					'⇧'|'⇪'|'⌃'|'⌘'|'⎇'|'⎀'|'⎙' => return false,
+					'⎋' => if selection.start != selection.end && !shift { *selection=Span::new(selection.end); return Change::Cursor; } else { return Change::None; }
+					'⇧'|'⇪'|'⌃'|'⌘'|'⎇'|'⎀'|'⎙' => return Change::None,
+					'z' if ctrl => {
+						if !shift && *history_index > 0 {
+							if *history_index == history.len() { history.push(State{text: std::mem::replace(&mut view.data.get_mut().text, String::new()), cursor: selection.end}); }
+							*history_index -= 1;
+						}
+						else if shift && *history_index+1 < history.len() { *history_index += 1; }
+						else { return Change::None; }
+						let State{text, cursor} = &history[*history_index];
+						view.data.get_mut().text = text.clone();
+						// todo: style
+						*selection = Span::new(*cursor);
+						return Change::Other;
+					},
 					_ => {}
 				}
 				if selection.start != selection.end && !shift { // Left|Right clear moves caret to selection min/max
-					if key == '←' { *selection=Span::new(selection.min()); return true; }
-					if key == '→' { *selection=Span::new(selection.max()); return true; }
+					if key == '←' { *selection=Span::new(selection.min()); return Change::Cursor; }
+					if key == '→' { *selection=Span::new(selection.max()); return Change::Cursor; }
 				}
+
+				let text = AsRef::<str>::as_ref(&view.data);
+				if text.is_empty() { return Change::None; }
 
 				#[derive(Default,PartialEq)] struct ReplaceRange { range: std::ops::Range<usize>, replace_with: String }
 				impl core::none::Default for ReplaceRange {}
 				let mut replace_range = core::none::None::none();
+
+				let mut change = Change::Other;
 
 				use core::unicode_segmentation::{prev_boundary,next_boundary,prev_word,next_word};
 				let index = |LineColumn{line, column}| line_ranges(text).nth(line).unwrap().range.start+column;
@@ -138,13 +168,17 @@ impl Widget for Edit<'_,'_> {
 						LineColumn{line: line+1, column: 0}
 					}
 					'⌫' => {
+						change = Change::Remove;
+						let mut selection = *selection;
 						if selection.start == selection.end { selection.end = prev(); }
-						replace_range = ReplaceRange{range: index(selection), replace_with: nothing()};
+						replace_range = ReplaceRange{range: index(&selection), replace_with: nothing()};
 						selection.min()
 					}
 					'⌦' => {
+						change = Change::Remove;
+						let mut selection = *selection;
 						if selection.start == selection.end { selection.end = next(); }
-						replace_range = ReplaceRange{range: index(selection), replace_with: nothing()};
+						replace_range = ReplaceRange{range: index(&selection), replace_with: nothing()};
 						selection.min() // after deletion
 					}
 					'c' if ctrl && selection.start != selection.end => {
@@ -152,9 +186,10 @@ impl Widget for Edit<'_,'_> {
 						selection.end
 					}
 					'x' if ctrl && selection.start != selection.end => {
+						change = Change::Remove;
 						*CLIPBOARD.lock().unwrap() = text[index(selection)].to_owned();
-							replace_range = ReplaceRange{range: index(selection), replace_with: nothing()};
-							selection.min()
+						replace_range = ReplaceRange{range: index(selection), replace_with: nothing()};
+						selection.min()
 					}
 					'v' if ctrl => {
 						let clipboard = CLIPBOARD.lock().unwrap();
@@ -164,37 +199,40 @@ impl Widget for Edit<'_,'_> {
 						LineColumn{line: selection.min().line+line_count-1, column} // after deletion+insertion
 					}
 					char if !key.is_control() && !ctrl => {
+						change = Change::Insert;
 						replace_range = ReplaceRange{range: index(selection), replace_with: if shift { char.to_uppercase().to_string() } else { char.to_string() }};
 						LineColumn{line: selection.min().line, column: selection.min().column+1} // after insertion
 					}
 					key => { println!("{:?}", key); selection.end },
 				};
-				drop(text);
 				use core::none::IsNone;
 				if let Some(ReplaceRange{range, replace_with}) = replace_range.to_option() {
-					// todo: style, history
-					view.data.get_mut().text.replace_range(range, &replace_with);
+					history.truncate(*history_index);
+					if !((change==Change::Insert || change==Change::Remove) && change == *last_change) { history.push(State{text: text.to_owned(), cursor: selection.end}); }
+					*history_index = history.len();
+					view.data.get_mut().text.replace_range(range, &replace_with); // todo: style
 					*selection = Span::new(end);
-					true
+					change
 				} else {
 					let next = Span{start: if shift { selection.start } else { end }, end};
-					if next == *selection { false } else { *selection = next; true }
+					if next == *selection { Change::None } else { *selection = next; Change::Cursor }
 				}
-			}
+			})(),
 			&Event::Motion{position, mouse_buttons} => {
 				if let Some(pointer) = pointer { let _ = pointer.set_cursor("text", None); }
 				if mouse_buttons != 0 {
 					let end = view.cursor(size, position);
 					let next = Span{end, ..*selection};
-					if next == *selection { false } else { *selection = next; true }
-				} else { false }
+					if next == *selection { Change::None } else { *selection = next; Change::Cursor }
+				} else { Change::None }
 			},
 			&Event::Button{button: 0, position, state: Pressed} => {
 				let end = view.cursor(size, position);
 				let next = Span{start: if shift { selection.start } else { end }, end};
-				if next == *selection { false } else { *selection = next; true }
+				if next == *selection { Change::None } else { *selection = next; Change::Cursor }
 			},
-			_ => { false },
-		}
+			_ => { Change::None },
+		};
+		if change != Change::None { *last_change = change; true } else { false }
 	}
 }

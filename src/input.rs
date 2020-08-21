@@ -15,7 +15,6 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
     if seat_data.has_keyboard {
         let mut repeat : Option<Rc<Cell<_>>> = None;
         seat.get_keyboard().quick_assign(move |_, event, mut app| {
-            //let app = app.get::<App<'t>>().unwrap();
             let app = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
             use keyboard::{Event::*, KeyState};
             match event {
@@ -73,14 +72,12 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
         });
     }
     if seat_data.has_pointer {
-			  //seat.get_pointer().quick_assign(|_, event, mut app| {
 			  let mut position = Default::default();
 			  let mut mouse_buttons = Default::default();
 			  theme_manager.theme_pointer_with_impl(&seat, move |event, mut pointer, mut app| {
 					let app = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
 					let event_context = EventContext{modifiers_state: app.modifiers_state, pointer: Some(&mut pointer)};
 					match event {
-							//pointer::Event::Leave{..} => app.quit(),
 							pointer::Event::Motion{surface_x, surface_y, ..} => {
 								position = {let p = get_surface_scale_factor(&app.surface) as f64*xy{x: surface_x, y: surface_y}; xy{x: p.x as u32, y: p.y as u32}};
 								if app.widget.event(app.size, event_context, &Event::Motion{position, mouse_buttons}) { app.draw(); }
