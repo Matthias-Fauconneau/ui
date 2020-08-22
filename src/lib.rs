@@ -3,6 +3,7 @@
 //#![cfg_attr(feature="font", feature(non_ascii_idents))]//#![cfg_attr(feature="font", allow(uncommon_codepoints))]
 #![cfg_attr(feature="text", feature(in_band_lifetimes))]
 #![cfg_attr(feature="edit", feature(const_fn))]
+#![cfg_attr(feature="color", feature(iterator_fold_self))] // vector!iter (unused)
 
 //pub use image::{Image, bgra8};
 //#[cfg(feature="core/array")] pub use image::sRGB;
