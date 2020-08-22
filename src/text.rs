@@ -11,15 +11,15 @@ pub(crate) fn line_ranges(text: &'t str) -> impl Iterator<Item=LineRange<'t>> {
 	})
 }
 
-impl LineRange<'_> {
-    pub(crate) fn char_indices(&self) -> impl Iterator<Item=(usize,char)>+'_ { self.line.char_indices() }
-    pub(crate) fn text_char_indices(&self) -> impl Iterator<Item=(usize,char)>+'_ { self.char_indices().map(move |(offset,c)| (self.range.start+offset, c)) }
-}
-
 use {std::cmp::{min, max}, ttf_parser::{Face,GlyphId,Rect}, fehler::throws, error::Error, num::Ratio, crate::font::{self, Rasterize}};
-pub struct Glyph {pub index: usize, pub x: i32, pub id: GlyphId }
-pub fn layout<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=(usize,char)>+'t) -> impl 't+Iterator<Item=Glyph> {
-	iter.scan((None, 0), move |(last_id, x), (index, c)| {
+pub mod unicode_segmentation;
+use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
+
+pub struct Glyph {pub index: GraphemeIndex, pub x: i32, pub id: GlyphId }
+pub fn layout<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=(GraphemeIndex, &'t str)>+'t) -> impl 't+Iterator<Item=Glyph> {
+	iter.scan((None, 0), move |(last_id, x), (index, g)| {
+		use iter::Single;
+		let c = g.chars().single().unwrap();
 		let id = font.glyph_index(if c == '\t' { ' ' } else { c }).unwrap_or_else(||panic!("Missing glyph for '{:?}'",c));
 		if let Some(last_id) = *last_id { *x += font.kerning_subtables().next().map_or(0, |x| x.glyphs_kerning(last_id, id).unwrap_or(0) as i32); }
 		*last_id = Some(id);
@@ -77,7 +77,7 @@ impl<D:AsRef<str>> View<'_, D> {
 		let Self{font, data, /*ref mut size,*/ ..} = self;
 		//*size.get_or_insert_with(||{
 			let text = data.as_ref();
-			let (line_count, max_width) = line_ranges(&text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(font, layout(font, line.char_indices())).width)));
+			let (line_count, max_width) = line_ranges(&text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(font, layout(font, line.graphemes(true).enumerate())).width)));
 			xy{x: max_width, y: line_count * (font.height() as u32)}
 		//})
 	}
@@ -89,7 +89,7 @@ impl<D:AsRef<str>> View<'_, D> {
 
 #[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Copy)] pub struct LineColumn {
 	pub line: usize,
-	pub column: usize // May be on the right of the corresponding line (preserves horizontal affinity during line up/down movement)
+	pub column: GraphemeIndex // May be on the right of the corresponding line (preserves horizontal affinity during line up/down movement)
 }
 impl Zero for LineColumn { fn zero() -> Self { Self{line: 0, column: 0} } }
 
@@ -100,7 +100,7 @@ impl<D:AsRef<str>> View<'_, D> {
 		let text = data.as_ref();
 		let line = clamp(0, (position.y/font.height() as u32) as usize, line_ranges(text).count()-1);
 		LineColumn{line, column:
-			layout(font, line_ranges(text).nth(line).unwrap().char_indices())
+			layout(font, line_ranges(text).nth(line).unwrap().graphemes(true).enumerate())
 			.map(|Glyph{index, x, id}| (index, x+font.glyph_hor_advance(id).unwrap() as i32/2))
 			.take_while(|&(_, x)| x <= position.x as i32).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
@@ -114,7 +114,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 		let Self{font, data} = &*self;
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate() {
-			for (bbox, Glyph{index, x, id}) in bbox(font, layout(font, line.text_char_indices())) {
+			for (bbox, Glyph{index, x, id}) in bbox(font, layout(font, line.graphemes(true).enumerate())) {
 				use iter::{PeekableExt, Single};
 				style = style.filter(|style:&&Attribute<Style>| style.contains(&(index as u32))).or_else(|| styles.peeking_take_while(|style| style.contains(&(index as u32))).single());
 				let mut cache = CACHE.lock().unwrap();

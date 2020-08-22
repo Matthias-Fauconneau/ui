@@ -1,7 +1,8 @@
 mod none;
-mod unicode_segmentation;
-use {std::cmp::{min,max}, fehler::throws, error::Error, num::Zero, iter::NthOrLast, ::xy::{xy, uint2, Rect}};
-use crate::{text::{LineColumn, Attribute, Style, line_ranges, layout, Glyph, View, default_style}, widget::{Event, EventContext, Widget, size, Target, ModifiersState, ButtonState::Pressed}};
+use {std::cmp::{min,max}, fehler::throws, error::Error, num::Zero, iter::{Single, NthOrLast}, ::xy::{xy, uint2, Rect}};
+use crate::{text::{unicode_segmentation::{self, GraphemeIndex, UnicodeSegmentation, prev_word, next_word},
+														LineColumn, Attribute, Style, line_ranges, layout, Glyph, View, default_style},
+									 widget::{Event, EventContext, Widget, size, Target, ModifiersState, ButtonState::Pressed}};
 
 #[derive(PartialEq,Clone,Copy)] struct Span {
 	start: LineColumn,
@@ -15,7 +16,7 @@ impl Span {
 }
 
 fn position(font: &ttf_parser::Face<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 { xy{
-	x: layout(font, line_ranges(text).nth(line).unwrap().char_indices()).nth_or_last(column).map_or_else(
+	x: layout(font, line_ranges(text).nth(line).unwrap().graphemes(true).enumerate()).nth_or_last(column as usize).map_or_else(
 		|last| last.map_or(0, |Glyph{x,id,..}| x+(font.glyph_hor_advance(id).unwrap() as i32)),
 		|layout| layout.x
 	) as u32,
@@ -60,16 +61,25 @@ pub struct Edit<'f, 't> {
 	history: Vec<State>,
 	history_index: usize,
 	last_change: Change,
+	compose: Option<Vec<char>>,
 }
 
 impl<'f, 't> Edit<'f, 't> {
 	pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>) -> Self {
-		Self{view: View{font, data}, selection: Zero::zero(), history: Vec::new(), history_index: 0, last_change: Change::Other}
+		Self{view: View{font, data}, selection: Zero::zero(), history: Vec::new(), history_index: 0, last_change: Change::Other, compose: None}
 	}
 }
 
+const fn empty() -> String { String::new() }
 const fn nothing() -> String { String::new() }
-use std::{sync::Mutex, lazy::SyncLazy}; pub static CLIPBOARD : SyncLazy<Mutex<String>> = SyncLazy::new(|| Mutex::new(nothing()));
+use std::{sync::Mutex, lazy::SyncLazy}; pub static CLIPBOARD : SyncLazy<Mutex<String>> = SyncLazy::new(|| Mutex::new(empty()));
+
+pub static COMPOSE: SyncLazy<Vec<(Vec<char>, char)>> = SyncLazy::new(|| {
+	std::str::from_utf8(&std::fs::read("compose").unwrap()).unwrap().lines().map(|line| {
+		let mut fields = line.split_ascii_whitespace();
+		(fields.next().unwrap().chars().collect(), fields.next().unwrap().chars().single().unwrap())
+	}).collect()
+});
 
 impl Widget for Edit<'_,'_> {
 	fn size(&mut self, size : size) -> size { Widget::size(&mut self.view, size) }
@@ -98,11 +108,11 @@ impl Widget for Edit<'_,'_> {
 		}
 	}
 	fn event(&mut self, size : size, EventContext{modifiers_state: ModifiersState{ctrl,shift,..}, pointer}: EventContext, event: &Event) -> bool {
-		let Self{view, selection, history, history_index, last_change, ..} = self;
+		let Self{view, selection, history, history_index, last_change, compose, ..} = self;
 		let change = match event {
 			&Event::Key{key} => (||{
 				match key {
-					'⎋' => if selection.start != selection.end && !shift { *selection=Span::new(selection.end); return Change::Cursor; } else { return Change::None; }
+					'⎋' => { *compose = None; if selection.start != selection.end && !shift { *selection=Span::new(selection.end); return Change::Cursor; } else { return Change::None; } }
 					'⇧'|'⇪'|'⌃'|'⌘'|'⎇'|'⎀'|'⎙' => return Change::None,
 					'z' if ctrl => {
 						if !shift && *history_index > 0 {
@@ -117,6 +127,7 @@ impl Widget for Edit<'_,'_> {
 						*selection = Span::new(*cursor);
 						return Change::Other;
 					},
+					'⎄' => { if let Some(compose) = compose { compose.push(key); } else { *compose = Some(Vec::new()); } return Change::None; }
 					_ => {}
 				}
 				if selection.start != selection.end && !shift { // Left|Right clear moves caret to selection min/max
@@ -127,13 +138,12 @@ impl Widget for Edit<'_,'_> {
 				let text = AsRef::<str>::as_ref(&view.data);
 				if text.is_empty() { return Change::None; }
 
-				#[derive(Default,PartialEq)] struct ReplaceRange { range: std::ops::Range<usize>, replace_with: String }
+				#[derive(Default,PartialEq)] struct ReplaceRange { range: std::ops::Range<GraphemeIndex>, replace_with: String }
 				impl none::Default for ReplaceRange {}
 				let mut replace_range = none::None::none();
 
 				let mut change = Change::Other;
 
-				use self::unicode_segmentation::{prev_boundary,next_boundary,prev_word,next_word};
 				let index = |LineColumn{line, column}| line_ranges(text).nth(line).unwrap().range.start+column;
 				let index = |span:&Span| index(span.min())..index(span.max());
 
@@ -142,12 +152,12 @@ impl Widget for Edit<'_,'_> {
 
 				let LineColumn{line, column} = selection.end;
 				let prev = || {
-					if column > 0 { LineColumn{line, column: if ctrl {prev_word} else {prev_boundary}(&line_text(line), column)} }
+					if column > 0 { LineColumn{line, column: if ctrl { prev_word(&line_text(line), column) } else { column-1 } } }
 					else if line > 0 { LineColumn{line: line-1, column: line_text(line-1).len()} }
 					else { LineColumn{line, column} }
 				};
 				let next = || {
-					if column < line_text(line).len() { LineColumn{line, column: if ctrl {next_word} else {next_boundary}(&line_text(line), column)} }
+					if column < line_text(line).len() { LineColumn{line, column: if ctrl { next_word(&line_text(line), column) } else { column+1 }} }
 					else if line < line_count-1 { LineColumn{line: line+1, column: 0} }
 					else { LineColumn{line, column} }
 				};
@@ -201,8 +211,18 @@ impl Widget for Edit<'_,'_> {
 						LineColumn{line: selection.min().line+line_count-1, column} // after deletion+insertion
 					}
 					char if !key.is_control() && !ctrl => {
+						let char = if shift { char.to_uppercase().single().unwrap() } else { char };
+						let char = if let Some(sequence) = compose {
+							sequence.push(char);
+							let mut candidates = COMPOSE.iter().filter(|(k,_)| k.starts_with(sequence));
+							match (candidates.next(), candidates.next()) {
+								(Some(&(_, result)), None) => { *compose = None; result }
+								(None, _) => { *compose = None; char }
+								(Some(_), Some(_)) => { return Change::None; }
+							}
+						} else { char };
 						change = Change::Insert;
-						replace_range = ReplaceRange{range: index(selection), replace_with: if shift { char.to_uppercase().to_string() } else { char.to_string() }};
+						replace_range = ReplaceRange{range: index(selection), replace_with: char.to_string()};
 						LineColumn{line: selection.min().line, column: selection.min().column+1} // after insertion
 					}
 					key => { println!("{:?}", key); selection.end },
@@ -212,6 +232,7 @@ impl Widget for Edit<'_,'_> {
 					history.truncate(*history_index);
 					if !((change==Change::Insert || change==Change::Remove) && change == *last_change) { history.push(State{text: text.to_owned(), cursor: selection.end}); }
 					*history_index = history.len();
+					let range = unicode_segmentation::index(text, range.start)..unicode_segmentation::index(text, range.end);
 					view.data.get_mut().text.replace_range(range, &replace_with); // todo: style
 					*selection = Span::new(end);
 					change

@@ -55,6 +55,11 @@ path = 'examples/text.rs'
 required-features = ['app','text']
 
 [[example]]
+name = 'compose'
+path = 'examples/compose.rs'
+required-features = ['edit']
+
+[[example]]
 name = 'edit'
 path = 'examples/edit.rs'
 required-features = ['app','edit']
