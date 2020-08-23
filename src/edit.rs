@@ -31,7 +31,7 @@ pub struct Buffer<T, S> {
 	pub style: S,
 }
 type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
-type Owned = Buffer<String, Vec<Attribute<Style>>>;
+pub type Owned = Buffer<String, Vec<Attribute<Style>>>;
 trait ToOwned { type Owned; fn to_owned(&self) -> Self::Owned; }
 impl ToOwned for Borrowed<'_> {
 	type Owned = Owned;

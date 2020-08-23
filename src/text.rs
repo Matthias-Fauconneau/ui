@@ -1,19 +1,17 @@
-//pub use text_size::{TextSize, TextRange}; // ~Range<u32> with impl SliceIndex for String (fixme: const)
-
-#[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, pub(crate) range: std::ops::Range<usize> }
-
-pub(crate) fn line_ranges(text: &'t str) -> impl Iterator<Item=LineRange<'t>> {
-	let mut iter = text.char_indices().peekable();
-	std::iter::from_fn(move || {
-		let &(start,_) = iter.peek()?;
-		let range = start .. iter.find(|&(_,c)| c=='\n').map_or(text.len(), |(end,_)| end);
-		Some(LineRange{line: &text[range.clone()], range})
-	})
-}
-
 use {std::cmp::{min, max}, ttf_parser::{Face,GlyphId,Rect}, fehler::throws, error::Error, num::Ratio, crate::font::{self, Rasterize}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
+
+#[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, pub(crate) range: std::ops::Range<GraphemeIndex> }
+
+pub(crate) fn line_ranges(text: &'t str) -> impl Iterator<Item=LineRange<'t>> {
+	let mut iter = text.grapheme_indices(true).enumerate().peekable();
+	std::iter::from_fn(move || {
+		let &(start, (byte_start,_)) = iter.peek()?;
+		let (end, byte_end) = iter.find(|&(_,(_,c))| c=="\n").map_or((text.len(),text.len()/*fixme*/), |(end,(byte_end,_))| (end, byte_end));
+		Some(LineRange{line: &text[byte_start..byte_end], range: start..end})
+	})
+}
 
 pub struct Glyph {pub index: GraphemeIndex, pub x: i32, pub id: GlyphId }
 pub fn layout<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=(GraphemeIndex, &'t str)>+'t) -> impl 't+Iterator<Item=Glyph> {
@@ -43,11 +41,11 @@ pub(crate) fn metrics(font: &Face<'_>, iter: impl Iterator<Item=Glyph>) -> LineM
 }
 
 pub type Color = image::bgrf;
-#[derive(Clone,Copy)] pub enum FontStyle { Normal, Bold, /*Italic, BoldItalic*/ }
+#[derive(Clone,Copy,Debug)] pub enum FontStyle { Normal, Bold, /*Italic, BoldItalic*/ }
 impl Default for FontStyle { fn default() -> Self { Self::Normal } }
-#[derive(Clone,Copy,Default)] pub struct Style { pub color: Color, pub style: FontStyle }
-pub type TextRange = std::ops::Range<u32>;
-#[derive(Clone,derive_more::Deref)] pub struct Attribute<T> { #[deref] pub range: TextRange, pub attribute: T }
+#[derive(Clone,Copy,Default,Debug)] pub struct Style { pub color: Color, pub style: FontStyle }
+pub type TextRange = std::ops::Range<GraphemeIndex>;
+#[derive(Clone,derive_more::Deref,Debug)] pub struct Attribute<T> { #[deref] pub range: TextRange, pub attribute: T }
 
 use std::lazy::SyncLazy;
 #[allow(non_upper_case_globals)] pub static default_font : SyncLazy<font::File<'static>> = SyncLazy::new(|| font::open(
@@ -56,7 +54,7 @@ use std::lazy::SyncLazy;
 			.next().unwrap()
 	).unwrap());
 #[allow(non_upper_case_globals)]
-pub const default_style: [Attribute::<Style>; 1] = [Attribute{range: 0..u32::MAX, attribute: Style{color: Color{b:1.,r:1.,g:1.}, style: FontStyle::Normal}}];
+pub const default_style: [Attribute::<Style>; 1] = [Attribute{range: 0..GraphemeIndex::MAX, attribute: Style{color: Color{b:1.,r:1.,g:1.}, style: FontStyle::Normal}}];
 use std::sync::Mutex;
 pub static CACHE: SyncLazy<Mutex<Vec<((Ratio, GlyphId),Image<Vec<u8>>)>>> = SyncLazy::new(|| Mutex::new(Vec::new()));
 
@@ -114,9 +112,13 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 		let Self{font, data} = &*self;
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate() {
-			for (bbox, Glyph{index, x, id}) in bbox(font, layout(font, line.graphemes(true).enumerate())) {
-				use iter::{PeekableExt, Single};
-				style = style.filter(|style:&&Attribute<Style>| style.contains(&(index as u32))).or_else(|| styles.peeking_take_while(|style| style.contains(&(index as u32))).single());
+			for (bbox, Glyph{index, x, id}) in bbox(font, layout(font, line.graphemes(true).enumerate().map(|(i,e)| (line.range.start+i, e)))) {
+				style = style.filter(|style:&&Attribute<Style>| style.contains(&index));
+				while let Some(next) = styles.peek() {
+					if next.end <= index { styles.next(); } // skips whitespace style
+					else if next.contains(&index) { style = styles.next(); }
+					else { break; }
+				}
 				let mut cache = CACHE.lock().unwrap();
 				if cache.iter().find(|(key,_)| key == &(scale, id)).is_none() {
 					cache.push( ((scale, id), image::from_linear(&self.font.rasterize(scale, id, bbox).as_ref())) );

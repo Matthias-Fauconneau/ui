@@ -5,17 +5,15 @@ authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition = '2018'
 
 [features]
-#trace = ['core/trace']
-#timeout = ['core/timeout']
 widget = ['fehler','error','client-toolkit']
 app = ['fehler','num','futures','async-io','smol','client-toolkit','widget','sc','vector']
 font = ['derive-more','fehler','ttf-parser','kurbo','array','image/num']
 graphic = ['xy/iter','fehler','widget','image/sRGB','font']
 font-file = ['font','owning-ref','memmap']
-text = ['iter','xy/iter','font','image/sRGB','widget','font-file','derive-more']
-edit = ['text','unicode-segmentation']
-color = []
-default = ['app']
+text = ['unicode-segmentation','iter','num','xy/iter','font','image/sRGB','widget','font-file','derive-more']
+edit = ['text']
+color = ['vector']
+default = []
 
 [dependencies]
 iter = { path='../iter', optional=true }
@@ -27,7 +25,8 @@ fehler = { version='', optional=true } # #[throws] expects {{root}}::fehler
 derive-more = { version='', package='derive_more', optional=true }
 owning-ref = { version='', package='owning_ref', optional=true }
 error = { version='', package='anyhow', optional=true }
-futures = { version='^0.3', optional=true } # SelectAll, select_all, LocalBoxStream
+#futures = { version='^0.3', optional=true } # SelectAll, select_all, LocalBoxStream
+futures = { version='', optional=true, package = 'futures-util' } # SelectAll, select_all, LocalBoxStream
 #futures = { version='', optional=true, package = 'futures-lite' }
 sc = { version='', optional=true } #''
 async-io = { git='https://github.com/stjepang/async-io', optional=true }

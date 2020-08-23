@@ -1,8 +1,7 @@
 pub type GraphemeIndex = usize;
 pub use unicode_segmentation::UnicodeSegmentation;
 pub fn index(s: &str, grapheme_index: GraphemeIndex) -> usize { s.grapheme_indices(true).nth(grapheme_index as usize).unwrap().0 }
-
-//pub fn graphemes_enumerate(s: &str) -> impl Iterator<Item=(GraphemeIndex,&str)>+'_ { s.graphemes(true).enumerate().map(|(i,e)| (i as GraphemeIndex, e)) }
+pub fn find(s: &str, byte_index: usize) -> GraphemeIndex { s.grapheme_indices(true).enumerate().find(|&(_,(i,_))| i == byte_index).unwrap().0 }
 
 #[derive(PartialEq,Clone,Copy)] enum Class { Space, Alphanumeric, Symbol }
 fn classify(g: &str) -> Class {
@@ -20,7 +19,6 @@ use fehler::throws;
 }
 
 #[throws(as Option)] fn last_word_start(text: &str) -> GraphemeIndex {
-	//let mut graphemes = text.graphemes(true).enumerate().map(|(i,e)| (i as GraphemeIndex, e)).rev().peekable();
 	let mut graphemes = text.graphemes(true).rev().scan(text.grapheme_indices(true).count() as GraphemeIndex, |before, g| { *before -= 1; Some((*before, g)) }).peekable();
 	match run(&mut graphemes)? {
 		(_, Class::Space) => { let (last, _) = run(&mut graphemes)?; last },

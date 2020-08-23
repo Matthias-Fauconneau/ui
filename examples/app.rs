@@ -1,4 +1,4 @@
-use core::{throws,Error};
+use {fehler::throws, error::Error};
 struct Empty;
 impl ui::widget::Widget for Empty {
 	#[throws] fn paint(&mut self, _: &mut ui::widget::Target) {}
