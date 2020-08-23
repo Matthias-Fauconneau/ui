@@ -55,6 +55,8 @@ struct State {
 
 #[derive(PartialEq)] enum Change { None, Cursor, Insert, Remove, Other }
 
+type Changed<T> = Option<Box<dyn Fn(&mut T)>>;
+
 pub struct Edit<'f, 't> {
 	view: View<'f, Cow<'t>>,
 	selection: Span,
@@ -62,11 +64,12 @@ pub struct Edit<'f, 't> {
 	history_index: usize,
 	last_change: Change,
 	compose: Option<Vec<char>>,
+	text_changed: Changed<Owned>,
 }
 
 impl<'f, 't> Edit<'f, 't> {
-	pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>) -> Self {
-		Self{view: View{font, data}, selection: Zero::zero(), history: Vec::new(), history_index: 0, last_change: Change::Other, compose: None}
+	pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>, text_changed: Changed<Owned>) -> Self {
+		Self{view: View{font, data}, selection: Zero::zero(), history: Vec::new(), history_index: 0, last_change: Change::Other, compose: None, text_changed}
 	}
 }
 
@@ -108,7 +111,7 @@ impl Widget for Edit<'_,'_> {
 		}
 	}
 	fn event(&mut self, size : size, EventContext{modifiers_state: ModifiersState{ctrl,shift,..}, pointer}: EventContext, event: &Event) -> bool {
-		let Self{view, selection, history, history_index, last_change, compose, ..} = self;
+		let Self{ref mut view, selection, history, history_index, last_change, compose, text_changed, ..} = self;
 		let change = match event {
 			&Event::Key{key} => (||{
 				match key {
@@ -210,7 +213,7 @@ impl Widget for Edit<'_,'_> {
 						replace_range = ReplaceRange{range: index(selection), replace_with: clipboard.clone()};
 						LineColumn{line: selection.min().line+line_count-1, column} // after deletion+insertion
 					}
-					char if !key.is_control() && !ctrl => {
+					char if (!key.is_control() || key=='\t') && !ctrl => {
 						let char = if shift { char.to_uppercase().single().unwrap() } else { char };
 						let char = if let Some(sequence) = compose {
 							sequence.push(char);
@@ -233,8 +236,9 @@ impl Widget for Edit<'_,'_> {
 					if !((change==Change::Insert || change==Change::Remove) && change == *last_change) { history.push(State{text: text.to_owned(), cursor: selection.end}); }
 					*history_index = history.len();
 					let range = unicode_segmentation::index(text, range.start)..unicode_segmentation::index(text, range.end);
-					view.data.get_mut().text.replace_range(range, &replace_with); // todo: style
+					view.data.get_mut().text.replace_range(range, &replace_with);
 					*selection = Span::new(end);
+					if let Some(f) = text_changed { f(view.data.get_mut()); }
 					change
 				} else {
 					let next = Span{start: if shift { selection.start } else { end }, end};
