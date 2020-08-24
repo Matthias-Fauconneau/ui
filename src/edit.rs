@@ -221,7 +221,7 @@ impl Widget for Edit<'_,'_> {
 		let Self{view, selection, ..} = self;
 		let scale = view.scale(target.size);
 		view.paint(target, scale);
-		view.paint_span(target, scale, *selection);
+		view.paint_span(target, scale, *selection, image::bgr{b: true, g: false, r: false});
 	}
 	#[throws] fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> bool {
 		if self.event(size, event_context, event) != Change::None { true } else { false }

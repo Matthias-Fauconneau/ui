@@ -135,24 +135,24 @@ impl<D:AsRef<str>> View<'_, D> {
 			.take_while(|&(_, x)| x <= position.x as i32).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
 	}
-	pub fn paint_span(&self, target : &mut Target, scale: Ratio, span: Span) {
+	pub fn paint_span(&self, target : &mut Target, scale: Ratio, span: Span, bgr: image::bgr<bool>) {
 		let Self{font, data} = self;
 		let [min, max] = [span.min(), span.max()];
 		let text = AsRef::<str>::as_ref(&data);
-		if min.line < max.line { image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,min,LineColumn{line: min.line, column: usize::MAX}))); }
+		if min.line < max.line { image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,min,LineColumn{line: min.line, column: usize::MAX})), bgr); }
 		if min.line == max.line {
 			if min == max { // cursor
 				fn widen(l: Rect, dx: u32) -> Rect { Rect{min: l.min-xy{x:dx/2,y:0}.signed(), max:l.max+xy{x:dx/2,y:0}.signed()} }
-				image::invert(&mut target.slice_mut_clip(scale*widen(self::span(font,text,span.end,span.end), font.height() as u32/16)));
+				image::invert(&mut target.slice_mut_clip(scale*widen(self::span(font,text,span.end,span.end), font.height() as u32/16)), bgr);
 			}
 			if min != max { // selection
-				image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,min,max)));
+				image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,min,max)), bgr);
 			}
 		}
 		else { for line in min.line+1..max.line {
-			image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,LineColumn{line, column: 0},LineColumn{line, column: usize::MAX})));
+			image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,LineColumn{line, column: 0},LineColumn{line, column: usize::MAX})), bgr);
 		}}
-		if max.line > min.line { image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,LineColumn{line: max.line, column: 0}, max))); }
+		if max.line > min.line { image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,LineColumn{line: max.line, column: 0}, max)), bgr); }
 	}
 }
 
