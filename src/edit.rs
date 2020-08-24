@@ -52,8 +52,15 @@ const fn empty() -> String { String::new() }
 const fn nothing() -> String { String::new() }
 use std::{sync::Mutex, lazy::SyncLazy}; pub static CLIPBOARD : SyncLazy<Mutex<String>> = SyncLazy::new(|| Mutex::new(empty()));
 
+pub static KEYMAP: SyncLazy<Vec<(char, (char,char))>> = SyncLazy::new(|| {
+	std::str::from_utf8(&std::fs::read(dirs::config_dir().unwrap().join("keymap")).unwrap()).unwrap().lines().map(|line| {
+		let mut chars = line.chars();
+		(chars.next().unwrap(), (chars.next().unwrap(), chars.next().unwrap()))
+	}).collect()
+});
+
 pub static COMPOSE: SyncLazy<Vec<(Vec<char>, char)>> = SyncLazy::new(|| {
-	std::str::from_utf8(&std::fs::read("compose").unwrap()).unwrap().lines().map(|line| {
+	std::str::from_utf8(&std::fs::read(dirs::config_dir().unwrap().join("compose")).unwrap()).unwrap().lines().map(|line| {
 		let mut fields = line.split_ascii_whitespace();
 		(fields.next().unwrap().chars().collect(), fields.next().unwrap().chars().single().unwrap())
 	}).collect()
@@ -168,8 +175,9 @@ pub fn event(&mut self, size : size, EventContext{modifiers_state: ModifiersStat
 						replace_range = ReplaceRange{range: index(selection), replace_with: clipboard.clone()};
 						LineColumn{line: selection.min().line+line_count-1, column} // after deletion+insertion
 					}
-					char if (!key.is_control() || key=='\t') && !ctrl => {
-						let char = if *shift { char.to_uppercase().single().unwrap() } else { char };
+					key if (!key.is_control() || key=='\t') && !ctrl => {
+						let sym = KEYMAP.iter().find(|(from,_)| *from == key).map(|(_,sym)| *sym).unwrap_or((key, key.to_uppercase().single().unwrap()));
+						let char = if *shift { sym.1 } else { sym.0 };
 						let char = if let Some(sequence) = compose {
 							sequence.push(char);
 							let mut candidates = COMPOSE.iter().filter(|(k,_)| k.starts_with(sequence));

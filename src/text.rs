@@ -95,7 +95,7 @@ pub fn index(text: &str, LineColumn{line, column}: LineColumn) -> GraphemeIndex 
 
 impl LineColumn {
 	#[throws(as Option)] pub fn from_text_index(text: &str, index: GraphemeIndex) -> Self {
-		let (line, LineRange{range: Range{start,..}, ..}) = line_ranges(text).enumerate().find(|&(_,LineRange{range: Range{start,end},..})| start <= index && index < end)?;
+		let (line, LineRange{range: Range{start,..}, ..}) = line_ranges(text).enumerate().find(|&(_,LineRange{range: Range{start,end},..})| start <= index && index <=/*\n*/ end)?;
 		Self{line, column: index-start}
 	}
 }

@@ -34,6 +34,7 @@ async-io = { git='https://github.com/stjepang/async-io', optional=true }
 smol = { version='', optional=true }
 
 memmap = { version='', optional=true }
+dirs = ''
 xy = { path='../xy' }
 image = { path='../image' }
 client-toolkit = { version='', package='smithay-client-toolkit', optional=true, default-features=false }
