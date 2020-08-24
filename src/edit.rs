@@ -88,7 +88,6 @@ pub fn event(&mut self, size : size, EventContext{modifiers_state: ModifiersStat
 						else { return Change::None; }
 						let State{text, cursor} = &history[*history_index];
 						data.get_mut().text = text.clone();
-						// todo: style
 						*selection = Span::new(*cursor);
 						return Change::Other;
 					},
@@ -233,7 +232,7 @@ impl Widget for Edit<'_,'_> {
 		let Self{view, selection, ..} = self;
 		let scale = view.scale(target.size);
 		view.paint(target, scale);
-		view.paint_span(target, scale, *selection, image::bgr{b: true, g: false, r: false});
+		view.paint_span(target, scale, *selection, image::bgr{b: true, g: true, r: true});
 	}
 	#[throws] fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> bool {
 		if self.event(size, event_context, event) != Change::None { true } else { false }

@@ -1,6 +1,12 @@
 pub type GraphemeIndex = usize;
 pub use unicode_segmentation::UnicodeSegmentation;
-pub fn index(s: &str, grapheme_index: GraphemeIndex) -> usize { s.grapheme_indices(true).nth(grapheme_index as usize).unwrap().0 }
+pub fn index(s: &str, grapheme_index: GraphemeIndex) -> usize {
+	match (grapheme_index as usize) .cmp( &s.grapheme_indices(true).count() ) {
+		std::cmp::Ordering::Less => s.grapheme_indices(true).nth(grapheme_index as usize).unwrap().0,
+		std::cmp::Ordering::Equal => s.len(),
+		_ => panic!()
+	}
+}
 pub fn find(s: &str, byte_index: usize) -> GraphemeIndex { s.grapheme_indices(true).enumerate().find(|&(_,(i,_))| i == byte_index).unwrap().0 }
 
 #[derive(PartialEq,Clone,Copy)] enum Class { Space, Alphanumeric, Symbol }
