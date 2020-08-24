@@ -1,4 +1,4 @@
-use {error::Error, image::{Image, bgra8}};
+use {fehler::throws, error::Error, image::{Image, bgra8}};
 pub use xy::{size, uint2};
 
 pub type Target<'t> = Image<&'t mut[bgra8]>;
@@ -20,7 +20,7 @@ pub enum Event {
 }
 
 pub trait Widget {
-    fn size(&mut self, size : size) -> size { size }
-    fn paint(&mut self, target : &mut Target) -> Result<(),Error>;
-    fn event(&mut self, _size: size, _event_context: EventContext, _event: &Event) -> bool { false }
+    fn size(&mut self, size: size) -> size { size }
+    fn paint(&mut self, target: &mut Target) -> Result<(),Error>;
+    #[throws] fn event(&mut self, _size: size, _event_context: &EventContext, _event: &Event) -> bool { false }
 }

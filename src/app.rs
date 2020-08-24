@@ -140,9 +140,9 @@ pub fn draw(&mut self) {
 	display.as_ref().map(|d| d.flush().unwrap());
 }
 pub fn quit(&mut self) { self.display = None }
-pub fn key(&mut self, key: char) -> bool {
+#[throws] pub fn key(&mut self, key: char) -> bool {
 	let Self{size, modifiers_state, widget, ..} = self;
-	if widget.event(*size, EventContext{modifiers_state: *modifiers_state, pointer: None}, &Event::Key{key}) { self.draw(); true }
+	if widget.event(*size, &EventContext{modifiers_state: *modifiers_state, pointer: None}, &Event::Key{key})? { self.draw(); true }
 	else if key == '⎋' { self.quit(); false }
 	else { false }
 }

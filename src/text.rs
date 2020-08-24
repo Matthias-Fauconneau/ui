@@ -1,8 +1,8 @@
-use {std::cmp::{min, max}, ttf_parser::{Face,GlyphId,Rect}, fehler::throws, error::Error, num::Ratio, crate::font::{self, Rasterize}};
+use {std::{cmp::{min, max}, ops::Range}, ttf_parser::{Face,GlyphId,Rect}, fehler::throws, error::Error, num::Ratio, crate::font::{self, Rasterize}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
-#[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, pub(crate) range: std::ops::Range<GraphemeIndex> }
+#[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, pub(crate) range: Range<GraphemeIndex> }
 
 pub(crate) fn line_ranges(text: &'t str) -> impl Iterator<Item=LineRange<'t>> {
 	let mut iter = text.grapheme_indices(true).enumerate().peekable();
@@ -90,6 +90,15 @@ impl<D:AsRef<str>> View<'_, D> {
 	pub column: GraphemeIndex // May be on the right of the corresponding line (preserves horizontal affinity during line up/down movement)
 }
 impl Zero for LineColumn { fn zero() -> Self { Self{line: 0, column: 0} } }
+
+pub fn index(text: &str, LineColumn{line, column}: LineColumn) -> GraphemeIndex { line_ranges(text).nth(line).unwrap().range.start+column }
+
+impl LineColumn {
+	#[throws(as Option)] pub fn from_text_index(text: &str, index: GraphemeIndex) -> Self {
+		let (line, LineRange{range: Range{start,..}, ..}) = line_ranges(text).enumerate().find(|&(_,LineRange{range: Range{start,end},..})| start <= index && index < end)?;
+		Self{line, column: index-start}
+	}
+}
 
 impl<D:AsRef<str>> View<'_, D> {
 	pub fn cursor(&self, size: size, position: uint2) -> LineColumn {

@@ -27,7 +27,7 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 					match state {
 						KeyState::Released => if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None },
 						KeyState::Pressed => {
-							app.key(key);
+							app.key(key).unwrap();
 							repeat = {
 								let repeat = Rc::new(Cell::new(key));
 								let from_monotonic_millis = |t| {
@@ -45,7 +45,7 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 														Timer::at(next).map({
 																let repeat = repeat.clone();
 																// stops and autodrops from streams when weak link fails to upgrade (repeat cell dropped)
-																move |_| { repeat.upgrade().map(|x| ({let key = x.get(); (box move |app| { app.key(key); }) as Box::<dyn Fn(&mut App<'t,_>)>}, next) ) }
+																move |_| { repeat.upgrade().map(|x| ({let key = x.get(); (box move |app| { app.key(key).unwrap(); }) as Box::<dyn Fn(&mut App<'t,_>)>}, next) ) }
 														})
 												}
 										}).boxed_local()
@@ -60,11 +60,13 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 						const SHIFT : u32 = 0b001;
 						const CAPS : u32 = 0b010;
 						const CTRL : u32 = 0b100;
+						const ALT : u32 = 0b1000;
 						const LOGO : u32 = 0b1000000;
-						assert_eq!([mods_depressed&!(SHIFT|CAPS|CTRL|LOGO), mods_latched, mods_locked&!CAPS, locked_group], [0,0,0,0]);
+						assert_eq!([mods_depressed&!(SHIFT|CAPS|CTRL|ALT|LOGO), mods_latched, mods_locked&!CAPS, locked_group], [0,0,0,0]);
 						app.modifiers_state = ModifiersState {
 								shift: mods_depressed&SHIFT != 0,
 								ctrl: mods_depressed&CTRL != 0,
+								alt: mods_depressed&ALT != 0,
 								logo: mods_depressed&LOGO != 0,
 								..Default::default()
 						}
@@ -83,12 +85,12 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 			match event {
 				pointer::Event::Motion{surface_x, surface_y, ..} => {
 					position = {let p = get_surface_scale_factor(&app.surface) as f64*xy{x: surface_x, y: surface_y}; xy{x: p.x as u32, y: p.y as u32}};
-					if app.widget.event(app.size, event_context, &Event::Motion{position, mouse_buttons}) { app.draw(); }
+					if app.widget.event(app.size, &event_context, &Event::Motion{position, mouse_buttons}).unwrap() { app.draw(); }
 				},
 				pointer::Event::Button{button, state, ..} => {
 					let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
 					if state == pointer::ButtonState::Pressed { mouse_buttons |= 1<<button; } else { mouse_buttons &= !(1<<button); }
-					if app.widget.event(app.size, event_context, &Event::Button{button, state, position}) { app.draw(); }
+					if app.widget.event(app.size, &event_context, &Event::Button{button, state, position}).unwrap() { app.draw(); }
 				},
 				_ => {},
 			}
