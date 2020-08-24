@@ -8,7 +8,11 @@ pub struct Buffer<T, S> {
 	pub text : T,
 	pub style: S,
 }
-type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
+pub type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
+
+impl AsRef<str> for Borrowed<'_> { fn as_ref(&self) -> &str { self.text } }
+impl AsRef<[Attribute<Style>]> for Borrowed<'_> {  fn as_ref(&self) -> &[Attribute<Style>] { self.style } }
+
 pub type Owned = Buffer<String, Vec<Attribute<Style>>>;
 trait ToOwned { type Owned; fn to_owned(&self) -> Self::Owned; }
 impl ToOwned for Borrowed<'_> {
