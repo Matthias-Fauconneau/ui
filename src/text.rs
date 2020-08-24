@@ -1,4 +1,4 @@
-use {std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, size, Rect}, ttf_parser::{Face,GlyphId}, fehler::throws, error::Error, num::Ratio, crate::font::{self, Rasterize}};
+use {std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, size, Rect}, ttf_parser::{Face,GlyphId}, fehler::throws, error::Error, num::{zero, Ratio}, crate::font::{self, Rasterize}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
@@ -179,7 +179,9 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					x: (x+font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
 					y: (line_index as u32)*(font.height() as u32) + (font.ascender()-bbox.max.y as i16) as u32
 				};
-				image::fill_mask(&mut target.slice_mut(scale*position, coverage.size), style.map(|x|x.attribute.color).unwrap_or((1.).into()), &coverage.as_ref());
+				let offset = scale*position;
+				let size = vector::component_wise_min(coverage.size, target.size-offset);
+				image::fill_mask(&mut target.slice_mut(offset, size), style.map(|x|x.attribute.color).unwrap_or((1.).into()), &coverage.slice(zero(), size));
 			}
 		}
 	}
