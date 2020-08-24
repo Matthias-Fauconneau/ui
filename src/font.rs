@@ -32,7 +32,7 @@ impl ttf_parser::OutlineBuilder for Outline<'_> {
 pub trait Rasterize {
 	fn glyph_size(&self, id: ttf_parser::GlyphId) -> size;
 	fn glyph_scaled_size(&self, scale: Ratio, id: ttf_parser::GlyphId) -> size;
-	fn rasterize(&self, scale: Ratio, id: ttf_parser::GlyphId, bbox: ttf_parser::Rect) -> Image<Vec<f32>>;
+	fn rasterize(&self, scale: Ratio, id: ttf_parser::GlyphId, bbox: ::xy::Rect) -> Image<Vec<f32>>;
 }
 impl<'t> Rasterize for ttf_parser::Face<'t> {
 	fn glyph_size(&self, id: ttf_parser::GlyphId) -> size {
@@ -43,13 +43,13 @@ impl<'t> Rasterize for ttf_parser::Face<'t> {
 		let b = self.glyph_bounding_box(id).unwrap();
 		xy{x: (scale.iceil(b.x_max as i32) - scale.ifloor(b.x_min as i32)) as u32, y: (scale.iceil(b.y_max as i32) - scale.ifloor(b.y_min as i32)) as u32}
 	}
-    fn rasterize(&self, scale: Ratio, id: ttf_parser::GlyphId, bbox: ttf_parser::Rect) -> Image<Vec<f32>> {
-		let x_min = scale.ifloor(bbox.x_min as i32)-1; // Correct rasterization with f32 roundoff without bound checking
-        let y_max = scale.iceil(bbox.y_max as i32);
-        let mut target = Image::zero(self.glyph_scaled_size(scale, id)+xy{x:1, y:1/*2*/});
-        self.outline_glyph(id, &mut Outline{scale: scale.into(), x_min: x_min as f32, y_max: y_max as f32, target: &mut target.as_mut(), first:None, p0:None}).unwrap();
-        raster::fill(&target.as_ref())
-    }
+	fn rasterize(&self, scale: Ratio, id: ttf_parser::GlyphId, bbox: ::xy::Rect) -> Image<Vec<f32>> {
+		let x_min = scale.ifloor(bbox.min.x)-1; // Correct rasterization with f32 roundoff without bound checking
+		let y_max = scale.iceil(bbox.max.y as i32);
+		let mut target = Image::zero(self.glyph_scaled_size(scale, id)+xy{x:1, y:1/*2*/});
+		self.outline_glyph(id, &mut Outline{scale: scale.into(), x_min: x_min as f32, y_max: y_max as f32, target: &mut target.as_mut(), first:None, p0:None}).unwrap();
+		raster::fill(&target.as_ref())
+	}
 }
 
 cfg_if::cfg_if! { if #[cfg(all(feature="owning-ref",feature="memmap"))] {

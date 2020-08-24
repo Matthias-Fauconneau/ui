@@ -1,30 +1,8 @@
 mod none;
-use {std::cmp::{min,max}, fehler::throws, error::Error, num::Zero, iter::{Single, NthOrLast}, ::xy::{xy, uint2, Rect}};
-use crate::{text::{self, unicode_segmentation::{self, GraphemeIndex, UnicodeSegmentation, prev_word, next_word},
-														LineColumn, Attribute, Style, line_ranges, layout, Glyph, View, default_style},
+use {std::cmp::{min,max}, fehler::throws, error::Error, num::Zero, iter::Single};
+use crate::{text::{self, unicode_segmentation::{self, GraphemeIndex, prev_word, next_word},
+														LineColumn, Span, Attribute, Style, line_ranges, View, default_style},
 									 widget::{Event, EventContext, Widget, size, Target, ModifiersState, ButtonState::Pressed}};
-
-#[derive(PartialEq,Clone,Copy)] pub struct Span {
-	start: LineColumn,
-	pub end: LineColumn,
-}
-impl Zero for Span { fn zero() -> Self { Self{start: Zero::zero(), end: Zero::zero()} } }
-impl Span {
-	pub fn new(end: LineColumn) -> Self { Self{start: end, end} }
-	fn min(&self) -> LineColumn { min(self.start, self.end) }
-	fn max(&self) -> LineColumn { max(self.start, self.end) }
-}
-
-fn position(font: &ttf_parser::Face<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 { xy{
-	x: layout(font, line_ranges(text).nth(line).unwrap().graphemes(true).enumerate()).nth_or_last(column as usize).map_or_else(
-		|last| last.map_or(0, |Glyph{x,id,..}| x+(font.glyph_hor_advance(id).unwrap() as i32)),
-		|layout| layout.x
-	) as u32,
-	y: (line as u32)*(font.height() as u32)
-}}
-fn span(font: &ttf_parser::Face<'_>, text: &str, min: LineColumn, max: LineColumn) -> Rect {
-	Rect{min: position(font, text, min).signed(), max: (position(font, text, max)+xy{x:0, y: font.height() as u32}).signed()}
-}
 
 pub struct Buffer<T, S> {
 	pub text : T,
@@ -243,25 +221,7 @@ impl Widget for Edit<'_,'_> {
 		let Self{view, selection, ..} = self;
 		let scale = view.scale(target.size);
 		view.paint(target, scale);
-		/*if has_focus*/ {
-			let [min, max] = [selection.min(), selection.max()];
-			let View{font, data} = view;
-			let text = AsRef::<str>::as_ref(&data);
-			if min.line < max.line { image::invert(&mut target.slice_mut_clip(scale*span(font,text,min,LineColumn{line: min.line, column: usize::MAX}))); }
-			if min.line == max.line {
-				if min == max { // cursor
-					pub fn widen(l: Rect, dx: u32) -> Rect { Rect{min: l.min-xy{x:dx/2,y:0}.signed(), max:l.max+xy{x:dx/2,y:0}.signed()} }
-					image::invert(&mut target.slice_mut_clip(scale*widen(span(font,text,selection.end,selection.end), font.height() as u32/16)));
-				}
-				if min != max { // selection
-					image::invert(&mut target.slice_mut_clip(scale*span(font,text,min,max)));
-				}
-			}
-			else { for line in min.line+1..max.line {
-				image::invert(&mut target.slice_mut_clip(scale*span(font,text,LineColumn{line, column: 0},LineColumn{line, column: usize::MAX})));
-			}}
-			if max.line > min.line { image::invert(&mut target.slice_mut_clip(scale*span(font,text,LineColumn{line: max.line, column: 0}, max))); }
-		}
+		view.paint_span(target, scale, *selection);
 	}
 	#[throws] fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> bool {
 		if self.event(size, event_context, event) != Change::None { true } else { false }

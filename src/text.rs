@@ -1,4 +1,4 @@
-use {std::{cmp::{min, max}, ops::Range}, ttf_parser::{Face,GlyphId,Rect}, fehler::throws, error::Error, num::Ratio, crate::font::{self, Rasterize}};
+use {std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, size, Rect}, ttf_parser::{Face,GlyphId}, fehler::throws, error::Error, num::Ratio, crate::font::{self, Rasterize}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
@@ -28,15 +28,15 @@ pub fn layout<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=(GraphemeIndex, &
 }
 
 pub(crate) fn bbox<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=Glyph>+'t) -> impl 't+Iterator<Item=(Rect, Glyph)> {
-	iter.filter_map(move |g| Some((font.glyph_bounding_box(g.id)?, g)))
+	iter.filter_map(move |g| Some((font.glyph_bounding_box(g.id).map(|r| Rect{min:xy{x:r.x_min as i32, y:r.y_min as i32},max:xy{x:r.x_max as i32, y:r.y_max as i32}})?, g)))
 }
 
 #[derive(Default)] pub(crate) struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
 pub(crate) fn metrics(font: &Face<'_>, iter: impl Iterator<Item=Glyph>) -> LineMetrics {
 	bbox(font, iter).fold(Default::default(), |metrics: LineMetrics, (bbox, Glyph{x, id, ..})| LineMetrics{
-		width: (x + font.glyph_hor_side_bearing(id).unwrap() as i32 + bbox.x_max as i32) as u32,
-		ascent: max(metrics.ascent, bbox.y_max),
-		descent: min(metrics.descent, bbox.y_min)
+		width: (x + font.glyph_hor_side_bearing(id).unwrap() as i32 + bbox.max.x) as u32,
+		ascent: max(metrics.ascent, bbox.max.y as i16),
+		descent: min(metrics.descent, bbox.min.y as i16)
 	})
 }
 
@@ -64,7 +64,7 @@ pub struct View<'f, D> {
     //size : Option<size2>
 }
 
-use {::xy::{xy, size, uint2}, image::{Image, bgra8}, num::{IsZero, Zero, div_ceil, clamp}};
+use {image::{Image, bgra8}, num::{IsZero, Zero, div_ceil, clamp}};
 
 fn fit_width(width: u32, from : size) -> size { if from.is_zero() { return Zero::zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
 fn fit_height(height: u32, from : size) -> size { if from.is_zero() { return Zero::zero(); } xy{x: div_ceil(height * from.x, from.y), y: height} }
@@ -100,6 +100,29 @@ impl LineColumn {
 	}
 }
 
+#[derive(PartialEq,Clone,Copy)] pub struct Span {
+	pub start: LineColumn,
+	pub end: LineColumn,
+}
+impl Zero for Span { fn zero() -> Self { Self{start: Zero::zero(), end: Zero::zero()} } }
+impl Span {
+	pub fn new(end: LineColumn) -> Self { Self{start: end, end} }
+	pub fn min(&self) -> LineColumn { min(self.start, self.end) }
+	pub fn max(&self) -> LineColumn { max(self.start, self.end) }
+}
+
+use iter::NthOrLast;
+fn position(font: &ttf_parser::Face<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 { xy{
+	x: layout(font, line_ranges(text).nth(line).unwrap().graphemes(true).enumerate()).nth_or_last(column as usize).map_or_else(
+		|last| last.map_or(0, |Glyph{x,id,..}| x+(font.glyph_hor_advance(id).unwrap() as i32)),
+		|layout| layout.x
+	) as u32,
+	y: (line as u32)*(font.height() as u32)
+}}
+fn span(font: &ttf_parser::Face<'_>, text: &str, min: LineColumn, max: LineColumn) -> Rect {
+	Rect{min: position(font, text, min).signed(), max: (position(font, text, max)+xy{x:0, y: font.height() as u32}).signed()}
+}
+
 impl<D:AsRef<str>> View<'_, D> {
 	pub fn cursor(&self, size: size, position: uint2) -> LineColumn {
 		let position = position / self.scale(size);
@@ -111,6 +134,25 @@ impl<D:AsRef<str>> View<'_, D> {
 			.map(|Glyph{index, x, id}| (index, x+font.glyph_hor_advance(id).unwrap() as i32/2))
 			.take_while(|&(_, x)| x <= position.x as i32).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
+	}
+	pub fn paint_span(&self, target : &mut Target, scale: Ratio, span: Span) {
+		let Self{font, data} = self;
+		let [min, max] = [span.min(), span.max()];
+		let text = AsRef::<str>::as_ref(&data);
+		if min.line < max.line { image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,min,LineColumn{line: min.line, column: usize::MAX}))); }
+		if min.line == max.line {
+			if min == max { // cursor
+				fn widen(l: Rect, dx: u32) -> Rect { Rect{min: l.min-xy{x:dx/2,y:0}.signed(), max:l.max+xy{x:dx/2,y:0}.signed()} }
+				image::invert(&mut target.slice_mut_clip(scale*widen(self::span(font,text,span.end,span.end), font.height() as u32/16)));
+			}
+			if min != max { // selection
+				image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,min,max)));
+			}
+		}
+		else { for line in min.line+1..max.line {
+			image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,LineColumn{line, column: 0},LineColumn{line, column: usize::MAX})));
+		}}
+		if max.line > min.line { image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,LineColumn{line: max.line, column: 0}, max))); }
 	}
 }
 
@@ -135,7 +177,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				let coverage = &cache.iter().find(|(key,_)| key == &(scale, id)).unwrap().1;
 				let position = xy{
 					x: (x+font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
-					y: (line_index as u32)*(font.height() as u32) + (font.ascender()-bbox.y_max) as u32
+					y: (line_index as u32)*(font.height() as u32) + (font.ascender()-bbox.max.y as i16) as u32
 				};
 				image::fill_mask(&mut target.slice_mut(scale*position, coverage.size), style.map(|x|x.attribute.color).unwrap_or((1.).into()), &coverage.as_ref());
 			}
