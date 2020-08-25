@@ -177,6 +177,7 @@ pub fn event(&mut self, size : size, EventContext{modifiers_state: ModifiersStat
 					key if (!key.is_control() || key=='\t') && !ctrl => {
 						let sym = KEYMAP.iter().find(|(from,_)| *from == key).map(|(_,sym)| *sym).unwrap_or((key, key.to_uppercase().single().unwrap()));
 						let char = if *shift { sym.1 } else { sym.0 };
+						//println!("{:?} {:?} {:?}", key, sym, char);
 						let char = if let Some(sequence) = compose {
 							sequence.push(char);
 							let mut candidates = COMPOSE.iter().filter(|(k,_)| k.starts_with(sequence));
@@ -187,6 +188,10 @@ pub fn event(&mut self, size : size, EventContext{modifiers_state: ModifiersStat
 							}
 						} else { char };
 						change = Change::Insert;
+						use ::unicode_segmentation::UnicodeSegmentation;
+						fn clamp(text: &str, LineColumn{line, column}: &mut LineColumn) { *column = min(*column, line_ranges(text).nth(*line).unwrap().graphemes(true).count()) }
+						clamp(text, &mut selection.start);
+						clamp(text, &mut selection.end);
 						replace_range = ReplaceRange{range: index(selection), replace_with: char.to_string()};
 						LineColumn{line: selection.min().line, column: selection.min().column+1} // after insertion
 					}

@@ -91,7 +91,11 @@ impl<D:AsRef<str>> View<'_, D> {
 }
 impl Zero for LineColumn { fn zero() -> Self { Self{line: 0, column: 0} } }
 
-pub fn index(text: &str, LineColumn{line, column}: LineColumn) -> GraphemeIndex { line_ranges(text).nth(line).unwrap().range.start+column }
+pub fn index(text: &str, LineColumn{line, column}: LineColumn) -> GraphemeIndex {
+	let Range{start, end} = line_ranges(text).nth(line).unwrap().range;
+	assert!(start+column <= end);
+	start+column
+}
 
 impl LineColumn {
 	#[throws(as Option)] pub fn from_text_index(text: &str, index: GraphemeIndex) -> Self {
