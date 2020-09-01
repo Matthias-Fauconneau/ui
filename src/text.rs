@@ -85,7 +85,7 @@ impl<D:AsRef<str>> View<'_, D> {
 	}
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Copy)] pub struct LineColumn {
+#[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Copy,Debug)] pub struct LineColumn {
 	pub line: usize,
 	pub column: GraphemeIndex // May be on the right of the corresponding line (preserves horizontal affinity during line up/down movement)
 }
@@ -104,7 +104,7 @@ impl LineColumn {
 	}
 }
 
-#[derive(PartialEq,Clone,Copy)] pub struct Span {
+#[derive(PartialEq,Clone,Copy,Debug)] pub struct Span {
 	pub start: LineColumn,
 	pub end: LineColumn,
 }

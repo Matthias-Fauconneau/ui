@@ -6,7 +6,7 @@ edition = '2018'
 
 [features]
 widget = ['fehler','error','client-toolkit']
-app = ['fehler','num','futures','async-io','smol','client-toolkit','widget','sc','vector']
+app = ['fehler','num','futures','async-io','client-toolkit','widget','sc','vector']
 font = ['derive-more','fehler','ttf-parser','kurbo','array','image/num']
 graphic = ['xy/iter','fehler','widget','image/sRGB','font']
 font-file = ['font','owning-ref','memmap']
@@ -30,8 +30,6 @@ futures = { version='', optional=true, package = 'futures-util' } # SelectAll, s
 #futures = { version='', optional=true, package = 'futures-lite' }
 sc = { version='', optional=true } #''
 async-io = { git='https://github.com/stjepang/async-io', optional=true }
-#async-io = { version='', path="../async-io", optional=true }
-smol = { version='', optional=true }
 
 memmap = { version='', optional=true }
 dirs = ''
