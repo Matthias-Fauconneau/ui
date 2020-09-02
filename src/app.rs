@@ -53,7 +53,6 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 
 	let layer_shell = env.require_global::<LayerShell>();
 	let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "ui".to_string());
-	layer_surface.set_keyboard_interactivity(1);
 	surface.commit();
 
 	layer_surface.quick_assign(move /*env*/ |layer_surface, event, mut app| {
@@ -129,7 +128,8 @@ impl<'t, W:Widget> App<'t, W> {
 #[throws(std::io::Error)] pub async fn display(&mut self) { while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await { event(self); if self.display.is_none() { break; } } }
 pub fn draw(&mut self) {
 	let Self{display, pool, widget, size, surface, unscaled_size, ..} = self;
-	let widget_size = widget.size(*size);
+	let max_size = with_output_info(get_surface_outputs(&surface).first().unwrap(), |info| ::xy::int2::from(info.modes.first().unwrap().dimensions).into()).unwrap();
+	let widget_size = widget.size(max_size);
 	if *size != widget_size {
 		let scale = get_surface_scale_factor(&surface) as u32;
 		*unscaled_size = ::xy::div_ceil(widget_size, scale);

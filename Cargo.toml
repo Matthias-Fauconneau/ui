@@ -13,7 +13,7 @@ font-file = ['font','owning-ref','memmap']
 text = ['unicode-segmentation','iter','num','xy/iter','font','image/sRGB','widget','font-file','derive-more']
 edit = ['text']
 color = ['vector']
-default = []
+default = ['color','text','edit','app','graphic']
 
 [dependencies]
 iter = { path='../iter', optional=true }
@@ -29,7 +29,7 @@ error = { version='', package='anyhow', optional=true }
 futures = { version='', optional=true, package = 'futures-util' } # SelectAll, select_all, LocalBoxStream
 #futures = { version='', optional=true, package = 'futures-lite' }
 sc = { version='', optional=true } #''
-async-io = { git='https://github.com/stjepang/async-io', optional=true }
+async-io = {version='', optional=true }
 
 memmap = { version='', optional=true }
 dirs = ''

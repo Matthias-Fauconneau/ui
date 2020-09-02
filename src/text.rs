@@ -27,8 +27,9 @@ pub fn layout<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=(GraphemeIndex, &
 	})
 }
 
+pub fn rect(r: ttf_parser::Rect) -> Rect { Rect{min:xy{x:r.x_min as i32, y:r.y_min as i32},max:xy{x:r.x_max as i32, y:r.y_max as i32}} }
 pub(crate) fn bbox<'t>(font: &'t Face<'t>, iter: impl Iterator<Item=Glyph>+'t) -> impl 't+Iterator<Item=(Rect, Glyph)> {
-	iter.filter_map(move |g| Some((font.glyph_bounding_box(g.id).map(|r| Rect{min:xy{x:r.x_min as i32, y:r.y_min as i32},max:xy{x:r.x_max as i32, y:r.y_max as i32}})?, g)))
+	iter.filter_map(move |g| Some((font.glyph_bounding_box(g.id).map(rect)?, g)))
 }
 
 #[derive(Default)] pub(crate) struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}

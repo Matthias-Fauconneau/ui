@@ -4,29 +4,29 @@ use {num::Ratio, ::xy::{xy, size, vec2}, image::Image, quad::quad, cubic::cubic,
 struct Outline<'t> { scale : Ratio /*f32 loses precision*/, x_min: f32, y_max: f32, target : &'t mut Image<&'t mut[f32]>, first : Option<vec2>, p0 : Option<vec2>}
 impl Outline<'_> { fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-self.x_min, y: -(self.scale*y)+self.y_max} } }
 impl ttf_parser::OutlineBuilder for Outline<'_> {
-    fn move_to(&mut self, x: f32, y: f32) {
+	fn move_to(&mut self, x: f32, y: f32) {
 		self.first = Some(self.map(x,y));
 		self.p0 = self.first;
 	}
-    fn line_to(&mut self, x: f32, y: f32) { let p1 = self.map(x,y); line(self.target, self.p0.unwrap(), p1); self.p0 = Some(p1); }
-    fn quad_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32) {
+	fn line_to(&mut self, x: f32, y: f32) { let p1 = self.map(x,y); line(self.target, self.p0.unwrap(), p1); self.p0 = Some(p1); }
+	fn quad_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32) {
 		let p0 = self.p0.unwrap();
 		let p1 = self.map(x1, y1);
-        let p2 = self.map(x2, y2);
-        let mut pp = p0;
-        quad(p0, p1, p2, |p| { line(&mut self.target, pp, p); pp = p });
-        self.p0 = Some(p2);
-    }
-    fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32) {
+		let p2 = self.map(x2, y2);
+		let mut pp = p0;
+		quad(p0, p1, p2, |p| { line(&mut self.target, pp, p); pp = p });
+		self.p0 = Some(p2);
+	}
+	fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32) {
 		let p0 = self.p0.unwrap();
 		let p1 = self.map(x1, y1);
-        let p2 = self.map(x2, y2);
+		let p2 = self.map(x2, y2);
 		let p3 = self.map(x3, y3);
-        let mut pp = p0;
-        cubic(p0, p1, p2, p3, |p| { line(&mut self.target, pp, p); pp = p; });
-        self.p0 = Some(p3);
-    }
-    fn close(&mut self) { line(&mut self.target, self.p0.unwrap(), self.first.unwrap()); self.first = None; self.p0 = None; }
+		let mut pp = p0;
+		cubic(p0, p1, p2, p3, |p| { line(&mut self.target, pp, p); pp = p; });
+		self.p0 = Some(p3);
+	}
+	fn close(&mut self) { line(&mut self.target, self.p0.unwrap(), self.first.unwrap()); self.first = None; self.p0 = None; }
 }
 
 pub trait Rasterize {
