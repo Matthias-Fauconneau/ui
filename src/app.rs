@@ -4,17 +4,14 @@ use client_toolkit::{
 	seat::{SeatListener, with_seat_data}, output::with_output_info, get_surface_outputs, get_surface_scale_factor, shm::{MemPool, Format},
 	reexports::{
 		client::{Display, EventQueue, Main, Attached, protocol::wl_surface::WlSurface as Surface},
-		protocols::wlr::unstable::layer_shell::v1::client::{
-			zwlr_layer_shell_v1::{self as layer_shell, ZwlrLayerShellV1 as LayerShell},
-			zwlr_layer_surface_v1::{self  as layer_surface, ZwlrLayerSurfaceV1 as LayerSurface},
-		},
+		protocols::xdg_shell::client::{xdg_wm_base::{XdgWmBase as WmBase}, xdg_surface::{self, XdgSurface}, xdg_toplevel as toplevel},
 	},
 };
-use {fehler::throws, error::Error, num::Zero, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
+use {fehler::throws, error::Error, num::Zero, ::xy::size, image::bgra8, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
 
 default_environment!(Compositor,
-	fields = [ layer_shell: SimpleGlobal<LayerShell> ],
-	singles = [ LayerShell => layer_shell ]
+	fields = [ wm_base: SimpleGlobal<WmBase> ],
+	singles = [ WmBase => wm_base ]
 );
 
 pub struct App<'t, W> {
@@ -23,7 +20,6 @@ pub struct App<'t, W> {
 	pool: MemPool,
 	_seat_listener: SeatListener,
 	pub(crate) modifiers_state: ModifiersState,
-	layer_surface: Main<LayerSurface>,
 	pub(crate) surface: Attached<Surface>,
 	pub(crate) widget: W,
 	pub(crate) size: size,
@@ -43,7 +39,7 @@ pub struct App<'t, W> {
 	surface.commit()
 }
 
-fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Main<LayerSurface>) {
+fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Main<XdgSurface>) {
 	let surface = env.create_surface_with_scale_callback(|scale, surface, mut app| {
 		let App{pool, widget, ref mut size, unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
 		*size = (scale as u32) * *unscaled_size;
@@ -51,28 +47,38 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 		draw(pool, &surface, widget, *size).unwrap()
 	});
 
-	let layer_shell = env.require_global::<LayerShell>();
-	let layer_surface = layer_shell.get_layer_surface(&surface, None, layer_shell::Layer::Overlay, "ui".to_string());
+	let wm = env.require_global::<WmBase>(); // GlobalHandler<xdg_wm_base::XdgWmBase>::get assigns ping-pong
+	let xdg_surface = wm.get_xdg_surface(&surface);
+	let toplevel = xdg_surface.get_toplevel();
 	surface.commit();
 
-	layer_surface.quick_assign(move /*env*/ |layer_surface, event, mut app| {
-		let App{display, pool, surface, widget, ref mut size, ref mut unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
-		use layer_surface::Event::*;
+	toplevel.quick_assign(|_toplevel, event, mut app| {
+		let App{display, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
+		use toplevel::Event::*;
 		match event {
-			Closed => *display = None,
-			Configure{serial, width, height} => {
-				if !(width > 0 && height > 0) {
+			Close => *display = None,
+			Configure{..} => {}
+			//Configure{width, height, states} => { dbg!(width,height,states); }
+			_ => unimplemented!(),
+		}
+	});
+	xdg_surface.quick_assign(move /*env*/ |xdg_surface, event, mut app| {
+		let App{pool, surface, widget, ref mut size, ref mut unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
+		use xdg_surface::Event::*;
+		match event {
+			Configure{serial} => {
+				/*if !(width > 0 && height > 0)*/ {
 					let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(), |info| (info.scale_factor as u32, ::xy::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
 					let size = vector::component_wise_min(size, widget.size(size));
 					assert!(size.x < 124839 || size.y < 1443, size);
 					*unscaled_size = ::xy::div_ceil(size, scale);
-					layer_surface.set_size(unscaled_size.x, unscaled_size.y);
-					layer_surface.ack_configure(serial);
+					//xdg_surface.set_window_geometry(.., unscaled_size.x, unscaled_size.y); // If never set, the value is the full bounds of the surface
+					xdg_surface.ack_configure(serial);
 					surface.commit();
-				} else {
-					layer_surface.ack_configure(serial);
+				} /*else {
+					xdg_surface.ack_configure(serial);
 					*unscaled_size = xy{x: width, y: height};
-				}
+				}*/
 				let scale = if get_surface_outputs(&surface).is_empty() { // get_surface_outputs defaults to 1 instead of first output factor
 					env.get_all_outputs().first().map(|output| with_output_info(output, |info| info.scale_factor)).flatten().unwrap_or(1)
 				} else {
@@ -85,7 +91,7 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 			_ => unimplemented!(),
 		}
 	});
-	(surface, layer_surface)
+	(surface, xdg_surface)
 }
 
 use std::{rc::Rc, cell::RefCell};
@@ -105,12 +111,12 @@ use std::{rc::Rc, cell::RefCell};
 
 impl<'t, W:Widget> App<'t, W> {
 #[throws] pub fn new(widget: W) -> Self {
-	let (env, display, queue) = init_default_environment!(Compositor, fields = [layer_shell: SimpleGlobal::new()])?;
+	let (env, display, queue) = init_default_environment!(Compositor, fields = [wm_base: SimpleGlobal::new()])?;
 	let theme_manager = client_toolkit::seat::pointer::ThemeManager::init(client_toolkit::seat::pointer::ThemeSpec::System, env.require_global(), env.require_global());
 	for s in env.get_all_seats() { with_seat_data(&s, |seat_data| crate::input::seat::<W>(&theme_manager, &s, seat_data)); }
 	let _seat_listener = env.listen_for_seats(move /*theme_manager*/ |s, seat_data, _| crate::input::seat::<W>(&theme_manager, &s, seat_data));
 	let pool = env.create_simple_pool(|_|{})?;
-	let (surface, layer_surface) = surface::<W>(env);
+	let (surface, _) = surface::<W>(env);
 	display.flush().unwrap();
 	Self {
 			display: Some(display),
@@ -118,7 +124,6 @@ impl<'t, W:Widget> App<'t, W> {
 			_seat_listener,
 			modifiers_state: Default::default(),
 			pool,
-			layer_surface,
 			surface,
 			widget,
 			size: Zero::zero(),
@@ -133,7 +138,7 @@ pub fn draw(&mut self) {
 	if *size != widget_size {
 		let scale = get_surface_scale_factor(&surface) as u32;
 		*unscaled_size = ::xy::div_ceil(widget_size, scale);
-		self.layer_surface.set_size(unscaled_size.x, unscaled_size.y);
+		//self.xdg_surface.set_size(unscaled_size.x, unscaled_size.y);
 		*size = (scale as u32) * *unscaled_size;
 	}
 	draw(pool, &surface, widget, *size).unwrap();
