@@ -235,8 +235,7 @@ impl Widget for Edit<'_,'_> {
 	fn size(&mut self, size : size) -> size { Widget::size(&mut self.view, size) }
 	#[throws] fn paint(&mut self, target : &mut Target) {
 		let Self{view, selection, ..} = self;
-		let scale = view.scale(target.size);
-		view.paint(target, scale);
+		let scale = view.paint_fit(target);
 		view.paint_span(target, scale, *selection, image::bgr{b: true, g: true, r: true});
 	}
 	#[throws] fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> bool {

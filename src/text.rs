@@ -82,7 +82,8 @@ impl<D:AsRef<str>> View<'_, D> {
 	}
 	pub fn scale(&/*mut*/ self, fit: size) -> Ratio {
 		let size = Self::size(&self);
-		if fit.x*size.y < fit.y*fit.x { Ratio{num: fit.x-1, div: size.x-1} } else { Ratio{num: fit.y-1, div: size.y-1} } // todo: scroll
+		//if fit.x*size.y < fit.y*fit.x { Ratio{num: fit.x-1, div: size.x-1} } else { Ratio{num: fit.y-1, div: size.y-1} } // Fit
+		Ratio{num: fit.x-1, div: size.x-1} // Fit width (todo: scroll)
 	}
 }
 
@@ -163,11 +164,9 @@ impl<D:AsRef<str>> View<'_, D> {
 
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 	pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
-		if target.size < self.size(target.size) { return; }
-		//assert!(target.size >= self.size(target.size), "{:?} {:?} ", target.size, self.size(target.size));
 		let Self{font, data} = &*self;
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
-		for (line_index, line) in line_ranges(&data.as_ref()).enumerate() {
+		'lines: for (line_index, line) in line_ranges(&data.as_ref()).enumerate() {
 			for (bbox, Glyph{index, x, id}) in bbox(font, layout(font, line.graphemes(true).enumerate().map(|(i,e)| (line.range.start+i, e)))) {
 				style = style.filter(|style:&&Attribute<Style>| style.contains(&index));
 				while let Some(next) = styles.peek() {
@@ -185,17 +184,26 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					y: (line_index as u32)*(font.height() as u32) + (font.ascender()-bbox.max.y as i16) as u32
 				};
 				let offset = scale*position;
+				if offset.y > target.size.y { break 'lines; } // Clip
 				let size = vector::component_wise_min(coverage.size, target.size-offset);
 				image::fill_mask(&mut target.slice_mut(offset, size), style.map(|x|x.attribute.color).unwrap_or((1.).into()), &coverage.slice(zero(), size));
 			}
 		}
 	}
+	pub fn paint_fit(&mut self, target : &mut Target) -> Ratio {
+		pub fn time<T>(task: impl FnOnce() -> T) -> T {
+			let time = std::time::Instant::now();
+			let result = task();
+			eprintln!("{:?}", time.elapsed());
+			result
+		}
+		let scale = time(|| self.scale(target.size));
+		self.paint(target, scale);
+		scale
+	}
 }
 use crate::widget::{Widget, Target};
 impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
-    fn size(&mut self, size: size) -> size { fit(size, Self::size(&self)) }
-    #[throws] fn paint(&mut self, target : &mut Target) {
-        let scale = self.scale(target.size);
-        Self::paint(self, target, scale)
-    }
+	fn size(&mut self, size: size) -> size { fit_width(size.x, Self::size(&self)) }
+	#[throws] fn paint(&mut self, target : &mut Target) { self.paint_fit(target); }
 }

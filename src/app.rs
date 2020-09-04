@@ -132,15 +132,15 @@ impl<'t, W:Widget> App<'t, W> {
 }
 #[throws(std::io::Error)] pub async fn display(&mut self) { while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await { event(self); if self.display.is_none() { break; } } }
 pub fn draw(&mut self) {
-	let Self{display, pool, widget, size, surface, unscaled_size, ..} = self;
-	let max_size = with_output_info(get_surface_outputs(&surface).first().unwrap(), |info| ::xy::int2::from(info.modes.first().unwrap().dimensions).into()).unwrap();
-	let widget_size = widget.size(max_size);
+	let Self{display, pool, widget, size, surface, /*unscaled_size,*/ ..} = self;
+	/*let max_size = with_output_info(get_surface_outputs(&surface).first().unwrap(), |info| ::xy::int2::from(info.modes.first().unwrap().dimensions).into()).unwrap();
+	let widget_size = ::min(size, widget.size(max_size));
 	if *size != widget_size {
 		let scale = get_surface_scale_factor(&surface) as u32;
 		*unscaled_size = ::xy::div_ceil(widget_size, scale);
 		//self.xdg_surface.set_size(unscaled_size.x, unscaled_size.y);
 		*size = (scale as u32) * *unscaled_size;
-	}
+	}*/
 	draw(pool, &surface, widget, *size).unwrap();
 	display.as_ref().map(|d| d.flush().unwrap());
 }
