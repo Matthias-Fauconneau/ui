@@ -16,7 +16,8 @@ type MouseButtons = u32;
 pub enum Event {
 	Key { key: char },
 	Button { button: u8, state: ButtonState, position: uint2 },
-	Motion { position: uint2, mouse_buttons: MouseButtons }
+	Motion { position: uint2, mouse_buttons: MouseButtons },
+	Scroll (f32)
 }
 
 pub trait Widget {

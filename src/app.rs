@@ -7,7 +7,7 @@ use client_toolkit::{
 		protocols::xdg_shell::client::{xdg_wm_base::{XdgWmBase as WmBase}, xdg_surface::{self, XdgSurface}, xdg_toplevel as toplevel},
 	},
 };
-use {fehler::throws, error::Error, num::Zero, ::xy::size, image::bgra8, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
+use {fehler::throws, error::Error, num::Zero, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
 
 default_environment!(Compositor,
 	fields = [ wm_base: SimpleGlobal<WmBase> ],
@@ -23,7 +23,8 @@ pub struct App<'t, W> {
 	pub(crate) surface: Attached<Surface>,
 	pub(crate) widget: W,
 	pub(crate) size: size,
-	unscaled_size: size
+	unscaled_size: size,
+	pub(crate) need_update: bool,
 }
 
 #[throws] fn draw(pool: &mut MemPool, surface: &Surface, widget: &mut dyn Widget, size: size) {
@@ -53,12 +54,12 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 	surface.commit();
 
 	toplevel.quick_assign(|_toplevel, event, mut app| {
-		let App{display, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
+		let App{display, unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
 		use toplevel::Event::*;
 		match event {
 			Close => *display = None,
-			Configure{..} => {}
-			//Configure{width, height, states} => { dbg!(width,height,states); }
+			//Configure{..} => {}
+			Configure{width, height, ..} => { *unscaled_size=xy{x:width as u32, y:height as u32}; }
 			_ => unimplemented!(),
 		}
 	});
@@ -67,18 +68,14 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 		use xdg_surface::Event::*;
 		match event {
 			Configure{serial} => {
-				/*if !(width > 0 && height > 0)*/ {
+				if !(unscaled_size.x > 0 && unscaled_size.y > 0) {
 					let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(), |info| (info.scale_factor as u32, ::xy::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
 					let size = vector::component_wise_min(size, widget.size(size));
 					assert!(size.x < 124839 || size.y < 1443, size);
 					*unscaled_size = ::xy::div_ceil(size, scale);
 					//xdg_surface.set_window_geometry(.., unscaled_size.x, unscaled_size.y); // If never set, the value is the full bounds of the surface
-					xdg_surface.ack_configure(serial);
-					surface.commit();
-				} /*else {
-					xdg_surface.ack_configure(serial);
-					*unscaled_size = xy{x: width, y: height};
-				}*/
+				}
+				xdg_surface.ack_configure(serial);
 				let scale = if get_surface_outputs(&surface).is_empty() { // get_surface_outputs defaults to 1 instead of first output factor
 					env.get_all_outputs().first().map(|output| with_output_info(output, |info| info.scale_factor)).flatten().unwrap_or(1)
 				} else {
@@ -103,7 +100,7 @@ use std::{rc::Rc, cell::RefCell};
 						let q = q.clone();
 						(box move |mut app| {
 								q.borrow_mut().get_mut().dispatch_pending(/*Any: 'static*/unsafe{std::mem::transmute::<&mut App<'t, W>, &mut App<'static,&mut dyn Widget>>(&mut app)}, |_,_,_| ()).unwrap();
-								app.display.as_ref().map(|d| d.flush().unwrap());
+								app.draw();
 						}) as Box<dyn Fn(&mut _/*App<'t, W>*/)>
 				}, q))
 	}).boxed_local()
@@ -127,12 +124,13 @@ impl<'t, W:Widget> App<'t, W> {
 			surface,
 			widget,
 			size: Zero::zero(),
-			unscaled_size: Zero::zero()
+			unscaled_size: Zero::zero(),
+			need_update: false,
 	}
 }
 #[throws(std::io::Error)] pub async fn display(&mut self) { while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await { event(self); if self.display.is_none() { break; } } }
 pub fn draw(&mut self) {
-	let Self{display, pool, widget, size, surface, /*unscaled_size,*/ ..} = self;
+	let Self{display, pool, widget, size, surface, need_update, /*unscaled_size,*/ ..} = self;
 	/*let max_size = with_output_info(get_surface_outputs(&surface).first().unwrap(), |info| ::xy::int2::from(info.modes.first().unwrap().dimensions).into()).unwrap();
 	let widget_size = ::min(size, widget.size(max_size));
 	if *size != widget_size {
@@ -141,13 +139,13 @@ pub fn draw(&mut self) {
 		//self.xdg_surface.set_size(unscaled_size.x, unscaled_size.y);
 		*size = (scale as u32) * *unscaled_size;
 	}*/
-	draw(pool, &surface, widget, *size).unwrap();
+	if *need_update { draw(pool, &surface, widget, *size).unwrap(); *need_update = false; }
 	display.as_ref().map(|d| d.flush().unwrap());
 }
 pub fn quit(&mut self) { self.display = None }
 #[throws] pub fn key(&mut self, key: char) -> bool {
 	let Self{size, modifiers_state, widget, ..} = self;
-	if widget.event(*size, &EventContext{modifiers_state: *modifiers_state, pointer: None}, &Event::Key{key})? { self.draw(); true }
+	if widget.event(*size, &EventContext{modifiers_state: *modifiers_state, pointer: None}, &Event::Key{key})? { self.need_update = true; true }
 	else if key == '⎋' { self.quit(); false }
 	else { false }
 }

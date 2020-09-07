@@ -24,8 +24,11 @@ pub enum Cow<'t> {
     Owned(Owned)
 }
 impl Cow<'_> {
-	pub fn get_mut(&mut self) -> &mut Owned { if let Cow::Borrowed(b) = self  { *self = Cow::Owned(b.to_owned()) } if let Cow::Owned(o) = self { o } else { unreachable!() } }
+	fn get_mut(&mut self) -> &mut Owned { if let Cow::Borrowed(b) = self  { *self = Cow::Owned(b.to_owned()) } if let Cow::Owned(o) = self { o } else { unreachable!() } }
 }
+/*impl<'f,'t> View<'f, Cow<'t>> {
+	pub fn get_mut(&mut self) -> &mut Cow { self.size = None; &mut self.data }
+}*/
 
 impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { match self { Cow::Borrowed(b) => b.text, Cow::Owned(o) => &o.text} } }
 impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { match self { Cow::Borrowed(b) => b.style, Cow::Owned(o) => &o.style} } }
@@ -37,7 +40,7 @@ struct State {
 	cursor: LineColumn
 }
 
-#[derive(PartialEq,Clone,Copy)] pub enum Change { None, Cursor, Insert, Remove, Other }
+#[derive(PartialEq,Clone,Copy)] pub enum Change { None, Scroll, Cursor, Insert, Remove, Other }
 
 pub struct Edit<'f, 't> {
 	pub view: View<'f, Cow<'t>>,
@@ -68,7 +71,7 @@ pub static COMPOSE: SyncLazy<Vec<(Vec<char>, char)>> = SyncLazy::new(|| {
 
 impl<'f, 't> Edit<'f, 't> {
 pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>) -> Self {
-	Self{view: View{font, data}, selection: Zero::zero(), history: Vec::new(), history_index: 0, last_change: Change::Other, compose: None}
+	Self{view: View{font, data, size: None}, selection: Zero::zero(), history: Vec::new(), history_index: 0, last_change: Change::Other, compose: None}
 }
 pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state: ModifiersState{ctrl,shift,alt,..}, pointer}: &EventContext, event: &Event) -> Change {
 	let Self{ref mut view, selection, history, history_index, last_change, compose, ..} = self;
@@ -203,6 +206,7 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 					if !((change==Change::Insert || change==Change::Remove) && change == *last_change) { history.push(State{text: text.to_owned(), cursor: selection.end}); }
 					*history_index = history.len();
 					let range = unicode_segmentation::index(text, range.start)..unicode_segmentation::index(text, range.end);
+					view.size = None;
 					view.data.get_mut().text.replace_range(range, &replace_with);
 					*selection = Span::new(end);
 					change
@@ -235,36 +239,40 @@ impl Widget for Edit<'_,'_> {
 	fn size(&mut self, size : size) -> size { Widget::size(&mut self.view, size) }
 	#[throws] fn paint(&mut self, target : &mut Target) {
 		let Self{view, selection, ..} = self;
-		let (scale, offset) = view.paint_fit(target, zero());
-		view.paint_span(target, scale, offset, *selection, image::bgr{b: true, g: true, r: true});
+		let scale = view.paint_fit(target, zero());
+		view.paint_span(target, scale, zero(), *selection, image::bgr{b: true, g: true, r: true});
 	}
 	#[throws] fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> bool { if self.event(size, zero(), event_context, event) != Change::None { true } else { false } }
 }
 
-#[derive(derive_more::Deref)] pub struct Scroll<'f,'t> { #[deref] pub edit: Edit<'f, 't>, offset: uint2 }
+#[derive(derive_more::Deref)] pub struct Scroll<'f,'t> { #[deref] pub edit: Edit<'f, 't>, pub offset: uint2 }
 impl Scroll<'f,'t> {
 	pub fn new(edit: Edit<'f,'t>) -> Self { Self{edit, offset: zero()} }
-	pub fn paint_fit(&mut self, target : &mut Target) -> (Ratio, uint2) { let Self{edit: Edit{view, ..}, offset} = self; view.paint_fit(target, *offset) }
+	pub fn paint_fit(&mut self, target : &mut Target) -> Ratio { let Self{edit: Edit{view, ..}, offset} = self; view.paint_fit(target, *offset) }
 	pub fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> Change {
 		let Self{edit, offset} = self;
-		let scale = edit.view.scale(size);
+		let (scroll_size, scale) = edit.view.size_scale(size);
 		let change = edit.event(size, scale**offset, event_context, event);
 		if change != Change::None {
 			let Edit{view, selection, ..} = edit;
 			let Rect{min,max} = view.span(selection.min(), selection.max());
-			let (min, max) = (scale*(min.y as u32), scale*(max.y as u32));
+			let (min, max) = (min.y as u32, max.y as u32);
 			offset.y = offset.y.min(min);
-			offset.y = offset.y.max(max-size.y);
+			offset.y = offset.y.max(0.max(max as i32 - (size.y/scale) as i32) as u32);
 		}
+		if let &Event::Scroll(value) = event { if scroll_size.y > size.y/scale {
+			offset.y = min(max(0, offset.y as i32+(value*16./scale) as i32) as u32, scroll_size.y - size.y/scale);
+			return Change::Scroll;
+		}}
 		change
 	}
 }
 impl Widget for Scroll<'_,'_> {
 	fn size(&mut self, size : size) -> size { self.edit.size(size) }
 	#[throws] fn paint(&mut self, target : &mut Target) {
-		let (scale, offset) = self.paint_fit(target);
-		let Edit{view, selection, ..} = &self.edit;
-		view.paint_span(target, scale, offset, *selection, image::bgr{b: true, g: true, r: true});
+		let scale = self.paint_fit(target);
+		let Scroll{edit: Edit{view, selection, ..}, offset} = self;
+		view.paint_span(target, scale, *offset, *selection, image::bgr{b: true, g: true, r: true});
 	}
 	#[throws] fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> bool { if self.event(size, event_context, event) != Change::None { true } else { false } }
 }

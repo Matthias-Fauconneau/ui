@@ -4,7 +4,7 @@ use std::lazy::SyncLazy;
 	&['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪'],
 	&(1..=10).map(|i| char::try_from(0xF700u32+i).unwrap()).collect::<Vec<_>>()[..], &['\0'; 20], &['\u{F70B}','\u{F70C}'], &['\0'; 8],
 	&['⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘']].concat());
-#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 1] = [272];
+#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
 
 use std::{rc::Rc, cell::Cell};
 use futures::{FutureExt, stream::{unfold, StreamExt}};
@@ -45,7 +45,7 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 														Timer::at(next).map({
 																let repeat = repeat.clone();
 																// stops and autodrops from streams when weak link fails to upgrade (repeat cell dropped)
-																move |_| { repeat.upgrade().map(|x| ({let key = x.get(); (box move |app| { app.key(key).unwrap(); }) as Box::<dyn Fn(&mut App<'t,_>)>}, next) ) }
+																move |_| { repeat.upgrade().map(|x| ({let key = x.get(); (box move |app| { app.key(key).unwrap(); app.draw(); }) as Box::<dyn Fn(&mut App<'t,_>)>}, next) ) }
 														})
 												}
 										}).boxed_local()
@@ -85,12 +85,15 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 			match event {
 				pointer::Event::Motion{surface_x, surface_y, ..} => {
 					position = {let p = get_surface_scale_factor(&app.surface) as f64*xy{x: surface_x, y: surface_y}; xy{x: p.x as u32, y: p.y as u32}};
-					if app.widget.event(app.size, &event_context, &Event::Motion{position, mouse_buttons}).unwrap() { app.draw(); }
+					if app.widget.event(app.size, &event_context, &Event::Motion{position, mouse_buttons}).unwrap() { app.need_update = true; }
 				},
 				pointer::Event::Button{button, state, ..} => {
 					let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
 					if state == pointer::ButtonState::Pressed { mouse_buttons |= 1<<button; } else { mouse_buttons &= !(1<<button); }
-					if app.widget.event(app.size, &event_context, &Event::Button{button, state, position}).unwrap() { app.draw(); }
+					if app.widget.event(app.size, &event_context, &Event::Button{button, state, position}).unwrap() { app.need_update = true; }
+				},
+				pointer::Event::Axis {axis: pointer::Axis::VerticalScroll, value, ..} => {
+					if app.widget.event(app.size, &event_context, &Event::Scroll(value as f32)).unwrap() { app.need_update = true; }
 				},
 				_ => {},
 			}
