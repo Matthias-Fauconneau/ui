@@ -1,5 +1,5 @@
 mod none;
-use {std::cmp::{min,max}, fehler::throws, error::Error, num::Zero, iter::Single};
+use {std::cmp::{min,max}, fehler::throws, error::Error, num::{Zero, zero, Ratio}, iter::Single, xy::{uint2, Rect}};
 use crate::{text::{self, unicode_segmentation::{self, GraphemeIndex, prev_word, next_word},
 														LineColumn, Span, Attribute, Style, line_ranges, View, default_style},
 									 widget::{Event, EventContext, Widget, size, Target, ModifiersState, ButtonState::Pressed}};
@@ -70,7 +70,7 @@ impl<'f, 't> Edit<'f, 't> {
 pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>) -> Self {
 	Self{view: View{font, data}, selection: Zero::zero(), history: Vec::new(), history_index: 0, last_change: Change::Other, compose: None}
 }
-pub fn event(&mut self, size : size, EventContext{modifiers_state: ModifiersState{ctrl,shift,alt,..}, pointer}: &EventContext, event: &Event) -> Change {
+pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state: ModifiersState{ctrl,shift,alt,..}, pointer}: &EventContext, event: &Event) -> Change {
 	let Self{ref mut view, selection, history, history_index, last_change, compose, ..} = self;
 	let change = match event {
 			&Event::Key{key} => (||{
@@ -214,13 +214,13 @@ pub fn event(&mut self, size : size, EventContext{modifiers_state: ModifiersStat
 			&Event::Motion{position, mouse_buttons} => {
 				if let Some(pointer) = pointer { let _ = pointer.set_cursor("text", None); }
 				if mouse_buttons != 0 {
-					let end = view.cursor(size, position);
+					let end = view.cursor(size, offset+position);
 					let next = Span{end, ..*selection};
 					if next == *selection { Change::None } else { *selection = next; Change::Cursor }
 				} else { Change::None }
 			},
 			&Event::Button{button: 0, position, state: Pressed} => {
-				let end = view.cursor(size, position);
+				let end = view.cursor(size, offset+position);
 				let next = Span{start: if *shift { selection.start } else { end }, end};
 				if next == *selection { Change::None } else { *selection = next; Change::Cursor }
 			},
@@ -235,10 +235,36 @@ impl Widget for Edit<'_,'_> {
 	fn size(&mut self, size : size) -> size { Widget::size(&mut self.view, size) }
 	#[throws] fn paint(&mut self, target : &mut Target) {
 		let Self{view, selection, ..} = self;
-		let scale = view.paint_fit(target);
-		view.paint_span(target, scale, *selection, image::bgr{b: true, g: true, r: true});
+		let (scale, offset) = view.paint_fit(target, zero());
+		view.paint_span(target, scale, offset, *selection, image::bgr{b: true, g: true, r: true});
 	}
-	#[throws] fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> bool {
-		if self.event(size, event_context, event) != Change::None { true } else { false }
+	#[throws] fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> bool { if self.event(size, zero(), event_context, event) != Change::None { true } else { false } }
+}
+
+#[derive(derive_more::Deref)] pub struct Scroll<'f,'t> { #[deref] pub edit: Edit<'f, 't>, offset: uint2 }
+impl Scroll<'f,'t> {
+	pub fn new(edit: Edit<'f,'t>) -> Self { Self{edit, offset: zero()} }
+	pub fn paint_fit(&mut self, target : &mut Target) -> (Ratio, uint2) { let Self{edit: Edit{view, ..}, offset} = self; view.paint_fit(target, *offset) }
+	pub fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> Change {
+		let Self{edit, offset} = self;
+		let scale = edit.view.scale(size);
+		let change = edit.event(size, scale**offset, event_context, event);
+		if change != Change::None {
+			let Edit{view, selection, ..} = edit;
+			let Rect{min,max} = view.span(selection.min(), selection.max());
+			let (min, max) = (scale*(min.y as u32), scale*(max.y as u32));
+			offset.y = offset.y.min(min);
+			offset.y = offset.y.max(max-size.y);
+		}
+		change
 	}
+}
+impl Widget for Scroll<'_,'_> {
+	fn size(&mut self, size : size) -> size { self.edit.size(size) }
+	#[throws] fn paint(&mut self, target : &mut Target) {
+		let (scale, offset) = self.paint_fit(target);
+		let Edit{view, selection, ..} = &self.edit;
+		view.paint_span(target, scale, offset, *selection, image::bgr{b: true, g: true, r: true});
+	}
+	#[throws] fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> bool { if self.event(size, event_context, event) != Change::None { true } else { false } }
 }

@@ -152,4 +152,4 @@ pub fn quit(&mut self) { self.display = None }
 	else { false }
 }
 }
-#[throws] pub fn run(widget: impl Widget) { async_io::block_on(App::new(widget)?.display())? }
+#[throws] pub fn run(widget: impl Widget) { futures_lite::future::block_on(App::new(widget)?.display())? }

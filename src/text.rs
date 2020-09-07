@@ -125,11 +125,10 @@ fn position(font: &ttf_parser::Face<'_>, text: &str, LineColumn{line, column}: L
 	) as u32,
 	y: (line as u32)*(font.height() as u32)
 }}
-fn span(font: &ttf_parser::Face<'_>, text: &str, min: LineColumn, max: LineColumn) -> Rect {
-	Rect{min: position(font, text, min).signed(), max: (position(font, text, max)+xy{x:0, y: font.height() as u32}).signed()}
-}
 
 impl<D:AsRef<str>> View<'_, D> {
+	fn position(&self, cursor: LineColumn) -> uint2 { let Self{font, data} = self; let text = AsRef::<str>::as_ref(&data); self::position(font, text, cursor) }
+	pub fn span(&self, min: LineColumn, max: LineColumn) -> Rect { Rect{min: self.position(min).signed(), max: (self.position(max)+xy{x:0, y: self.font.height() as u32}).signed()} }
 	pub fn cursor(&self, size: size, position: uint2) -> LineColumn {
 		let position = position / self.scale(size);
 		let View{font, data, ..} = self;
@@ -141,29 +140,27 @@ impl<D:AsRef<str>> View<'_, D> {
 			.take_while(|&(_, x)| x <= position.x as i32).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
 	}
-	pub fn paint_span(&self, target : &mut Target, scale: Ratio, span: Span, bgr: image::bgr<bool>) {
-		let Self{font, data} = self;
+	pub fn paint_span(&self, target : &mut Target, scale: Ratio, offset: uint2, span: Span, bgr: image::bgr<bool>) {
 		let [min, max] = [span.min(), span.max()];
-		let text = AsRef::<str>::as_ref(&data);
-		if min.line < max.line { image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,min,LineColumn{line: min.line, column: usize::MAX})), bgr); }
+		if min.line < max.line { image::invert(&mut target.slice_mut_clip(scale*self.span(min,LineColumn{line: min.line, column: usize::MAX})-offset), bgr); }
 		if min.line == max.line {
 			if min == max { // cursor
 				fn widen(l: Rect, dx: u32) -> Rect { Rect{min: l.min-xy{x:dx/2,y:0}.signed(), max:l.max+xy{x:dx/2,y:0}.signed()} }
-				image::invert(&mut target.slice_mut_clip(scale*widen(self::span(font,text,span.end,span.end), font.height() as u32/16)), bgr);
+				image::invert(&mut target.slice_mut_clip(scale*widen(self.span(span.end,span.end)-offset, self.font.height() as u32/16)-offset), bgr);
 			}
 			if min != max { // selection
-				image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,min,max)), bgr);
+				image::invert(&mut target.slice_mut_clip(scale*self.span(min,max)-offset), bgr);
 			}
 		}
 		else { for line in min.line+1..max.line {
-			image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,LineColumn{line, column: 0},LineColumn{line, column: usize::MAX})), bgr);
+			image::invert(&mut target.slice_mut_clip(scale*self.span(LineColumn{line, column: 0},LineColumn{line, column: usize::MAX})-offset), bgr);
 		}}
-		if max.line > min.line { image::invert(&mut target.slice_mut_clip(scale*self::span(font,text,LineColumn{line: max.line, column: 0}, max)), bgr); }
+		if max.line > min.line { image::invert(&mut target.slice_mut_clip(scale*self.span(LineColumn{line: max.line, column: 0}, max)-offset), bgr); }
 	}
 }
 
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
-	pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio) {
+	pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio, offset: uint2) {
 		let Self{font, data} = &*self;
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		'lines: for (line_index, line) in line_ranges(&data.as_ref()).enumerate() {
@@ -183,14 +180,14 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					x: (x+font.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
 					y: (line_index as u32)*(font.height() as u32) + (font.ascender()-bbox.max.y as i16) as u32
 				};
-				let offset = scale*position;
+				let offset = scale*position - offset;
 				if offset.y > target.size.y { break 'lines; } // Clip
 				let size = vector::component_wise_min(coverage.size, target.size-offset);
 				image::fill_mask(&mut target.slice_mut(offset, size), style.map(|x|x.attribute.color).unwrap_or((1.).into()), &coverage.slice(zero(), size));
 			}
 		}
 	}
-	pub fn paint_fit(&mut self, target : &mut Target) -> Ratio {
+	pub fn paint_fit(&mut self, target : &mut Target, offset: uint2) -> (Ratio, uint2) {
 		pub fn time<T>(task: impl FnOnce() -> T) -> T {
 			let time = std::time::Instant::now();
 			let result = task();
@@ -198,12 +195,13 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 			result
 		}
 		let scale = time(|| self.scale(target.size));
-		self.paint(target, scale);
-		scale
+		let offset = scale*offset;
+		self.paint(target, scale, offset);
+		(scale, offset)
 	}
 }
 use crate::widget::{Widget, Target};
 impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 	fn size(&mut self, size: size) -> size { fit_width(size.x, Self::size(&self)) }
-	#[throws] fn paint(&mut self, target : &mut Target) { self.paint_fit(target); }
+	#[throws] fn paint(&mut self, target : &mut Target) { self.paint_fit(target, zero()); }
 }
