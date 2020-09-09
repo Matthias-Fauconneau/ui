@@ -49,11 +49,10 @@ pub type TextRange = std::ops::Range<GraphemeIndex>;
 #[derive(Clone,derive_more::Deref,Debug)] pub struct Attribute<T> { #[deref] pub range: TextRange, pub attribute: T }
 
 use std::lazy::SyncLazy;
-#[allow(non_upper_case_globals)] pub static default_font : SyncLazy<font::File<'static>> = SyncLazy::new(|| font::open(
-		["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/liberation-fonts/LiberationSans-Regular.ttf"].iter().map(std::path::Path::new)
-			.filter(|x| std::path::Path::exists(x))
-			.next().unwrap()
-	).unwrap());
+#[allow(non_upper_case_globals)] pub static default_font : SyncLazy<font::File<'static>> = SyncLazy::new(||(|| {
+	use std::path::Path;
+	font::open(["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/liberation-fonts/LiberationSans-Regular.ttf"].iter().map(Path::new).find(|p| Path::exists(p)).unwrap())
+})().unwrap());
 #[allow(non_upper_case_globals)]
 pub const default_style: [Attribute::<Style>; 1] = [Attribute{range: 0..GraphemeIndex::MAX, attribute: Style{color: Color{b:1.,r:1.,g:1.}, style: FontStyle::Normal}}];
 use std::sync::Mutex;
@@ -143,20 +142,19 @@ impl<D:AsRef<str>> View<'_, D> {
 	}
 	pub fn paint_span(&self, target : &mut Target, scale: Ratio, offset: uint2, span: Span, bgr: image::bgr<bool>) {
 		let [min, max] = [span.min(), span.max()];
-		if min.line < max.line { image::invert(&mut target.slice_mut_clip(scale*(self.span(min,LineColumn{line: min.line, column: usize::MAX})-offset)), bgr); }
+		let mut invert = |r| Some(image::invert(&mut target.slice_mut_clip(scale*(r-offset))?, bgr));
+		if min.line < max.line { invert(self.span(min,LineColumn{line: min.line, column: usize::MAX})); }
 		if min.line == max.line {
-			if min == max { // cursor
+			if min != max { invert(self.span(min,max)); } // selection
+			else { // cursor
 				fn widen(l: Rect, dx: u32) -> Rect { Rect{min: l.min-xy{x:dx/2,y:0}.signed(), max:l.max+xy{x:dx/2,y:0}.signed()} }
-				image::invert(&mut target.slice_mut_clip(scale*(widen(self.span(span.end,span.end), self.font.height() as u32/16)-offset)), bgr);
-			}
-			if min != max { // selection
-				image::invert(&mut target.slice_mut_clip(scale*(self.span(min,max)-offset)), bgr);
+				invert(widen(self.span(span.end,span.end), self.font.height() as u32/16));
 			}
 		}
 		else { for line in min.line+1..max.line {
-			image::invert(&mut target.slice_mut_clip(scale*(self.span(LineColumn{line, column: 0},LineColumn{line, column: usize::MAX})-offset)), bgr);
+			invert(self.span(LineColumn{line, column: 0},LineColumn{line, column: usize::MAX}));
 		}}
-		if max.line > min.line { image::invert(&mut target.slice_mut_clip(scale*(self.span(LineColumn{line: max.line, column: 0}, max)-offset)), bgr); }
+		if max.line > min.line { invert(self.span(LineColumn{line: max.line, column: 0}, max)); }
 	}
 }
 

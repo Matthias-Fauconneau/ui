@@ -7,7 +7,7 @@ pub fn index(s: &str, grapheme_index: GraphemeIndex) -> usize {
 		_ => panic!()
 	}
 }
-pub fn find(s: &str, byte_index: usize) -> GraphemeIndex { s.grapheme_indices(true).enumerate().find(|&(_,(i,_))| i == byte_index).unwrap().0 }
+#[throws(as Option)] pub fn find(s: &str, byte_index: usize) -> GraphemeIndex { s.grapheme_indices(true).enumerate().find(|&(_,(i,_))| i == byte_index)?.0 }
 
 #[derive(PartialEq,Clone,Copy)] enum Class { Space, Alphanumeric, Symbol }
 fn classify(g: &str) -> Class {
@@ -34,8 +34,8 @@ use fehler::throws;
 #[throws(as Option)] fn next_word_start(text: &str) -> GraphemeIndex {
 	let mut graphemes = text.graphemes(true).enumerate().map(|(i,e)| (i as GraphemeIndex, e)).peekable();
 	match run(&mut graphemes)? {
-		(last, Class::Space) => last,
-		(last, _) => { run_class(&mut graphemes, Class::Space).unwrap_or(last) },
+		(last, Class::Space) => last+1,
+		(last, _) => { run_class(&mut graphemes, Class::Space).unwrap_or(last)+1 },
 	}
 }
 

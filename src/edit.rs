@@ -249,22 +249,26 @@ impl Widget for Edit<'_,'_> {
 impl Scroll<'f,'t> {
 	pub fn new(edit: Edit<'f,'t>) -> Self { Self{edit, offset: zero()} }
 	pub fn paint_fit(&mut self, target : &mut Target) -> Ratio { let Self{edit: Edit{view, ..}, offset} = self; view.paint_fit(target, *offset) }
+	pub fn keep_selection_in_view(&mut self, size: size) {
+		let Self{edit: Edit{view, selection, ..}, offset} = self;
+		let Rect{min,max} = view.span(selection.min(), selection.max());
+		let (min, max) = (min.y as u32, max.y as u32);
+		offset.y = offset.y.min(min);
+		offset.y = offset.y.max(0.max(max as i32 - (size.y/view.scale(size)) as i32) as u32);
+	}
 	pub fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> Change {
 		let Self{edit, offset} = self;
 		let (scroll_size, scale) = edit.view.size_scale(size);
-		let change = edit.event(size, scale**offset, event_context, event);
-		if change != Change::None {
-			let Edit{view, selection, ..} = edit;
-			let Rect{min,max} = view.span(selection.min(), selection.max());
-			let (min, max) = (min.y as u32, max.y as u32);
-			offset.y = offset.y.min(min);
-			offset.y = offset.y.max(0.max(max as i32 - (size.y/scale) as i32) as u32);
+		if let &Event::Scroll(value) = event {
+			if scroll_size.y > size.y/scale {
+				offset.y = min(max(0, offset.y as i32+(value*16./scale) as i32) as u32, scroll_size.y - size.y/scale);
+				Change::Scroll
+			} else { Change::None }
+		} else {
+			let change = edit.event(size, scale**offset, event_context, event);
+			if change != Change::None { self.keep_selection_in_view(size); }
+			change
 		}
-		if let &Event::Scroll(value) = event { if scroll_size.y > size.y/scale {
-			offset.y = min(max(0, offset.y as i32+(value*16./scale) as i32) as u32, scroll_size.y - size.y/scale);
-			return Change::Scroll;
-		}}
-		change
 	}
 }
 impl Widget for Scroll<'_,'_> {
