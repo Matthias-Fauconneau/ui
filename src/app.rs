@@ -7,7 +7,7 @@ use client_toolkit::{
 		protocols::xdg_shell::client::{xdg_wm_base::{XdgWmBase as WmBase}, xdg_surface::{self, XdgSurface}, xdg_toplevel as toplevel},
 	},
 };
-use {fehler::throws, error::Error, num::Zero, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
+use {fehler::throws, error::Error, num::zero, ::xy::{xy, size}, image::bgra8, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
 
 default_environment!(Compositor,
 	fields = [ wm_base: SimpleGlobal<WmBase> ],
@@ -97,12 +97,14 @@ use std::{rc::Rc, cell::RefCell};
 	unfold(queue, async move |q| {
 		q.borrow().read_with(|q| q.prepare_read().ok_or(std::io::Error::new(std::io::ErrorKind::Interrupted, "Dispatch all events before polling"))?.read_events()).await.unwrap();
 		Some(({
-						let q = q.clone();
-						(box move |mut app| {
-								q.borrow_mut().get_mut().dispatch_pending(/*Any: 'static*/unsafe{std::mem::transmute::<&mut App<'t, W>, &mut App<'static,&mut dyn Widget>>(&mut app)}, |_,_,_| ()).unwrap();
-								app.draw();
-						}) as Box<dyn Fn(&mut _/*App<'t, W>*/)>
-				}, q))
+			let q = q.clone();
+			(box move |mut app| {
+				trace::timeout(100, || {
+					q.borrow_mut().get_mut().dispatch_pending(/*Any: 'static*/unsafe{std::mem::transmute::<&mut App<'t, W>, &mut App<'static,&mut dyn Widget>>(&mut app)}, |_,_,_| ()).unwrap();
+					app.draw();
+				})
+			}) as Box<dyn Fn(&mut _/*App<'t, W>*/)>
+		}, q))
 	}).boxed_local()
 }
 
@@ -123,8 +125,8 @@ impl<'t, W:Widget> App<'t, W> {
 			pool,
 			surface,
 			widget,
-			size: Zero::zero(),
-			unscaled_size: Zero::zero(),
+			size: zero(),
+			unscaled_size: zero(),
 			need_update: false,
 	}
 }

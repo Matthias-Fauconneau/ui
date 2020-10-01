@@ -7,17 +7,16 @@ edition = '2018'
 [features]
 widget = ['fehler','error','client-toolkit']
 app = ['fehler','num','futures','async-io','futures-lite','client-toolkit','widget','sc','vector']
-font = ['derive-more','fehler','ttf-parser','kurbo','array','image/num']
-graphic = ['xy/iter','fehler','widget','image/sRGB','font']
+font = ['derive-more','fehler','ttf-parser','kurbo','image/num']
+graphic = ['fehler','widget','font']
 font-file = ['font','owning-ref','memmap']
-text = ['unicode-segmentation','iter','num','xy/iter','font','image/sRGB','widget','font-file','derive-more']
+text = ['unicode-segmentation','iter','num','font','widget','font-file','derive-more']
 edit = ['text']
 color = ['vector']
-default = ['color','text','edit','app','graphic']
+default = ['color','text','edit','app']
 
 [dependencies]
 iter = { path='../iter', optional=true }
-array = { path='../array', optional=true }
 num = { path='../num', optional=true }
 vector = { path='../vector', optional=true }
 cfg-if = ''
@@ -41,6 +40,8 @@ client-toolkit = { version='', package='smithay-client-toolkit', optional=true, 
 kurbo = { version='', optional=true }
 ttf-parser = { version='', optional=true }
 unicode-segmentation = { version='', optional=true }
+
+trace = { path='../trace', optional=true }
 
 [[example]]
 name = 'window'

@@ -1,7 +1,7 @@
 mod none;
-use {std::cmp::{min,max}, fehler::throws, error::Error, num::{Zero, zero, Ratio}, iter::Single, xy::{uint2, Rect}};
+use {std::cmp::{min,max}, fehler::throws, error::Error, num::{zero, Ratio}, iter::Single, xy::{uint2, Rect}};
 use crate::{text::{self, unicode_segmentation::{self, GraphemeIndex, prev_word, next_word},
-														LineColumn, Span, Attribute, Style, line_ranges, View, default_style},
+														LineColumn, Span, Attribute, Style, line_ranges, Font, View, default_style},
 									 widget::{Event, EventContext, Widget, size, Target, ModifiersState, ButtonState::Pressed}};
 
 pub struct Buffer<T, S> {
@@ -70,8 +70,8 @@ pub static COMPOSE: SyncLazy<Vec<(Vec<char>, char)>> = SyncLazy::new(|| {
 });
 
 impl<'f, 't> Edit<'f, 't> {
-pub fn new(font: &'f ttf_parser::Face<'font>, data: Cow<'t>) -> Self {
-	Self{view: View{font, data, size: None}, selection: Zero::zero(), history: Vec::new(), history_index: 0, last_change: Change::Other, compose: None}
+pub fn new(font: Font<'f>, data: Cow<'t>) -> Self {
+	Self{view: View{font, data, size: None}, selection: zero(), history: Vec::new(), history_index: 0, last_change: Change::Other, compose: None}
 }
 pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state: ModifiersState{ctrl,shift,alt,..}, pointer}: &EventContext, event: &Event) -> Change {
 	let Self{ref mut view, selection, history, history_index, last_change, compose, ..} = self;
