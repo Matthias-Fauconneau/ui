@@ -16,15 +16,17 @@ default_environment!(Compositor,
 
 pub struct App<'t, W> {
 	display: Option<Display>,
-	pub streams: SelectAll<LocalBoxStream<'t, Box<dyn Fn(&mut Self)+'t>>>,
+	pub streams: SelectAll<LocalBoxStream<'t, Box<dyn Fn/*Mut fixme*/(&mut Self)+'t>>>,
 	pool: MemPool,
 	_seat_listener: SeatListener,
 	pub(crate) modifiers_state: ModifiersState,
 	pub(crate) surface: Attached<Surface>,
-	pub(crate) widget: W,
+	pub widget: W,
 	pub(crate) size: size,
 	unscaled_size: size,
-	pub(crate) need_update: bool,
+	pub need_update: bool,
+	//pub iterator: Box<dyn Iterator<Item=Box<dyn Fn(&mut Self)+'t>>>,
+	pub idle: Box<dyn FnMut(&mut W)->bool>,
 }
 
 #[throws] fn draw(pool: &mut MemPool, surface: &Surface, widget: &mut dyn Widget, size: size) {
@@ -128,9 +130,16 @@ impl<'t, W:Widget> App<'t, W> {
 			size: zero(),
 			unscaled_size: zero(),
 			need_update: false,
+			idle: box|_| false,
 	}
 }
-#[throws(std::io::Error)] pub async fn display(&mut self) { while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await { event(self); if self.display.is_none() { break; } } }
+#[throws(std::io::Error)] pub async fn display(&mut self) {
+	while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await {
+		event(self);
+		if self.display.is_none() { break; }
+		if (self.idle)(&mut self.widget) { self.need_update = true; } // Simpler than streams
+	}
+}
 pub fn draw(&mut self) {
 	let Self{display, pool, widget, size, surface, need_update, /*unscaled_size,*/ ..} = self;
 	/*let max_size = with_output_info(get_surface_outputs(&surface).first().unwrap(), |info| ::xy::int2::from(info.modes.first().unwrap().dimensions).into()).unwrap();
@@ -151,5 +160,6 @@ pub fn quit(&mut self) { self.display = None }
 	else if key == '⎋' { self.quit(); false }
 	else { false }
 }
+#[throws] pub fn run(mut self) { futures_lite::future::block_on(self.display())? }
 }
-#[throws] pub fn run(widget: impl Widget) { futures_lite::future::block_on(App::new(widget)?.display())? }
+#[throws] pub fn run(widget: impl Widget) { App::new(widget)?.run()? }
