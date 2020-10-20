@@ -1,17 +1,8 @@
 mod none;
-use {std::cmp::{min,max}, fehler::throws, error::Error, num::{zero, Ratio}, iter::Single, xy::{uint2, Rect}};
+use {std::cmp::{min,max}, fehler::throws, error::Error, num::{IsZero, zero, Ratio}, iter::Single, xy::{uint2, Rect}};
 use crate::{text::{self, unicode_segmentation::{self, GraphemeIndex, prev_word, next_word},
-														LineColumn, Span, Attribute, Style, line_ranges, Font, View, default_style},
+														LineColumn, Span, Attribute, Style, line_ranges, Font, View, Buffer, Borrowed},
 									 widget::{Event, EventContext, Widget, size, Target, ModifiersState, ButtonState::Pressed}};
-
-pub struct Buffer<T, S> {
-	pub text : T,
-	pub style: S,
-}
-pub type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
-
-impl AsRef<str> for Borrowed<'_> { fn as_ref(&self) -> &str { self.text } }
-impl AsRef<[Attribute<Style>]> for Borrowed<'_> {  fn as_ref(&self) -> &[Attribute<Style>] { self.style } }
 
 pub type Owned = Buffer<String, Vec<Attribute<Style>>>;
 trait ToOwned { type Owned; fn to_owned(&self) -> Self::Owned; }
@@ -33,7 +24,7 @@ impl Cow<'_> {
 impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { match self { Cow::Borrowed(b) => b.text, Cow::Owned(o) => &o.text} } }
 impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { match self { Cow::Borrowed(b) => b.style, Cow::Owned(o) => &o.style} } }
 
-impl Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed{text, style: &default_style}) } }
+impl Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed::new(text)) } }
 
 struct State {
 	text: String, // fixme: diff
@@ -236,7 +227,10 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 }
 
 impl Widget for Edit<'_,'_> {
-	fn size(&mut self, size : size) -> size { Widget::size(&mut self.view, size) }
+	fn size(&mut self, size : size) -> size {
+		let size = Widget::size(&mut self.view, size);
+		if !size.is_zero() { size } else { (self.view.font[0].height() as u32).into() }
+	}
 	#[throws] fn paint(&mut self, target : &mut Target) {
 		let Self{view, selection, ..} = self;
 		let scale = view.paint_fit(target, zero());

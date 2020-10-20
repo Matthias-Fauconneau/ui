@@ -64,8 +64,9 @@ pub struct View<'t, D> {
     pub size : Option<size>
 }
 
-impl<D> View<'_, D> {
+impl<'t, D> View<'t, D> {
 	pub fn new(data: D) -> Self { Self{font: default_font(), data, size: None} }
+	pub fn new_with_face(face : &'t Face<'t>, data: D) -> Self { Self{font: [&face, &face], data, size: None} }
 }
 
 use {image::{Image, bgra8}, num::{IsZero, Zero, div_ceil, clamp}};
@@ -86,7 +87,7 @@ impl<D:AsRef<str>> View<'_, D> {
 	pub fn size_scale(&mut self, fit: size) -> (size, Ratio) {
 		let size = Self::size(self);
 		//if fit.x*size.y < fit.y*fit.x { Ratio{num: fit.x-1, div: size.x-1} } else { Ratio{num: fit.y-1, div: size.y-1} } // Fit
-		(size, Ratio{num: fit.x-1, div: size.x-1}) // Fit width
+		(size, if size.is_zero() { Ratio{num: 1, div: 1} } else { Ratio{num: fit.x-1, div: size.x-1} }) // Fit width
 	}
 	pub fn scale(&mut self, fit: size) -> Ratio { self.size_scale(fit).1 }
 }
@@ -122,12 +123,15 @@ impl Span {
 }
 
 use iter::NthOrLast;
-fn position(font: &Font<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 { xy{
-	x: layout(font, line_ranges(text).nth(line).unwrap().graphemes(true).enumerate()).nth_or_last(column as usize).map_or_else(
-		|last| last.map_or(0, |Glyph{x,id,face,..}| x+(face.glyph_hor_advance(id).unwrap() as i32)),
-		|layout| layout.x
-	) as u32,
-	y: (line as u32)*(font[0].height() as u32)
+fn position(font: &Font<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 {
+	if text.is_empty() { assert!(line==0&&column==0); zero() } else {
+	xy{
+		x: layout(font, line_ranges(text).nth(line).unwrap().graphemes(true).enumerate()).nth_or_last(column as usize).map_or_else(
+			|last| last.map_or(0, |Glyph{x,id,face,..}| x+(face.glyph_hor_advance(id).unwrap() as i32)),
+			|layout| layout.x
+		) as u32,
+		y: (line as u32)*(font[0].height() as u32)
+	}
 }}
 
 impl<D:AsRef<str>> View<'_, D> {
@@ -135,6 +139,7 @@ impl<D:AsRef<str>> View<'_, D> {
 	fn position(&self, cursor: LineColumn) -> uint2 { self::position(&self.font, self.text(), cursor) }
 	pub fn span(&self, min: LineColumn, max: LineColumn) -> Rect { Rect{min: self.position(min).signed(), max: (self.position(max)+xy{x:0, y: self.font[0].height() as u32}).signed()} }
 	pub fn cursor(&mut self, size: size, position: uint2) -> LineColumn {
+		if self.text().is_empty() { return zero(); }
 		let position = position / self.scale(size);
 		let View{font, ..} = &self;
 		let line = clamp(0, (position.y/font[0].height() as u32) as usize, line_ranges(self.text()).count()-1);
@@ -209,3 +214,13 @@ impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 	fn size(&mut self, size: size) -> size { fit_width(size.x, Self::size(self)) }
 	#[throws] fn paint(&mut self, target : &mut Target) { self.paint_fit(target, zero()); }
 }
+
+pub struct Buffer<T, S> {
+	pub text : T,
+	pub style: S,
+}
+pub type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
+
+impl AsRef<str> for Borrowed<'_> { fn as_ref(&self) -> &str { self.text } }
+impl AsRef<[Attribute<Style>]> for Borrowed<'_> {  fn as_ref(&self) -> &[Attribute<Style>] { self.style } }
+impl Borrowed<'t> { pub fn new(text: &'t str) -> Self { Borrowed{text, style: &default_style} } }

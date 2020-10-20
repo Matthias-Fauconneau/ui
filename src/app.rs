@@ -1,6 +1,6 @@
 use futures::stream::{StreamExt, unfold, LocalBoxStream, SelectAll, select_all};
 use client_toolkit::{
-	default_environment, environment::{Environment, SimpleGlobal}, init_default_environment,
+	default_environment, environment::{Environment, SimpleGlobal}, new_default_environment,
 	seat::{SeatListener, with_seat_data}, output::with_output_info, get_surface_outputs, get_surface_scale_factor, shm::{MemPool, Format},
 	reexports::{
 		client::{Display, EventQueue, Main, Attached, protocol::wl_surface::WlSurface as Surface},
@@ -28,7 +28,7 @@ pub struct App<'t, W> {
 }
 
 #[throws] fn draw(pool: &mut MemPool, surface: &Surface, widget: &mut dyn Widget, size: size) {
-	assert!(size.x < 124839 || size.y < 1443);
+	assert!(size.x > 0 && size.y > 0 && size.x < 124839, "{:?}", size);
 	let stride = size.x*4;
 	pool.resize((size.y*stride) as usize)?;
 	let mut target = Target::from_bytes(pool.mmap(), size);
@@ -71,7 +71,7 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 				if !(unscaled_size.x > 0 && unscaled_size.y > 0) {
 					let (scale, size) = with_output_info(env.get_all_outputs().first().unwrap(), |info| (info.scale_factor as u32, ::xy::int2::from(info.modes.first().unwrap().dimensions).into()) ).unwrap();
 					let size = vector::component_wise_min(size, widget.size(size));
-					assert!(size.x < 124839 || size.y < 1443, size);
+					assert!(size.x > 0 && size.y > 0 && size.x < 124839, "{:?}", size);
 					*unscaled_size = ::xy::div_ceil(size, scale);
 					//xdg_surface.set_window_geometry(.., unscaled_size.x, unscaled_size.y); // If never set, the value is the full bounds of the surface
 				}
@@ -99,10 +99,10 @@ use std::{rc::Rc, cell::RefCell};
 		Some(({
 			let q = q.clone();
 			(box move |mut app| {
-				trace::timeout(100, || {
+				//trace::timeout(100, || {
 					q.borrow_mut().get_mut().dispatch_pending(/*Any: 'static*/unsafe{std::mem::transmute::<&mut App<'t, W>, &mut App<'static,&mut dyn Widget>>(&mut app)}, |_,_,_| ()).unwrap();
 					app.draw();
-				})
+				//})
 			}) as Box<dyn Fn(&mut _/*App<'t, W>*/)>
 		}, q))
 	}).boxed_local()
@@ -110,7 +110,7 @@ use std::{rc::Rc, cell::RefCell};
 
 impl<'t, W:Widget> App<'t, W> {
 #[throws] pub fn new(widget: W) -> Self {
-	let (env, display, queue) = init_default_environment!(Compositor, fields = [wm_base: SimpleGlobal::new()])?;
+	let (env, display, queue) = new_default_environment!(Compositor, fields = [wm_base: SimpleGlobal::new()])?;
 	let theme_manager = client_toolkit::seat::pointer::ThemeManager::init(client_toolkit::seat::pointer::ThemeSpec::System, env.require_global(), env.require_global());
 	for s in env.get_all_seats() { with_seat_data(&s, |seat_data| crate::input::seat::<W>(&theme_manager, &s, seat_data)); }
 	let _seat_listener = env.listen_for_seats(move /*theme_manager*/ |s, seat_data, _| crate::input::seat::<W>(&theme_manager, &s, seat_data));

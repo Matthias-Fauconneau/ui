@@ -40,7 +40,7 @@ pub struct View<'t> { graphic: Graphic<'t>, view: Rect }
 
 impl<'t> View<'t> { pub fn new(graphic: Graphic<'t>) -> Self { Self{view: graphic.bounds(), graphic} } }
 
-use {fehler::throws, error::{Error, Result}, num::Zero, ::xy::size, image::{Image, sRGB, bgra8}, crate::{widget::{self, Target}, font::Rasterize}};
+use {fehler::throws, error::{Error, Result}, num::zero, ::xy::size, image::{Image, sRGB, bgra8}, crate::{widget::{self, Target}, font::Rasterize}};
 
 impl widget::Widget for View<'_> {
     fn size(&mut self, _: size) -> size { xy::ceil(&self.graphic.scale, self.view.size()) }
@@ -60,7 +60,7 @@ impl widget::Widget for View<'_> {
 					let bbox = self.graphic.font.glyph_bounding_box(id).map(crate::text::rect).unwrap();
 					let coverage = self.graphic.font.rasterize(self.graphic.scale, id, bbox);
 					let size = vector::component_wise_min(coverage.size, target.size-offset);
-					target.slice_mut(offset, size).zip_map(coverage.slice(Zero::zero(), size), |_, &target, &coverage| target + coverage);
+					target.slice_mut(offset, size).zip_map(coverage.slice(zero(), size), |_, &target, &coverage| target + coverage);
 				}
 			}
 			target

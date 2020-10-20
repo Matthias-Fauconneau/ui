@@ -9,7 +9,7 @@ use std::lazy::SyncLazy;
 use std::{rc::Rc, cell::Cell};
 use futures::{FutureExt, stream::{unfold, StreamExt}};
 use client_toolkit::{seat::{SeatData, pointer::ThemeManager}, get_surface_scale_factor, reexports::client::{Attached, protocol::{wl_seat::WlSeat as Seat, wl_keyboard as keyboard, wl_pointer as pointer}}};
-use {xy::xy, crate::{app::App, widget::{Widget, EventContext, Event, ModifiersState}}};
+use {::xy::xy, crate::{app::App, widget::{Widget, EventContext, Event, ModifiersState}}};
 
 pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, seat_data: &SeatData) {
 	//for e in usb_hid_usage_table.iter().enumerate() { println!("{:?}", e); }
