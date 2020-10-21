@@ -48,13 +48,15 @@ impl Default for FontStyle { fn default() -> Self { Self::Normal } }
 #[derive(Clone,Copy,Default,Debug)] pub struct Style { pub color: Color, pub style: FontStyle }
 pub type TextRange = std::ops::Range<GraphemeIndex>;
 #[derive(Clone,derive_more::Deref,Debug)] pub struct Attribute<T> { #[deref] pub range: TextRange, pub attribute: T }
+const fn from(color: Color) -> Attribute<Style> { Attribute{range: 0..GraphemeIndex::MAX, attribute: Style{color, style: FontStyle::Normal}} }
+impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { from(color) } }
 
 use {std::{lazy::SyncLazy, path::Path}};
 #[allow(non_upper_case_globals)] pub static default_font_files : SyncLazy<[font::File<'static>; 2]> = SyncLazy::new(||
 	["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(Path::new(p)).unwrap()));
 pub fn default_font() -> Font<'static> { iter::array::FromIterator::from_iter(default_font_files.iter().map(|x| std::ops::Deref::deref(x))) }
 #[allow(non_upper_case_globals)]
-pub const default_style: [Attribute::<Style>; 1] = [Attribute{range: 0..GraphemeIndex::MAX, attribute: Style{color: Color{b:1.,r:1.,g:1.}, style: FontStyle::Normal}}];
+pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
 use std::sync::Mutex;
 pub static CACHE: SyncLazy<Mutex<Vec<((Ratio, GlyphId),Image<Vec<u8>>)>>> = SyncLazy::new(|| Mutex::new(Vec::new()));
 
