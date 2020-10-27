@@ -13,6 +13,7 @@ font-file = ['font','owning-ref','memmap']
 text = ['unicode-segmentation','iter','num','font','widget','font-file','derive-more']
 edit = ['text']
 color = ['vector']
+plot = ['text','color']
 default = ['color','text','edit','app']
 
 [dependencies]
