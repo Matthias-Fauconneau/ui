@@ -1,4 +1,4 @@
-#![cfg_attr(feature="app", feature(async_closure,box_syntax))]
+#![cfg_attr(feature="app", feature(async_closure,box_syntax,stmt_expr_attributes))]
 #![cfg_attr(any(feature="app",feature="text"), feature(once_cell))]
 #![cfg_attr(feature="font", feature(array_value_iter))]
 //#![cfg_attr(feature="font", feature(non_ascii_idents))]//#![cfg_attr(feature="font", allow(uncommon_codepoints))]

@@ -13,7 +13,7 @@ font-file = ['font','owning-ref','memmap']
 text = ['unicode-segmentation','iter','num','font','widget','font-file','derive-more']
 edit = ['text']
 color = ['vector']
-plot = ['text','color']
+plot = ['text','color','itertools']
 default = ['color','text','edit','app']
 
 [dependencies]
@@ -25,7 +25,6 @@ fehler = { version='', optional=true } # #[throws] expects {{root}}::fehler
 derive-more = { version='', package='derive_more', optional=true }
 owning-ref = { version='', package='owning_ref', optional=true }
 error = { version='', package='anyhow', optional=true }
-#futures = { version='^0.3', optional=true } # SelectAll, select_all, LocalBoxStream
 futures = { version='', optional=true, package = 'futures-util' } # SelectAll, select_all, LocalBoxStream
 sc = { version='', optional=true } #''
 futures-lite = { version='', optional=true }
@@ -36,13 +35,13 @@ dirs = ''
 xy = { path='../xy' }
 image = { path='../image' }
 client-toolkit = { version='', package='smithay-client-toolkit', optional=true, default-features=false }
-#clipboard = { package='smithay-clipboard' } # fixme: looks complicated
 
 kurbo = { version='', optional=true }
 ttf-parser = { version='', optional=true }
 unicode-segmentation = { version='', optional=true }
 
 trace = { path='../trace', optional=true }
+itertools = { version='', optional=true }
 
 [[example]]
 name = 'window'

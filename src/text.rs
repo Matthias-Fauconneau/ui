@@ -54,7 +54,7 @@ impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { from(col
 use {std::{lazy::SyncLazy, path::Path}};
 #[allow(non_upper_case_globals)] pub static default_font_files : SyncLazy<[font::File<'static>; 2]> = SyncLazy::new(||
 	["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(Path::new(p)).unwrap()));
-pub fn default_font() -> Font<'static> { iter::array::FromIterator::from_iter(default_font_files.iter().map(|x| std::ops::Deref::deref(x))) }
+pub fn default_font() -> Font<'static> { iter::array_from_iter(iter::into::IntoMap::map(&*default_font_files, |x| std::ops::Deref::deref(x))) }
 #[allow(non_upper_case_globals)]
 pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
 use std::sync::Mutex;
@@ -71,7 +71,7 @@ impl<'t, D> View<'t, D> {
 	pub fn new_with_face(face : &'t Face<'t>, data: D) -> Self { Self{font: [&face, &face], data, size: None} }
 }
 
-use {image::{Image, bgra8}, num::{IsZero, Zero, div_ceil, clamp}};
+use {image::{Image, bgra8}, num::{IsZero, Zero, div_ceil}};
 
 pub fn fit_width(width: u32, from : size) -> size { if from.is_zero() { return zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
 pub fn fit_height(height: u32, from : size) -> size { if from.is_zero() { return zero(); } xy{x: div_ceil(height * from.x, from.y), y: height} }
@@ -144,7 +144,7 @@ impl<D:AsRef<str>> View<'_, D> {
 		if self.text().is_empty() { return zero(); }
 		let position = position / self.scale(size);
 		let View{font, ..} = &self;
-		let line = clamp(0, (position.y/font[0].height() as u32) as usize, line_ranges(self.text()).count()-1);
+		let line = ((position.y/font[0].height() as u32) as usize).min(line_ranges(self.text()).count()-1);
 		LineColumn{line, column:
 			layout(font, line_ranges(self.text()).nth(line).unwrap().graphemes(true).enumerate())
 			.map(|Glyph{index, x, id, face}| (index, x+face.glyph_hor_advance(id).unwrap() as i32/2))

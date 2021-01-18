@@ -183,9 +183,13 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 						} else { char };
 						change = Change::Insert;
 						use ::unicode_segmentation::UnicodeSegmentation;
-						fn clamp(text: &str, LineColumn{line, column}: &mut LineColumn) { *column = min(*column, line_ranges(text).nth(*line).unwrap().graphemes(true).count()) }
-						clamp(text, &mut selection.start);
-						clamp(text, &mut selection.end);
+						//impl LineColumn { fn clamp(&self, text: &str) -> Self { Self{line: self.line, column: min(self.column, line_ranges(text).nth(self.line).unwrap().graphemes(true).count()) } } }
+						//selection.start = selection.start.clamp(text);
+						//selection.end = selection.start.clamp(text);
+						//fn clamp(LineColumn{line, column}: LineColumn, text: &str) -> LineColumn { LineColumn{line, column: min(column, line_ranges(text).nth(line).unwrap().graphemes(true).count()) } }
+						fn clamp(s: LineColumn, text: &str) -> LineColumn { LineColumn{line: s.line, column: min(s.column, line_ranges(text).nth(s.line).unwrap().graphemes(true).count()) } }
+						selection.start = clamp(selection.start, text);
+						selection.end = clamp(selection.start, text);
 						replace_range = ReplaceRange{range: index(selection), replace_with: char.to_string()};
 						LineColumn{line: selection.min().line, column: selection.min().column+1} // after insertion
 					}

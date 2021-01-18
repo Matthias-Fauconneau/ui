@@ -39,13 +39,13 @@ fn line(target: &mut Image<&mut[bgra8]>, p0: vec2, p1: vec2, color: bgrf) {
 	}
 }
 
-use {num::real, vector::MinMax};
-type Frame = (real, Box<[Box<[real]>]>);
+use vector::MinMax;
+type Frame = (f64, Box<[Box<[f64]>]>);
 pub struct Plot<'t> {
 	keys: Box<[&'t [&'t str]]>,
 	pub values: Vec<Frame>,
-	x_minmax: MinMax<real>,
-	sets_minmax: Box<[MinMax<real>]>,
+	x_minmax: MinMax<f64>,
+	sets_minmax: Box<[MinMax<f64>]>,
 	top: u32, bottom: u32, left: u32, right: u32,
 	last: usize,
 }
@@ -56,67 +56,66 @@ impl Plot<'t> {
 	}
 }
 
-impl ui::widget::Widget for Plot<'_> {
-#[fehler::throws(anyhow::Error)] fn paint(&mut self, mut target: &mut ui::widget::Target) {
-	use iter::from_iter;
+impl crate::widget::Widget for Plot<'_> {
+#[fehler::throws(error::Error)] fn paint(&mut self, mut target: &mut crate::widget::Target) {
+	use iter::box_collect as collect;
 	let set_count = self.keys.iter().map(|set| set.len()).sum::<usize>();
-	let sets_colors = from_iter(self.keys.iter().map(|set| {
+	let sets_colors = collect(self.keys.iter().map(|set| {
 		if set.len() == 1 { box [bgrf{b:1., g:1., r:1.}] }
-		else { from_iter((0..set.len()).map(|i| bgrf::from(ui::color::LCh{L:53., C:179., h: 2.*std::f32::consts::PI*(i as f32)/(set.len() as f32)}))) }
+		else { collect((0..set.len()).map(|i| bgrf::from(crate::color::LCh{L:53., C:179., h: 2.*std::f32::consts::PI*(i as f32)/(set.len() as f32)}))) }
 	}));
 
 	let ticks = |MinMax{max,..}| {
-		if max == real(0.) { return (vector::MinMax{min: real(0.), max: real(0.)}, box [(real(0.),"0".to_string())] as Box<[_]>); }
-		let log10 = real::log10(real::abs(max));
-		let exp_fract_log10 = real::exp10(log10 - real::floor(log10));
-		let (max, tick_count) = *[(1.,5),(1.2,6),(1.4,7),(2.,10),(2.5,5),(3.,3),(3.2,8),(4.,8),(5.,5),(6.,6),(8.,8),(10.,5)].iter().find(|(max,_)| exp_fract_log10-real::exp2(real(-52.)) <= real(*max)).unwrap();
-		let max = real(max)*real::exp10(real::floor(log10));
-		let precision = if max <= real(1.) { 1 } else { 0 }; //(real::ceil(-real::log10(max/real(tick_count as f32))).0 as usize).max(1);
-		//assert!(precision<=3,"{:?}", (precision, max, tick_count, -real::log10(max/real(tick_count as f32))));
-		(vector::MinMax{min: real(0.), max}, from_iter((0..=tick_count).map(|i| max*real(i as f32)/real(tick_count as f32)).map(|value| (value, format!("{:.1$}", value.0, precision)))))
+		if max == 0. { return (vector::MinMax{min: 0., max: 0.}, box [(0.,"0".to_string())] as Box<[_]>); }
+		let log10 = f64::log10(f64::abs(max));
+		let exp_fract_log10 = num::exp10(log10 - f64::floor(log10));
+		let (max, tick_count) = *[(1.,5),(1.2,6),(1.4,7),(2.,10),(2.5,5),(3.,3),(3.2,8),(4.,8),(5.,5),(6.,6),(8.,8),(10.,5)].iter().find(|(max,_)| exp_fract_log10-f64::exp2(-52.) <= *max).unwrap();
+		let max = max*num::exp10(f64::floor(log10));
+		let precision = if max <= 1. { 1 } else { 0 };
+		(vector::MinMax{min: 0., max}, collect((0..=tick_count).map(|i| max*(i as f64)/(tick_count as f64)).map(|value| (value, format!("{:.1$}", value, precision)))))
 	};
 
 	let x_minmax = vector::minmax(self.values.iter().map(|&(x,_)| x)).unwrap();
 	let (x_minmax, x_labels) = ticks(x_minmax);
 
 	let mut serie_of_sets = self.values.iter().map(|(_,sets)| sets);
-	let mut sets_minmax = serie_of_sets.next().unwrap().iter().map(|set| vector::minmax(set.iter().copied()).unwrap()).collect::<Box<[_]>>();
-	for sets in serie_of_sets { for (minmax, set) in sets_minmax.iter_mut().zip(sets.iter()) { *minmax = minmax.minmax(vector::minmax(set.iter().copied()).unwrap()) } }
-	let sets_minmax = from_iter(sets_minmax.iter().map(|&minmax| ticks(minmax).0)); // fixme
+	let mut sets_data_minmax = serie_of_sets.next().unwrap().iter().map(|set| vector::minmax(set.iter().copied()).unwrap()).collect::<Box<[_]>>();
+	for sets in serie_of_sets { for (minmax, set) in sets_data_minmax.iter_mut().zip(sets.iter()) { *minmax = minmax.minmax(vector::minmax(set.iter().copied()).unwrap()) } }
+	let sets_minmax = collect(sets_data_minmax.iter().map(|&minmax| ticks(minmax).0)); // fixme
 
 	let size = target.size;
-	fn map(MinMax{min,max} : MinMax<real>, v: real) -> Option<f32> { if min < max { Some(((v-min) / (max-min)).0) } else { None } }
-	fn map_x(size: ::xy::size, left: u32, right: u32, minmax: MinMax<real>, v: real) -> Option<f32> { Some(left as f32+map(minmax, v)?*(size.x-left-right-1) as f32) }
-	fn map_y(size: ::xy::size, top: u32, bottom: u32, minmax: MinMax<real>, v: real) -> Option<f32> { Some((size.y-bottom-1) as f32-map(minmax, v)?*(size.y-top-bottom-1) as f32) }
+	fn map(MinMax{min,max} : MinMax<f64>, v: f64) -> Option<f32> { if min < max { Some(((v-min) / (max-min)) as f32) } else { None } }
+	fn map_x(size: ::xy::size, left: u32, right: u32, minmax: MinMax<f64>, v: f64) -> Option<f32> { Some(left as f32+map(minmax, v)?*(size.x-left-right-1) as f32) }
+	fn map_y(size: ::xy::size, top: u32, bottom: u32, minmax: MinMax<f64>, v: f64) -> Option<f32> { Some((size.y-bottom-1) as f32-map(minmax, v)?*(size.y-top-bottom-1) as f32) }
 
 	if (x_minmax, &sets_minmax) != (self.x_minmax, &self.sets_minmax) {
 		image::fill(&mut target, bgra8{b:0,g:0,r:0,a:0xFF});
 
-		let mut x_ticks = from_iter(x_labels.iter().map(|(_,label)| ui::text::View::new(ui::text::Borrowed::new(label))));
+		let mut x_ticks = collect(x_labels.iter().map(|(_,label)| crate::text::View::new(crate::text::Borrowed::new(label))));
 		let x_label_size = vector::minmax(x_ticks.iter_mut().map(|tick| tick.size())).unwrap().max;
 
-		let sets_tick_labels = from_iter(sets_minmax.iter().map(|&minmax| ticks(minmax).1));
-		let mut sets_ticks = from_iter(sets_tick_labels.iter().map(|set| from_iter(set.iter().map(|(_,label)| ui::text::View::new(ui::text::Borrowed::new(label))))));
-		let sets_tick_label_size = from_iter(sets_ticks.iter_mut().map(|set_ticks| { vector::minmax(set_ticks.iter_mut().map(|tick| tick.size())).unwrap().max }));
+		let sets_tick_labels = collect(sets_data_minmax.iter().map(|&minmax| ticks(minmax).1));
+		let mut sets_ticks = collect(sets_tick_labels.iter().map(|set| collect(set.iter().map(|(_,label)| crate::text::View::new(crate::text::Borrowed::new(label))))));
+		let sets_tick_label_size = collect(sets_ticks.iter_mut().map(|set_ticks| { vector::minmax(set_ticks.iter_mut().map(|tick| tick.size())).unwrap().max }));
 
-		let sets_styles = from_iter(sets_colors.iter().map(|set| from_iter(set.iter().map(|&color| (box [color.into()] as Box<[_]>)))));
-		let mut sets_labels = from_iter(self.keys.iter().zip(sets_styles.iter()).map(
-			|(keys, styles)| from_iter(keys.iter().zip(styles.iter()).map(|(key,style)| ui::text::View::new(ui::text::Borrowed{text: key, style})))
+		let sets_styles = collect(sets_colors.iter().map(|set| collect(set.iter().map(|&color| (box [color.into()] as Box<[_]>)))));
+		let mut sets_labels = collect(self.keys.iter().zip(sets_styles.iter()).map(
+			|(keys, styles)| collect(keys.iter().zip(styles.iter()).map(|(key,style)| crate::text::View::new(crate::text::Borrowed{text: key, style})))
 		));
 		let sets_label_size = vector::minmax( sets_labels.iter_mut().map(|set| { vector::minmax(set.iter_mut().map(|label| label.size())).unwrap().max }) ).unwrap().max;
 
 		let x_label_scale = num::Ratio{num: size.x/(x_labels.len() as u32*2).max(5)-1, div: x_label_size.x-1};
-		let sets_tick_label_scale = iter::from_iter(sets_tick_labels.iter().zip(sets_tick_label_size.iter()).map(|(labels, label_size)| num::Ratio{num: size.y/(labels.len() as u32)-1, div: label_size.y-1}));
+		let sets_tick_label_scale = collect(sets_tick_labels.iter().zip(sets_tick_label_size.iter()).map(|(labels, label_size)| num::Ratio{num: size.y/(labels.len() as u32)-1, div: label_size.y-1}));
 		let sets_label_scale = num::Ratio{num: size.x/(set_count as u32*2).max(5)-1, div: sets_label_size.x-1};
 
 		self.top = (sets_label_scale*sets_label_size.y)
 			.max((sets_tick_label_scale.iter().zip(sets_tick_label_size.iter()).map(|(&label_scale, &label_size)| label_scale.ceil(label_size.y)).max().unwrap() + 1) / 2)
 			.min(size.y/4);
 		self.bottom = (x_label_scale * x_label_size.y).min(size.y/4);
-		let [left, right] = iter::array::generate(|i|
+		let [left, right] = iter::vec::Vector::collect(iter::vec::generate(|i|
 			(if let (Some(&label_scale), Some(&label_size)) = (sets_tick_label_scale.get(i), sets_tick_label_size.get(i)) { label_scale * label_size.x } else { 0 })
 				.max((x_label_scale.ceil(x_label_size.x)+1)/2).min(size.x/4)
-		);
+		));
 		self.left = left;
 		self.right = right;
 
