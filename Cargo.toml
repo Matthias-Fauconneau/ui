@@ -5,63 +5,63 @@ authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
 edition = '2018'
 
 [features]
-widget = ['fehler','error','client-toolkit']
-app = ['fehler','num','futures','async-io','futures-lite','client-toolkit','widget','sc','vector']
-font = ['derive-more','fehler','ttf-parser','kurbo','image/num']
-graphic = ['fehler','widget','font']
-font-file = ['font','owning-ref','memmap']
-text = ['unicode-segmentation','iter','num','font','widget','font-file','derive-more']
-edit = ['text']
-color = ['vector']
-plot = ['text','color','itertools']
-default = ['color','text','edit','app']
+widget= ['fehler','error','client-toolkit']
+app= ['fehler','num','futures','async-io','futures-lite','client-toolkit','widget','sc','vector']
+font= ['derive-more','fehler','ttf-parser','kurbo','image/num']
+graphic= ['fehler','widget','font']
+font-file= ['font','owning-ref','memmap']
+text= ['unicode-segmentation','iter','num','font','widget','font-file','derive-more']
+edit= ['text']
+color= ['vector']
+plot= ['text','color','itertools']
+default= ['color','text','edit','app']
 
 [dependencies]
-iter = { path='../iter', optional=true }
-num = { path='../num', optional=true }
-vector = { path='../vector', optional=true }
-cfg-if = ''
-fehler = { version='', optional=true } # #[throws] expects {{root}}::fehler
-derive-more = { version='', package='derive_more', optional=true }
-owning-ref = { version='', package='owning_ref', optional=true }
-error = { version='', package='anyhow', optional=true }
-futures = { version='', optional=true, package = 'futures-util' } # SelectAll, select_all, LocalBoxStream
-sc = { version='', optional=true } #''
-futures-lite = { version='', optional=true }
-async-io = {version='', optional=true }
+iter= {git='https://github.com/Matthias-Fauconneau/iter', optional=true}
+num= {git='https://github.com/Matthias-Fauconneau/num', optional=true}
+vector= {git='https://github.com/Matthias-Fauconneau/vector', optional=true}
+cfg-if= ''
+fehler= {version='', optional=true} # #[throws] expects {{root}}::fehler
+derive-more= {version='', package='derive_more', optional=true}
+owning-ref= {version='', package='owning_ref', optional=true}
+error= {version='', package='anyhow', optional=true}
+futures= {version='', optional=true, package = 'futures-util'} # SelectAll, select_all, LocalBoxStream
+sc= {version='', optional=true}
+futures-lite= {version='', optional=true}
+async-io= {version='', optional=true}
 
-memmap = { version='', optional=true }
-dirs = ''
-xy = { path='../xy' }
-image = { path='../image' }
-client-toolkit = { version='', package='smithay-client-toolkit', optional=true, default-features=false }
+memmap= {version='', optional=true}
+dirs= ''
+xy= {git='https://github.com/Matthias-Fauconneau/xy'}
+image= {git='https://github.com/Matthias-Fauconneau/image'}
+client-toolkit= {version='', package='smithay-client-toolkit', optional=true, default-features=false}
 
-kurbo = { version='', optional=true }
-ttf-parser = { version='', optional=true }
-unicode-segmentation = { version='', optional=true }
+kurbo= {version='', optional=true}
+ttf-parser= {version='', optional=true}
+unicode-segmentation= {version='', optional=true}
 
-trace = { path='../trace', optional=true }
-itertools = { version='', optional=true }
-
-[[example]]
-name = 'window'
-path = 'examples/window.rs'
-required-features = ['app']
+trace= {git='https://github.com/Matthias-Fauconneau/trace', optional=true}
+itertools= {version='', optional=true}
 
 [[example]]
-name = 'text'
-path = 'examples/text.rs'
-required-features = ['app','text']
+name= 'window'
+path= 'examples/window.rs'
+required-features= ['app']
 
 [[example]]
-name = 'compose'
-path = 'examples/compose.rs'
-required-features = ['edit']
+name= 'text'
+path= 'examples/text.rs'
+required-features= ['app','text']
 
 [[example]]
-name = 'edit'
-path = 'examples/edit.rs'
-required-features = ['app','edit']
+name= 'compose'
+path= 'examples/compose.rs'
+required-features= ['edit']
+
+[[example]]
+name= 'edit'
+path= 'examples/edit.rs'
+required-features= ['app','edit']
 
 [profile.dev.package.image]
-opt-level = 2
+opt-level= 2

@@ -23,7 +23,7 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 				Key {state, key, #[cfg(feature="repeat")] time, .. } => {
 					let key = *usb_hid_usage_table.get(key as usize).unwrap_or_else(|| panic!("{:x}", key));
 					match state {
-						#[cfg(feature="repeat")] KeyState::Released => if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None },
+						KeyState::Released => { #[cfg(feature="repeat")] if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None } },
 						KeyState::Pressed => {
 							app.key(key).unwrap();
 							#[cfg(feature="repeat")] { repeat = {
