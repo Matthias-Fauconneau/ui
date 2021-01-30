@@ -133,7 +133,7 @@ impl<'t, W:Widget> App<'t, W> {
 			idle: box|_| false,
 	}
 }
-#[throws(std::io::Error)] pub async fn display(&mut self) {
+pub async fn display(&mut self) {
 	while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await {
 		event(self);
 		if self.display.is_none() { break; }
@@ -160,6 +160,6 @@ pub fn quit(&mut self) { self.display = None }
 	else if key == '⎋' { self.quit(); false }
 	else { false }
 }
-#[throws] pub fn run(mut self) { futures_lite::future::block_on(self.display())? }
+#[throws] pub fn run(mut self) { async_io::block_on(self.display()) }
 }
 #[throws] pub fn run(widget: impl Widget) { App::new(widget)?.run()? }

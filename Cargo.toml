@@ -6,7 +6,7 @@ edition = '2018'
 
 [features]
 widget= ['fehler','error','client-toolkit']
-app= ['fehler','num','futures','async-io','futures-lite','client-toolkit','widget','sc','vector']
+app= ['fehler','num','futures','async-io','client-toolkit','widget','sc','vector']
 font= ['derive-more','fehler','ttf-parser','kurbo','image/num']
 graphic= ['fehler','widget','font']
 font-file= ['font','owning-ref','memmap']
@@ -27,7 +27,6 @@ owning-ref= {version='', package='owning_ref', optional=true}
 error= {version='', package='anyhow', optional=true}
 futures= {version='', optional=true, package = 'futures-util'} # SelectAll, select_all, LocalBoxStream
 sc= {version='', optional=true}
-futures-lite= {version='', optional=true}
 async-io= {version='', optional=true}
 
 memmap= {version='', optional=true}
