@@ -103,7 +103,8 @@ use std::{rc::Rc, cell::RefCell};
 			(box move |mut app| {
 				//trace::timeout(100, || {
 					q.borrow_mut().get_mut().dispatch_pending(/*Any: 'static*/unsafe{std::mem::transmute::<&mut App<'t, W>, &mut App<'static,&mut dyn Widget>>(&mut app)}, |_,_,_| ()).unwrap();
-					app.draw()
+					if app.need_update { app.draw()? }
+					Ok(())
 				//})
 			}) as Box<dyn FnOnce(&mut _)->Result<()>>
 		}, q))
@@ -129,7 +130,7 @@ impl<'t, W:Widget> App<'t, W> {
 			widget,
 			size: zero(),
 			unscaled_size: zero(),
-			need_update: false,
+			need_update: true,
 			idle: box|_| false,
 	}
 }
@@ -142,6 +143,7 @@ impl<'t, W:Widget> App<'t, W> {
 }
 #[throws] pub fn draw(&mut self) {
 	let Self{display, pool, widget, size, surface, need_update, /*unscaled_size,*/ ..} = self;
+	if *size == (xy{x: 0, y: 0}) { return; }
 	/*let max_size = with_output_info(get_surface_outputs(&surface).first().unwrap(), |info| ::xy::int2::from(info.modes.first().unwrap().dimensions).into()).unwrap();
 	let widget_size = ::min(size, widget.size(max_size));
 	if *size != widget_size {
@@ -150,7 +152,8 @@ impl<'t, W:Widget> App<'t, W> {
 		//self.xdg_surface.set_size(unscaled_size.x, unscaled_size.y);
 		*size = (scale as u32) * *unscaled_size;
 	}*/
-	if *need_update { draw(pool, &surface, widget, *size)?; *need_update = false; }
+	draw(pool, &surface, widget, *size)?;
+	*need_update = false;
 	display.as_ref().map(|d| d.flush().unwrap());
 }
 pub fn quit(&mut self) { self.display = None }
