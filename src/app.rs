@@ -7,7 +7,7 @@ use client_toolkit::{
 		protocols::xdg_shell::client::{xdg_wm_base::{XdgWmBase as WmBase}, xdg_surface::{self, XdgSurface}, xdg_toplevel as toplevel},
 	},
 };
-use {fehler::throws, error::Error, num::zero, ::xy::{xy, size}, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
+use {fehler::throws, error::{Error, Result}, num::zero, ::xy::{xy, size}, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
 
 default_environment!(Compositor,
 	fields = [ wm_base: SimpleGlobal<WmBase> ],
@@ -16,7 +16,7 @@ default_environment!(Compositor,
 
 pub struct App<'t, W> {
 	display: Option<Display>,
-	pub streams: SelectAll<LocalBoxStream<'t, Box<dyn Fn/*Mut fixme*/(&mut Self)+'t>>>,
+	pub streams: SelectAll<LocalBoxStream<'t, Box<dyn FnOnce(&mut Self)->Result<()>+'t>>>,
 	pool: MemPool,
 	_seat_listener: SeatListener,
 	pub(crate) modifiers_state: ModifiersState,
@@ -94,7 +94,7 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 }
 
 use std::{rc::Rc, cell::RefCell};
-#[throws] fn queue<'t, W:Widget>(queue: EventQueue) -> LocalBoxStream<'t, Box<dyn Fn(&mut App<'t, W>)+'t>> {
+#[throws] fn queue<'t, W:Widget>(queue: EventQueue) -> LocalBoxStream<'t, Box<dyn FnOnce(&mut App<'t, W>)->Result<()>+'t>> {
 	let queue = Rc::new(RefCell::new(crate::as_raw_poll_fd::Async::new(queue)?)); // Rc simpler than an App.streams:&queue self-ref
 	unfold(queue, async move |q| {
 		q.borrow().read_with(|q| q.prepare_read().ok_or(std::io::Error::new(std::io::ErrorKind::Interrupted, "Dispatch all events before polling"))?.read_events()).await.unwrap();
@@ -103,9 +103,9 @@ use std::{rc::Rc, cell::RefCell};
 			(box move |mut app| {
 				//trace::timeout(100, || {
 					q.borrow_mut().get_mut().dispatch_pending(/*Any: 'static*/unsafe{std::mem::transmute::<&mut App<'t, W>, &mut App<'static,&mut dyn Widget>>(&mut app)}, |_,_,_| ()).unwrap();
-					app.draw();
+					app.draw()
 				//})
-			}) as Box<dyn Fn(&mut _/*App<'t, W>*/)>
+			}) as Box<dyn FnOnce(&mut _)->Result<()>>
 		}, q))
 	}).boxed_local()
 }
@@ -133,14 +133,14 @@ impl<'t, W:Widget> App<'t, W> {
 			idle: box|_| false,
 	}
 }
-pub async fn display(&mut self) {
+#[throws] pub async fn display(&mut self) {
 	while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await {
-		event(self);
+		event(self)?;
 		if self.display.is_none() { break; }
 		if (self.idle)(&mut self.widget) { self.need_update = true; } // Simpler than streams
 	}
 }
-pub fn draw(&mut self) {
+#[throws] pub fn draw(&mut self) {
 	let Self{display, pool, widget, size, surface, need_update, /*unscaled_size,*/ ..} = self;
 	/*let max_size = with_output_info(get_surface_outputs(&surface).first().unwrap(), |info| ::xy::int2::from(info.modes.first().unwrap().dimensions).into()).unwrap();
 	let widget_size = ::min(size, widget.size(max_size));
@@ -150,7 +150,7 @@ pub fn draw(&mut self) {
 		//self.xdg_surface.set_size(unscaled_size.x, unscaled_size.y);
 		*size = (scale as u32) * *unscaled_size;
 	}*/
-	if *need_update { draw(pool, &surface, widget, *size).unwrap(); *need_update = false; }
+	if *need_update { draw(pool, &surface, widget, *size)?; *need_update = false; }
 	display.as_ref().map(|d| d.flush().unwrap());
 }
 pub fn quit(&mut self) { self.display = None }
@@ -160,6 +160,6 @@ pub fn quit(&mut self) { self.display = None }
 	else if key == '⎋' { self.quit(); false }
 	else { false }
 }
-#[throws] pub fn run(mut self) { async_io::block_on(self.display()) }
+pub fn run(mut self) -> Result<()> { async_io::block_on(self.display()) }
 }
 #[throws] pub fn run(widget: impl Widget) { App::new(widget)?.run()? }
