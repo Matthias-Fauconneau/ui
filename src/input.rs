@@ -6,13 +6,13 @@ use std::lazy::SyncLazy;
 	&['⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘']].concat());
 #[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
 
+use error::Result;
 use client_toolkit::{seat::{SeatData, pointer::ThemeManager}, get_surface_scale_factor, reexports::client::{Attached, protocol::{wl_seat::WlSeat as Seat, wl_keyboard as keyboard, wl_pointer as pointer}}};
 use {::xy::xy, crate::{app::App, widget::{Widget, EventContext, Event, ModifiersState}}};
 
 pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, seat_data: &SeatData) {
-	//for e in usb_hid_usage_table.iter().enumerate() { println!("{:?}", e); }
 	if seat_data.has_keyboard {
-		#[cfg(feature="repeat")] let mut repeat : Option<std::rc::Rc<std::cell::Cell<_>>> = None;
+		let mut repeat : Option<std::rc::Rc<std::cell::Cell<_>>> = None;
 		seat.get_keyboard().quick_assign(move |_, event, mut app| {
 			let app = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
 			use keyboard::{Event::*, KeyState};
@@ -20,37 +20,33 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 				Keymap {..} => {},
 				Enter { /*keysyms,*/ .. } => {},
 				Leave { .. } => {}
-				Key {state, key, #[cfg(feature="repeat")] time, .. } => {
+				Key {state, key, time, .. } => {
 					let key = *usb_hid_usage_table.get(key as usize).unwrap_or_else(|| panic!("{:x}", key));
 					match state {
-						KeyState::Released => { #[cfg(feature="repeat")] if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None } },
+						KeyState::Released => { if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None } },
 						KeyState::Pressed => {
 							app.key(key).unwrap();
-							#[cfg(feature="repeat")] { repeat = {
-								let repeat = Rc::new(Cell::new(key));
+							repeat = {
+								let repeat = std::rc::Rc::new(std::cell::Cell::new(key));
 								let from_monotonic_millis = |t| {
 									pub const MONOTONIC: i32 = 1; #[derive(Clone, Copy)]#[repr(C)] pub struct timespec { pub tv_sec: u64, pub tv_nsec: u64 } // include/uapi/linux/time.h
 									let now = {let mut t = timespec{ tv_sec: 0, tv_nsec: 0}; unsafe { sc::syscall!(CLOCK_GETTIME, MONOTONIC, &mut t as *mut timespec); }; t};
 									let now = now.tv_sec * 1000 + now.tv_nsec / 1000_000;
 									std::time::Instant::now() - std::time::Duration::from_millis(now - t as u64)
 								};
+								use futures_lite::StreamExt;
 								app.streams.push(
-										futures::stream::unfold(from_monotonic_millis(time)+std::time::Duration::from_millis(150), {
-												let repeat = Rc::downgrade(&repeat);
-												move |last| {
-														let next = last+std::time::Duration::from_millis(33);
-														use async_io::Timer;
-														//use futures::{FutureExt, stream::StreamExt};
-														Timer::at(next).map({
-																let repeat = repeat.clone();
-																// stops and autodrops from streams when weak link fails to upgrade (repeat cell dropped)
-																move |_| { repeat.upgrade().map(|x| ({let key = x.get(); (box move |app| { app.key(key).unwrap(); app.draw(); }) as Box::<dyn Fn(&mut App<'t,_>)>}, next) ) }
-														})
-												}
-										}).boxed_local()
+									async_io::Timer::interval_at(from_monotonic_millis(time)+std::time::Duration::from_millis(150), std::time::Duration::from_millis(33))
+									.filter_map({
+										let repeat = std::rc::Rc::downgrade(&repeat);
+										// stops and autodrops from streams when weak link fails to upgrade (repeat cell dropped)
+										move |_| { repeat.upgrade().map(|x| {let key = x.get(); (box move |app| { app.key(key)?; app.draw() }) as Box::<dyn FnOnce(&mut App<'t,_>)->Result<()>>}) }
+									})
+									.fuse()
+									.boxed_local()
 								);
 								Some(repeat)
-							}; }
+							};
 						},
 						_ => unreachable!(),
 					}

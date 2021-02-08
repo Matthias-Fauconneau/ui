@@ -192,7 +192,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					x: (x+face.glyph_hor_side_bearing(id).unwrap() as i32),
 					y: ((line_index as u32)*(font[0].height() as u32) + (font[0].ascender()-bbox.max.y as i16) as u32) as i32
 				};
-				let offset = ::xy::ifloor(scale, position + offset.signed());
+				let offset = ::xy::ifloor(scale, position - offset.signed());
 				let target_size = target.size.signed() - offset;
 				let target_offset = vector::component_wise_max(zero(), offset).unsigned();
 				let source_offset = vector::component_wise_max(zero(), -offset);
