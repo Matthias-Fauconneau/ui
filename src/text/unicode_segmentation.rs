@@ -7,7 +7,15 @@ pub fn index(s: &str, grapheme_index: GraphemeIndex) -> usize {
 		_ => panic!()
 	}
 }
-#[throws(as Option)] pub fn find(s: &str, byte_index: usize) -> GraphemeIndex { s.grapheme_indices(true).enumerate().find(|&(_,(i,_))| i == byte_index)?.0 }
+#[throws(as Option)] pub fn find(s: &str, byte_index: usize) -> GraphemeIndex {
+	let mut grapheme_index = 0;
+	for (grapheme_byte_index,_) in s.grapheme_indices(true) {
+		if grapheme_byte_index == byte_index { return grapheme_index; }
+		grapheme_index += 1;
+	}
+	assert_eq!(byte_index, s.len());
+	return grapheme_index;
+}
 
 #[derive(PartialEq,Clone,Copy)] enum Class { Space, Alphanumeric, Symbol }
 fn classify(g: &str) -> Class {

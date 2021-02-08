@@ -97,8 +97,7 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 				if text.is_empty() { return Change::None; }
 
 				#[derive(Default,PartialEq)] struct ReplaceRange { range: std::ops::Range<GraphemeIndex>, replace_with: String }
-				impl none::Default for ReplaceRange {}
-				let mut replace_range = none::None::none();
+				let mut replace_range = none::none();
 
 				let mut change = Change::Other;
 

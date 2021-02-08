@@ -1,10 +1,7 @@
 #![cfg_attr(feature="app", feature(async_closure,box_syntax,stmt_expr_attributes))]
 #![cfg_attr(any(feature="app",feature="text"), feature(once_cell))]
-#![cfg_attr(feature="font", feature(array_value_iter))]
-//#![cfg_attr(feature="font", feature(non_ascii_idents))]//#![cfg_attr(feature="font", allow(uncommon_codepoints))]
 #![cfg_attr(feature="text", feature(array_map, in_band_lifetimes))]
 #![cfg_attr(feature="edit", feature(const_fn))]
-#![cfg_attr(feature="color", feature(iterator_fold_self))] // vector!iter (unused)
 
 #[cfg(feature="color")] pub mod color;
 #[cfg(feature="widget")] pub mod widget; //cfg_if! { if #[cfg(feature="widget")] { pub mod widget; pub use widget::{Target, Widget}; }}

@@ -61,6 +61,3 @@ required-features= ['edit']
 name= 'edit'
 path= 'examples/edit.rs'
 required-features= ['app','edit']
-
-[profile.dev.package.image]
-opt-level= 2
