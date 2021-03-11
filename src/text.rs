@@ -54,7 +54,7 @@ impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { from(col
 use {std::{lazy::SyncLazy, path::Path}};
 #[allow(non_upper_case_globals)] pub static default_font_files : SyncLazy<[font::File<'static>; 2]> = SyncLazy::new(||
 	["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(Path::new(p)).unwrap()));
-pub fn default_font() -> Font<'static> { iter::array_from_iter(iter::into::IntoMap::map(&*default_font_files, |x| std::ops::Deref::deref(x))) }
+pub fn default_font() -> Font<'static> { iter::from_iter(iter::into::IntoMap::map(&*default_font_files, |x| std::ops::Deref::deref(x))) }
 #[allow(non_upper_case_globals)]
 pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
 use std::sync::Mutex;
@@ -171,7 +171,6 @@ impl<D:AsRef<str>> View<'_, D> {
 
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 	pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio, offset: uint2) {
-		target.fill(0.into());
 		let Self{font, data, ..} = &*self;
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()

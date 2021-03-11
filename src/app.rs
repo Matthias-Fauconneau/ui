@@ -25,8 +25,6 @@ pub struct App<'t, W> {
 	pub(crate) size: size,
 	unscaled_size: size,
 	pub need_update: bool,
-	//pub iterator: Box<dyn Iterator<Item=Box<dyn Fn(&mut Self)+'t>>>,
-	pub idle: Box<dyn FnMut(&mut W)->bool>,
 }
 
 #[throws] fn draw(pool: &mut MemPool, surface: &Surface, widget: &mut dyn Widget, size: size) {
@@ -131,14 +129,13 @@ impl<'t, W:Widget> App<'t, W> {
 			size: zero(),
 			unscaled_size: zero(),
 			need_update: true,
-			idle: box|_| false,
 	}
 }
-#[throws] pub async fn display(&mut self) {
+#[throws] pub async fn display(&mut self, mut idle: impl FnMut(&mut W)->Result<bool>) {
 	while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await {
 		event(self)?;
 		if self.display.is_none() { break; }
-		if (self.idle)(&mut self.widget) { self.need_update = true; } // Simpler than streams
+		if idle(&mut self.widget)? { self.need_update = true; }
 	}
 }
 #[throws] pub fn draw(&mut self) {
@@ -163,6 +160,6 @@ pub fn quit(&mut self) { self.display = None }
 	else if key == '⎋' { self.quit(); false }
 	else { false }
 }
-pub fn run(mut self) -> Result<()> { async_io::block_on(self.display()) }
+pub fn run(mut self, idle: impl FnMut(&mut W)->Result<bool>) -> Result<()> { async_io::block_on(self.display(idle)) }
 }
-#[throws] pub fn run(widget: impl Widget) { App::new(widget)?.run()? }
+//#[throws] pub fn run(widget: impl Widget) { App::new(widget)?.run()? }

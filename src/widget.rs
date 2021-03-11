@@ -14,7 +14,7 @@ pub type MouseButtons = u32;
 
 pub enum Event {
 	Key { key: char },
-	Button { button: u8, state: ButtonState, position: uint2 },
+	Button { position: uint2, button: u8, state: ButtonState },
 	Motion { position: uint2, mouse_buttons: MouseButtons },
 	Scroll (f32)
 }
