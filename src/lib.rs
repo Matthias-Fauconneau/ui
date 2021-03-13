@@ -2,6 +2,7 @@
 #![cfg_attr(any(feature="app",feature="text"), feature(once_cell))]
 #![cfg_attr(feature="text", feature(array_map, in_band_lifetimes))]
 #![cfg_attr(feature="edit", feature(const_fn))]
+#![cfg_attr(feature="plot", feature(bool_to_option))]
 
 #[cfg(feature="color")] pub mod color;
 #[cfg(feature="widget")] pub mod widget; //cfg_if! { if #[cfg(feature="widget")] { pub mod widget; pub use widget::{Target, Widget}; }}

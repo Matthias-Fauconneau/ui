@@ -174,7 +174,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 		let Self{font, data, ..} = &*self;
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
-																						.take_while({let clip = offset.y + target.size.y/scale; move |&(line_index,_)| (line_index as u32)*(font[0].height() as u32) < clip}) {
+																						/*.take_while({let clip = target.size.y/scale - offset.y; move |&(line_index,_)| (line_index as u32)*(font[0].height() as u32) < clip})*/ {
 			for (bbox, Glyph{index, x, id, face}) in bbox(layout(font, line.graphemes(true).enumerate().map(|(i,e)| (line.range.start+i, e)))) {
 				style = style.filter(|style:&&Attribute<Style>| style.contains(&index));
 				while let Some(next) = styles.peek() {
@@ -191,7 +191,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					x: (x+face.glyph_hor_side_bearing(id).unwrap() as i32),
 					y: ((line_index as u32)*(font[0].height() as u32) + (font[0].ascender()-bbox.max.y as i16) as u32) as i32
 				};
-				let offset = ::xy::ifloor(scale, position - offset.signed());
+				let offset = ::xy::ifloor(scale, offset.signed() + position);
 				let target_size = target.size.signed() - offset;
 				let target_offset = vector::component_wise_max(zero(), offset).unsigned();
 				let source_offset = vector::component_wise_max(zero(), -offset);
