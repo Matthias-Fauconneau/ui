@@ -11,10 +11,9 @@ font= ['derive-more','fehler','ttf-parser','kurbo','image/num']
 graphic= ['fehler','widget','font']
 font-file= ['font','owning-ref','memmap']
 text= ['unicode-segmentation','iter','num','font','widget','font-file','derive-more']
-edit= ['text']
 color= ['vector']
 plot= ['text','color','itertools']
-default= ['color','text','edit','app']
+default= ['color','text','app']
 
 [dependencies]
 iter= {git='https://github.com/Matthias-Fauconneau/iter', optional=true}

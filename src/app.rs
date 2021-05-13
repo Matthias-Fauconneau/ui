@@ -4,7 +4,7 @@ use client_toolkit::{
 	seat::{SeatListener, with_seat_data}, output::with_output_info, get_surface_outputs, get_surface_scale_factor, shm::{MemPool, Format},
 	reexports::{
 		client::{Display, EventQueue, Main, Attached, protocol::wl_surface::WlSurface as Surface},
-		protocols::xdg_shell::client::{xdg_wm_base::{XdgWmBase as WmBase}, xdg_surface::{self, XdgSurface}, xdg_toplevel as toplevel},
+		protocols::xdg_shell::client::{xdg_wm_base::XdgWmBase as WmBase, xdg_surface::{self as surface, XdgSurface}, xdg_toplevel as toplevel},
 	},
 };
 use {fehler::throws, error::{Error, Result}, num::zero, ::xy::{xy, size}, crate::widget::{Widget, Target, EventContext, ModifiersState, Event}};
@@ -48,11 +48,12 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 		draw(pool, &surface, widget, *size).unwrap()
 	});
 
-	let wm = env.require_global::<WmBase>(); // GlobalHandler<xdg_wm_base::XdgWmBase>::get assigns ping-pong
-	let xdg_surface = wm.get_xdg_surface(&surface);
+	let wm = env.require_global::<WmBase>(); 
+	// GlobalHandler<xdg_wm_base::XdgWmBase>::get assigns ping-pong
+    let xdg_surface = wm.get_xdg_surface(&surface);
 	let toplevel = xdg_surface.get_toplevel();
 	surface.commit();
-
+	
 	toplevel.quick_assign(|_toplevel, event, mut app| {
 		let App{display, unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
 		use toplevel::Event::*;
@@ -65,7 +66,7 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 	});
 	xdg_surface.quick_assign(move /*env*/ |xdg_surface, event, mut app| {
 		let App{pool, surface, widget, ref mut size, ref mut unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
-		use xdg_surface::Event::*;
+		use surface::Event::*;
 		match event {
 			Configure{serial} => {
 				if !(unscaled_size.x > 0 && unscaled_size.y > 0) {
