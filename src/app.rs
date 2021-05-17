@@ -163,4 +163,4 @@ pub fn quit(&mut self) { self.display = None }
 }
 pub fn run(mut self, idle: impl FnMut(&mut W)->Result<bool>) -> Result<()> { async_io::block_on(self.display(idle)) }
 }
-//#[throws] pub fn run(widget: impl Widget) { App::new(widget)?.run()? }
+#[throws] pub fn run(widget: impl Widget) { App::new(widget)?.run(|_| Ok(false))? }

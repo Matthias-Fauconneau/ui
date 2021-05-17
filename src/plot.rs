@@ -111,24 +111,21 @@ impl crate::widget::Widget for Plot<'_> {
 		let sets_label_size = vector::minmax( sets_labels.iter_mut().map(|set| { vector::minmax(set.iter_mut().map(|label| label.size())).unwrap().max }) ).unwrap().max;
 
 		let x_label_scale = num::Ratio{num: size.x/(x_labels.len() as u32*2).max(5)-1, div: x_label_size.x-1};
-		let sets_tick_label_scale = collect(sets_tick_labels.iter().zip(sets_tick_label_size.iter()).map(|(labels, label_size)| num::Ratio{num: size.y/(labels.len() as u32)-1, div: label_size.y-1}));
-		let sets_label_scale = (set_count>0).then(|| num::Ratio{num: size.x/(set_count as u32*2).max(5)-1, div: sets_label_size.x-1});
+		let y_label_scale = sets_tick_labels.iter().zip(sets_tick_label_size.iter()).map(|(labels, label_size)| num::Ratio{num: size.y/(labels.len() as u32)-1, div: label_size.y-1}).min().unwrap();
+		let scale = std::cmp::min(x_label_scale, y_label_scale);
+		let [x_label_scale, y_label_scale, sets_label_scale] = [scale; 3]; //(set_count>0).then(|| num::Ratio{num: size.x/(set_count as u32*2).max(5)-1, div: sets_label_size.x-1});
 
-		self.top = sets_label_scale.map(|sets_label_scale| (sets_label_scale*sets_label_size.y)
-			.max((sets_tick_label_scale.iter().zip(sets_tick_label_size.iter()).map(|(&label_scale, &label_size)| label_scale.ceil(label_size.y)).max().unwrap() + 1) / 2)
-			.min(size.y/4)).unwrap_or(0);
+		self.top = (y_label_scale*sets_label_size.y).max(((sets_tick_label_size.iter().map(|&label_size| y_label_scale.ceil(label_size.y)).max().unwrap() + 1) / 2).min(size.y/4));
 		self.bottom = (x_label_scale * x_label_size.y).min(size.y/4);
 		let [left, right] = iter::vec::Vector::collect(iter::vec::generate(|i|
-			(if let (Some(&label_scale), Some(&label_size)) = (sets_tick_label_scale.get(i), sets_tick_label_size.get(i)) { label_scale * label_size.x } else { 0 })
+			(if let Some(&label_size) = sets_tick_label_size.get(i) { y_label_scale.ceil(label_size.x) } else { 0 })
 				.max((x_label_scale.ceil(x_label_size.x)+1)/2).min(size.x/4)
 		));
 		self.left = left;
 		self.right = right;
 
-		if let Some(sets_label_scale) = sets_label_scale {
-			for (i, label) in sets_labels.iter_mut().map(|set| set.iter_mut()).flatten().enumerate() {
-				label.paint(&mut target, sets_label_scale, xy{x: left+(i as u32)*(size.x-right-left)/(set_count as u32), y: 0}/sets_label_scale);
-			}
+		for (i, label) in sets_labels.iter_mut().map(|set| set.iter_mut()).flatten().enumerate() {
+			label.paint(&mut target, sets_label_scale, xy{x: left+(i as u32)*(size.x-right-left)/(set_count as u32), y: 0}/sets_label_scale);
 		}
 
 		let fg = bgra8{b:0xFF, g:0xFF, r:0xFF, a:0xFF};
@@ -147,7 +144,7 @@ impl crate::widget::Widget for Plot<'_> {
 		}
 
 		for i in 0..2 {
-			if let (Some(&minmax), Some(labels), Some(ticks), Some(&scale)) = (sets_minmax.get(i), sets_tick_labels.get(i), sets_ticks.get_mut(i), sets_tick_label_scale.get(i)) {
+			if let (Some(&minmax), Some(labels), Some(ticks)) = (sets_minmax.get(i), sets_tick_labels.get(i), sets_ticks.get_mut(i)) {
 				if minmax.min < minmax.max {
 					for (&(value,_), tick_label) in labels.iter().zip(ticks.iter_mut()) {
 						let p = xy{x: [0, size.x-right][i], y: map_y(size, self.top, self.bottom, minmax, value).unwrap() as u32};
