@@ -1,4 +1,4 @@
-use {::xy::{xy,vec2}, image::{Image, bgrf, bgra8}};
+use {iter::map, ::xy::{xy,vec2}, image::{Image, bgrf, bgra8}};
 
 fn line(target: &mut Image<&mut[bgra8]>, p0: vec2, p1: vec2, color: bgrf) {
 	use num::{abs, fract};
@@ -59,16 +59,15 @@ impl Plot<'t> {
 impl crate::widget::Widget for Plot<'_> {
 #[fehler::throws(error::Error)] fn paint(&mut self, mut target: &mut crate::widget::Target) {
 	let filter = self.values.iter()
-		.map(|(_,sets)| sets.iter().map(|set| set.iter().map(|&y| y>1e-6).collect::<Box<[bool]>>()).collect::<Box<[Box<[bool]>]>>())
-		.reduce(|a,b| a.iter().zip(b.iter()).map(|(a,b)| a.iter().zip(b.iter()).map(|(a,b)| a|b).collect::<Box<[bool]>>()).collect::<Box<[Box<[bool]>]>>()).unwrap();
-	let keys = self.keys.iter().zip(filter.iter()).map(|(sets, filter)| sets.iter().zip(filter.iter()).filter(|(_,&filter)| filter).map(|(set,_)| set).collect::<Box<_>>()).collect::<Box<_>>();
+		.map(|(_,sets)| map(&**sets, |set| map(&**set, |&y| y>1e-6)))
+		.reduce(|a,b| map(a.iter().zip(b.iter()), |(a,b)| map(a.iter().zip(b.iter()), |(a,b)| a|b))).unwrap();
+	let keys = map(self.keys.iter().zip(filter.iter()), |(sets, filter)| map(sets.iter().zip(filter.iter()).filter(|(_,&filter)| filter), |(set,_)| set));
 	let set_count = keys.iter().map(|set| set.len()).sum::<usize>();
 
-	use iter::box_collect as collect;
-	let sets_colors = collect(keys.iter().map(|set|
+	let sets_colors = map(&*keys, |set|
 		if set.len() == 1 { box [bgrf{b:1., g:1., r:1.}] }
-		else { collect((0..set.len()).map(|i| bgrf::from(crate::color::LCh{L:53., C:179., h: 2.*std::f32::consts::PI*(i as f32)/(set.len() as f32)}))) }
-	));
+		else { map(0..set.len(), |i| bgrf::from(crate::color::LCh{L:53., C:179., h: 2.*std::f32::consts::PI*(i as f32)/(set.len() as f32)})) }
+	);
 
 	let ticks = |MinMax{max,..}| {
 		if max == 0. { return (vector::MinMax{min: 0., max: 0.}, box [(0.,"0".to_string())] as Box<[_]>); }
@@ -77,37 +76,37 @@ impl crate::widget::Widget for Plot<'_> {
 		let (max, tick_count) = *[(1.,5),(1.2,6),(1.4,7),(2.,10),(2.5,5),(3.,3),(3.2,8),(4.,8),(5.,5),(6.,6),(8.,8),(10.,5)].iter().find(|(max,_)| exp_fract_log10-f64::exp2(-52.) <= *max).unwrap();
 		let max = max*num::exp10(f64::floor(log10));
 		let precision = if max <= 1. { 1 } else { 0 };
-		(vector::MinMax{min: 0., max}, collect((0..=tick_count).map(|i| max*(i as f64)/(tick_count as f64)).map(|value| (value, format!("{:.1$}", value, precision)))))
+		(vector::MinMax{min: 0., max}, map((0..=tick_count).map(|i| max*(i as f64)/(tick_count as f64)), |value| (value, format!("{:.1$}", value, precision))))
 	};
 
-	let values = self.values.iter().map(|(x,sets)| (*x, sets.iter().zip(filter.iter()).map(|(set,filter)| set.iter().zip(filter.iter()).filter(|(_,&filter)| filter).map(|(&set,_)| set).collect::<Box<_>>()).collect::<Box<_>>())).collect::<Box<_>>();
-	let x_minmax = vector::minmax(values.iter().map(|&(x,_)| x)).unwrap();
+	let values = map(&self.values, |(x,sets)| (x, map(sets.iter().zip(filter.iter()), |(set,filter)| map(set.iter().zip(filter.iter()).filter(|(_,&filter)| filter), |(&set,_)| set))));
+	let x_minmax = vector::minmax(values.iter().map(|&(x,_)| *x)).unwrap();
 	let (x_minmax, x_labels) = ticks(x_minmax);
 
 	let mut serie_of_sets = values.iter().map(|(_,sets)| sets);
-	let mut sets_data_minmax = serie_of_sets.next().unwrap().iter().map(|set| vector::minmax(set.iter().copied()).unwrap()).collect::<Box<[_]>>();
+	let mut sets_data_minmax = map(&**serie_of_sets.next().unwrap(), |set| vector::minmax(set.iter().copied()).unwrap());
 	for sets in serie_of_sets { for (minmax, set) in sets_data_minmax.iter_mut().zip(sets.iter()) { *minmax = minmax.minmax(vector::minmax(set.iter().copied()).unwrap()) } }
-	let sets_minmax = collect(sets_data_minmax.iter().map(|&minmax| ticks(minmax).0)); // fixme
+	let sets_minmax = map(&*sets_data_minmax, |&minmax| ticks(minmax).0); // fixme
 
 	let size = target.size;
-	fn map(MinMax{min,max} : MinMax<f64>, v: f64) -> Option<f32> { if min < max { Some(((v-min) / (max-min)) as f32) } else { None } }
-	fn map_x(size: ::xy::size, left: u32, right: u32, minmax: MinMax<f64>, v: f64) -> Option<f32> { Some(left as f32+map(minmax, v)?*(size.x-left-right-1) as f32) }
-	fn map_y(size: ::xy::size, top: u32, bottom: u32, minmax: MinMax<f64>, v: f64) -> Option<f32> { Some((size.y-bottom-1) as f32-map(minmax, v)?*(size.y-top-bottom-1) as f32) }
+	fn linear_step(MinMax{min,max} : MinMax<f64>, v: f64) -> Option<f32> { if min < max { Some(((v-min) / (max-min)) as f32) } else { None } }
+	fn map_x(size: ::xy::size, left: u32, right: u32, minmax: MinMax<f64>, v: f64) -> Option<f32> { Some(left as f32+linear_step(minmax, v)?*(size.x-left-right-1) as f32) }
+	fn map_y(size: ::xy::size, top: u32, bottom: u32, minmax: MinMax<f64>, v: f64) -> Option<f32> { Some((size.y-bottom-1) as f32-linear_step(minmax, v)?*(size.y-top-bottom-1) as f32) }
 
 	if (x_minmax, &sets_minmax) != (self.x_minmax, &self.sets_minmax) {
 		image::fill(&mut target, bgra8{b:0,g:0,r:0,a:0xFF});
 
-		let mut x_ticks = collect(x_labels.iter().map(|(_,label)| crate::text::View::new(crate::text::Borrowed::new(label))));
+		let mut x_ticks = map(&*x_labels, |(_,label)| crate::text::View::new(crate::text::Borrowed::new(label)));
 		let x_label_size = vector::minmax(x_ticks.iter_mut().map(|tick| tick.size())).unwrap().max;
 
-		let sets_tick_labels = collect(sets_data_minmax.iter().map(|&minmax| ticks(minmax).1));
-		let mut sets_ticks = collect(sets_tick_labels.iter().map(|set| collect(set.iter().map(|(_,label)| crate::text::View::new(crate::text::Borrowed::new(label))))));
-		let sets_tick_label_size = collect(sets_ticks.iter_mut().map(|set_ticks| { vector::minmax(set_ticks.iter_mut().map(|tick| tick.size())).unwrap().max }));
+		let sets_tick_labels = map(&*sets_data_minmax, |&minmax| ticks(minmax).1);
+		let mut sets_ticks = map(&*sets_tick_labels, |set| map(&**set, |(_,label)| crate::text::View::new(crate::text::Borrowed::new(label))));
+		let sets_tick_label_size = map(&mut *sets_ticks, |set_ticks| { vector::minmax(set_ticks.iter_mut().map(|tick| tick.size())).unwrap().max });
 
-		let sets_styles = collect(sets_colors.iter().map(|set| collect(set.iter().map(|&color| (box [color.into()] as Box<[_]>)))));
-		let mut sets_labels = collect(keys.iter().zip(sets_styles.iter()).map(
-			|(keys, styles)| collect(keys.iter().zip(styles.iter()).map(|(key,style)| crate::text::View::new(crate::text::Borrowed{text: key, style})))
-		));
+		let sets_styles = map(&*sets_colors, |set| map(&**set, |&color| (box [color.into()] as Box<[_]>)));
+		let mut sets_labels = map(keys.iter().zip(sets_styles.iter()),
+			|(keys, styles)| map(keys.iter().zip(styles.iter()), |(key,style)| crate::text::View::new(crate::text::Borrowed{text: key, style}))
+		);
 		let sets_label_size = vector::minmax( sets_labels.iter_mut().map(|set| { vector::minmax(set.iter_mut().map(|label| label.size())).unwrap().max }) ).unwrap().max;
 
 		let x_label_scale = num::Ratio{num: size.x/(x_labels.len() as u32*2).max(5)-1, div: x_label_size.x-1};
@@ -117,10 +116,10 @@ impl crate::widget::Widget for Plot<'_> {
 
 		self.top = (y_label_scale*sets_label_size.y).max(((sets_tick_label_size.iter().map(|&label_size| y_label_scale.ceil(label_size.y)).max().unwrap() + 1) / 2).min(size.y/4));
 		self.bottom = (x_label_scale * x_label_size.y).min(size.y/4);
-		let [left, right] = iter::vec::Vector::collect(iter::vec::generate(|i|
+		let [left, right] = [0,1].map(|i|
 			(if let Some(&label_size) = sets_tick_label_size.get(i) { y_label_scale.ceil(label_size.x) } else { 0 })
 				.max((x_label_scale.ceil(x_label_size.x)+1)/2).min(size.x/4)
-		));
+		);
 		self.left = left;
 		self.right = right;
 
@@ -163,8 +162,8 @@ impl crate::widget::Widget for Plot<'_> {
 
 	use itertools::Itertools;
 	let (left,right,top,bottom) = (self.left,self.right,self.top,self.bottom);
-	values[self.last.max(1)-1..].iter().map(|(x, sets)| sets.iter().zip(self.sets_minmax.iter()).zip(sets_colors.iter()).map(
-		move |((set, &minmax), colors)| set.iter().zip(colors.iter()).map(move |(&y, color)| Some((xy{x: map_x(size, left, right, x_minmax, *x)?, y: map_y(size, top, bottom, minmax, y)?}, color)))
+	values[self.last.max(1)-1..].iter().map(|(&x, sets)| sets.iter().zip(self.sets_minmax.iter()).zip(sets_colors.iter()).map(
+		move |((set, &minmax), colors)| set.iter().zip(colors.iter()).map(move |(&y, color)| Some((xy{x: map_x(size, left, right, x_minmax, x)?, y: map_y(size, top, bottom, minmax, y)?}, color)))
 	))
 	.tuple_windows().for_each(|(sets0, sets1)| sets0.zip(sets1).for_each(|(s0,s1)| s0.zip(s1).for_each(
 		|line| if let (Some((p0, &color)), Some((p1, _))) = line { self::line(&mut target, p0, p1, color) }
