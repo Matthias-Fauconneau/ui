@@ -1,8 +1,11 @@
-[package]
-name = 'ui'
-version = '0.0.0'
-authors = ['Matthias Fauconneau <matthias.fauconneau@gmail.com>']
-edition = '2018'
+cargo-features=['edition2021']
+package={name='ui', version='0.0.0', edition='2021'}
+example = [
+	{name= 'window', path= 'examples/window.rs', required-features= ['app']},
+	{name= 'text', path= 'examples/text.rs', required-features= ['app','text']},
+	{name= 'compose', path= 'examples/compose.rs', required-features= ['edit']},
+	{name= 'edit', path= 'examples/edit.rs', required-features= ['app','edit']}
+]
 
 [features]
 widget= ['fehler','error','client-toolkit']
@@ -16,48 +19,28 @@ plot= ['text','color','itertools']
 default= ['color','text','app']
 
 [dependencies]
-iter= {git='https://github.com/Matthias-Fauconneau/iter', optional=true}
-num= {git='https://github.com/Matthias-Fauconneau/num', optional=true}
+iter={git='https://github.com/Matthias-Fauconneau/iter', optional=true}
+num={git='https://github.com/Matthias-Fauconneau/num', optional=true}
 vector= {git='https://github.com/Matthias-Fauconneau/vector', optional=true}
-cfg-if= ''
-fehler= {version='', optional=true} # #[throws] expects {{root}}::fehler
-derive-more= {version='', package='derive_more', optional=true}
-owning-ref= {version='', package='owning_ref', optional=true}
-error= {version='', package='anyhow', optional=true}
-futures-lite= ''
-futures= {version='', optional=true, package = 'futures-util'} # SelectAll, select_all, LocalBoxStream
-sc= {version='', optional=true}
-async-io= {version='', optional=true}
+cfg-if='*'
+fehler= {version='*', optional=true} # #[throws] expects {{root}}::fehler
+derive-more= {version='*', package='derive_more', optional=true}
+owning-ref= {version='*', package='owning_ref', optional=true}
+error= {version='*', package='anyhow', optional=true}
+futures-lite='*'
+futures= {version='*', optional=true, package = 'futures-util'} # SelectAll, select_all, LocalBoxStream
+sc= {version='*', optional=true}
+async-io= {version='*', optional=true}
 
-memmap= {version='', optional=true}
-dirs= ''
+memmap= {version='*', optional=true}
+dirs= '*'
 xy= {git='https://github.com/Matthias-Fauconneau/xy'}
 image= {git='https://github.com/Matthias-Fauconneau/image'}
-client-toolkit= {version='', package='smithay-client-toolkit', optional=true, default-features=false}
+client-toolkit= {version='*', package='smithay-client-toolkit', optional=true, default-features=false}
 
-kurbo= {version='', optional=true}
-ttf-parser= {version='', optional=true}
-unicode-segmentation= {version='', optional=true}
+kurbo= {version='*', optional=true}
+ttf-parser= {version='*', optional=true}
+unicode-segmentation= {version='*', optional=true}
 
 trace= {git='https://github.com/Matthias-Fauconneau/trace', optional=true}
-itertools= {version='', optional=true}
-
-[[example]]
-name= 'window'
-path= 'examples/window.rs'
-required-features= ['app']
-
-[[example]]
-name= 'text'
-path= 'examples/text.rs'
-required-features= ['app','text']
-
-[[example]]
-name= 'compose'
-path= 'examples/compose.rs'
-required-features= ['edit']
-
-[[example]]
-name= 'edit'
-path= 'examples/edit.rs'
-required-features= ['app','edit']
+itertools= {version='*', optional=true}
