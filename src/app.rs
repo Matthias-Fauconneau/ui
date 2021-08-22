@@ -123,7 +123,7 @@ impl<'t, W:Widget> App<'t, W> {
 			display: Some(display),
 			streams: select_all({let mut v=Vec::new(); v.push(self::queue(queue)?); v}),
 			_seat_listener,
-			modifiers_state: Default::default(),
+			modifiers_state: ModifiersState::default(),
 			pool,
 			surface,
 			widget,

@@ -26,7 +26,7 @@ cfg-if='*'
 fehler= {version='*', optional=true} # #[throws] expects {{root}}::fehler
 derive-more= {version='*', package='derive_more', optional=true}
 owning-ref= {version='*', package='owning_ref', optional=true}
-error= {version='*', package='anyhow', optional=true}
+error= {git='https://github.com/Matthias-Fauconneau/error', optional=true}
 futures-lite='*'
 futures= {version='*', optional=true, package = 'futures-util'} # SelectAll, select_all, LocalBoxStream
 rsix= '*'

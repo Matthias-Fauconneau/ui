@@ -43,6 +43,7 @@ fn metrics<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> LineMetrics {
 }
 
 pub type Color = image::bgrf;
+pub use image::bgr;
 #[derive(Clone,Copy,Default,Debug)] pub enum FontStyle { #[default] Normal, Bold, /*Italic, BoldItalic*/ }
 #[derive(Clone,Copy,Default,Debug)] pub struct Style { pub color: Color, pub style: FontStyle }
 pub type TextRange = std::ops::Range<GraphemeIndex>;
@@ -56,8 +57,8 @@ use {std::{lazy::SyncLazy, path::Path}};
 pub fn default_font() -> Font<'static> { iter::from_iter(iter::into::IntoMap::map(&*default_font_files, |x| std::ops::Deref::deref(x))) }
 #[allow(non_upper_case_globals)]
 pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
-use std::sync::Mutex;
-pub static CACHE: SyncLazy<Mutex<Vec<((Ratio, GlyphId),Image<Vec<u8>>)>>> = SyncLazy::new(|| Mutex::new(Vec::new()));
+use std::{sync::Mutex, collections::HashMap};
+pub static CACHE: SyncLazy<Mutex<HashMap<(Ratio, GlyphId),Image<Vec<u8>>>>> = SyncLazy::new(|| Mutex::new(HashMap::new())); //default();
 
 pub struct View<'t, D> {
     pub font : Font<'t>,
@@ -97,7 +98,7 @@ impl<D:AsRef<str>> View<'_, D> {
 	pub line: usize,
 	pub column: GraphemeIndex // May be on the right of the corresponding line (preserves horizontal affinity during line up/down movement)
 }
-impl Zero for LineColumn { const ZERO: Self = Self{line: 0, column: 0}; }
+impl const Zero for LineColumn { const ZERO: Self = Self{line: 0, column: 0}; }
 
 pub fn index(text: &str, LineColumn{line, column}: LineColumn) -> GraphemeIndex {
 	let Range{start, end} = line_ranges(text).nth(line).unwrap().range;
@@ -116,7 +117,7 @@ impl LineColumn {
 	pub start: LineColumn,
 	pub end: LineColumn,
 }
-impl Zero for Span { const ZERO : Self = Self{start: zero(), end: zero()}; }
+impl const Zero for Span { const ZERO : Self = Self{start: zero(), end: zero()}; }
 impl Span {
 	pub fn new(end: LineColumn) -> Self { Self{start: end, end} }
 	pub fn min(&self) -> LineColumn { min(self.start, self.end) }
@@ -171,6 +172,7 @@ impl<D:AsRef<str>> View<'_, D> {
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 	pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio, offset: uint2) {
 		let Self{font, data, ..} = &*self;
+		dbg!(target.size, scale, offset);
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
 																						/*.take_while({let clip = target.size.y/scale - offset.y; move |&(line_index,_)| (line_index as u32)*(font[0].height() as u32) < clip})*/ {
@@ -182,22 +184,20 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					else { break; }
 				}
 				let mut cache = CACHE.lock().unwrap();
-				if cache.iter().find(|(key,_)| key == &(scale, id)).is_none() {
-					cache.push( ((scale, id), image::from_linear(&face.rasterize(scale, id, bbox).as_ref())) );
-				};
-				let coverage = &cache.iter().find(|(key,_)| key == &(scale, id)).unwrap().1;
+				let coverage = cache.entry((scale, id)).or_insert_with(|| image::from_linear(&face.rasterize(scale, id, bbox).as_ref()));
 				let position = xy{
 					x: (x+face.glyph_hor_side_bearing(id).unwrap() as i32),
 					y: ((line_index as u32)*(font[0].height() as u32) + (font[0].ascender()-bbox.max.y as i16) as u32) as i32
 				};
-				let offset = ::xy::ifloor(scale, offset.signed() + position);
+				let offset = ::xy::ifloor(scale, position - offset.signed());
 				let target_size = target.size.signed() - offset;
 				let target_offset = vector::component_wise_max(zero(), offset).unsigned();
 				let source_offset = vector::component_wise_max(zero(), -offset);
 				let source_size = coverage.size.signed() - source_offset;
 				let size = vector::component_wise_min(source_size, target_size);
-				if size.x > 0 && size.y > 0 {
+					if size.x > 0 && size.y > 0 {
 					let size = size.unsigned();
+					dbg!(target_offset, size, style.map(|x|x.attribute.color).unwrap_or((1.).into()), source_offset);
 					image::fill_mask(&mut target.slice_mut(target_offset, size), style.map(|x|x.attribute.color).unwrap_or((1.).into()), &coverage.slice(source_offset.unsigned(), size));
 				}
 			}

@@ -1,5 +1,5 @@
 #![cfg_attr(feature="app", feature(async_closure, box_syntax))]
-#![cfg_attr(feature="text", feature(derive_default_enum, once_cell))]
+#![cfg_attr(feature="text", feature(derive_default_enum, once_cell, const_trait_impl))]
 #![cfg_attr(feature="plot", feature(bool_to_option))]
 
 #[cfg(feature="color")] pub mod color;

@@ -7,7 +7,8 @@ pub fn index(s: &str, grapheme_index: GraphemeIndex) -> usize {
 		_ => panic!()
 	}
 }
-#[throws(as Option)] pub fn find(s: &str, byte_index: usize) -> GraphemeIndex {
+#[track_caller] #[throws(as Option)] pub fn find(s: &str, byte_index: usize) -> GraphemeIndex {
+	assert!(byte_index<=s.len());
 	let mut grapheme_index = 0;
 	for (grapheme_byte_index,_) in s.grapheme_indices(true) {
 		if grapheme_byte_index == byte_index { return grapheme_index; }
