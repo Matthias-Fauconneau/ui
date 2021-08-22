@@ -48,12 +48,12 @@ fn surface<'t, W:Widget>(env: Environment<Compositor>) -> (Attached<Surface>, Ma
 		draw(pool, &surface, widget, *size).unwrap()
 	});
 
-	let wm = env.require_global::<WmBase>(); 
+	let wm = env.require_global::<WmBase>();
 	// GlobalHandler<xdg_wm_base::XdgWmBase>::get assigns ping-pong
     let xdg_surface = wm.get_xdg_surface(&surface);
 	let toplevel = xdg_surface.get_toplevel();
 	surface.commit();
-	
+
 	toplevel.quick_assign(|_toplevel, event, mut app| {
 		let App{display, unscaled_size, ..} = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
 		use toplevel::Event::*;

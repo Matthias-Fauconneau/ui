@@ -24,7 +24,7 @@ impl Cow<'_> {
 impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { match self { Cow::Borrowed(b) => b.text, Cow::Owned(o) => &o.text} } }
 impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { match self { Cow::Borrowed(b) => b.style, Cow::Owned(o) => &o.style} } }
 
-impl Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed::new(text)) } }
+impl<'t> Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed::new(text)) } }
 
 struct State {
 	text: String, // fixme: diff
@@ -243,7 +243,7 @@ impl Widget for Edit<'_,'_> {
 }
 
 #[derive(derive_more::Deref)] pub struct Scroll<'f,'t> { #[deref] pub edit: Edit<'f, 't>, pub offset: uint2 }
-impl Scroll<'f,'t> {
+impl<'f,'t> Scroll<'f,'t> {
 	pub fn new(edit: Edit<'f,'t>) -> Self { Self{edit, offset: zero()} }
 	pub fn paint_fit(&mut self, target : &mut Target) -> Ratio { let Self{edit: Edit{view, ..}, offset} = self; view.paint_fit(target, *offset) }
 	pub fn keep_selection_in_view(&mut self, size: size) {

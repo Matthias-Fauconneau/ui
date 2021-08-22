@@ -24,7 +24,7 @@ pub struct Graphic<'t> {
 
 impl<'t> Graphic<'t> {
 	pub fn new(scale: Ratio, font: &'t Face) -> Self {
-		Self{scale, rects: Default::default(), parallelograms: Default::default(), font, glyphs: Default::default() }
+		Self{scale, rects: vec![], parallelograms: vec![], font, glyphs: vec![]}
 	}
 	pub fn bounds(&self) -> Rect {
 		use vector::{Bounds, MinMax};

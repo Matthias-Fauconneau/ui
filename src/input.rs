@@ -61,7 +61,7 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 								ctrl: mods_depressed&CTRL != 0,
 								alt: mods_depressed&ALT != 0,
 								logo: mods_depressed&LOGO != 0,
-								..Default::default()
+								caps_lock: false, num_lock: false
 						}
 				},
 				RepeatInfo {..} => {},
@@ -70,8 +70,7 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 		});
 	}
 	if seat_data.has_pointer {
-		let mut position = Default::default();
-		let mut mouse_buttons = Default::default();
+		let (mut position, mut mouse_buttons) = num::zero();
 		theme_manager.theme_pointer_with_impl(&seat, move |event, mut pointer, mut app| {
 			let app = unsafe{std::mem::transmute::<&mut App<&mut dyn Widget>,&mut App<'t,W>>(app.get::<App<&mut dyn Widget>>().unwrap())};
 			let event_context = EventContext{modifiers_state: app.modifiers_state, pointer: Some(&mut pointer)};

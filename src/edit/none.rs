@@ -6,4 +6,4 @@ pub trait IsNone {
 	fn to_option(self) -> Option<Self> where Self:Sized { if self.is_some() { Some(self) } else { None } } // final
 }
 impl<T:None+PartialEq> IsNone for T { fn is_none(&self) -> bool { self == &None::none() } }
-impl<T:std::default::Default> None for T { fn none() -> Self { std::default::Default::default() } }
+impl<T:Default> None for T { fn none() -> Self { T::default() } }

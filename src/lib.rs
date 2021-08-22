@@ -1,6 +1,5 @@
-#![cfg_attr(feature="app", feature(async_closure,box_syntax,stmt_expr_attributes))]
-#![cfg_attr(any(feature="app",feature="text"), feature(once_cell))]
-#![cfg_attr(feature="text", feature(array_map, in_band_lifetimes))]
+#![cfg_attr(feature="app", feature(async_closure, box_syntax))]
+#![cfg_attr(feature="text", feature(derive_default_enum, once_cell))]
 #![cfg_attr(feature="plot", feature(bool_to_option))]
 
 #[cfg(feature="color")] pub mod color;

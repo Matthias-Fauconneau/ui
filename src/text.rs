@@ -4,7 +4,7 @@ use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
 #[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, pub(crate) range: Range<GraphemeIndex> }
 
-pub(crate) fn line_ranges(text: &'t str) -> impl Iterator<Item=LineRange<'t>> {
+pub(crate) fn line_ranges<'t>(text: &'t str) -> impl Iterator<Item=LineRange<'t>> {
 	let mut iter = text.grapheme_indices(true).enumerate().peekable();
 	std::iter::from_fn(move || {
 		let &(start, (byte_start,_)) = iter.peek()?;
@@ -33,9 +33,9 @@ pub(crate) fn bbox<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> impl Iterator<Ite
 	iter.filter_map(move |g| Some((g.face.glyph_bounding_box(g.id).map(rect)?, g)))
 }
 
-#[derive(Default)] pub(crate) struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
-pub(crate) fn metrics<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> LineMetrics {
-	bbox(iter).fold(Default::default(), |metrics: LineMetrics, (bbox, Glyph{x, id, face, ..})| LineMetrics{
+struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
+fn metrics<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> LineMetrics {
+	bbox(iter).fold(LineMetrics{width: 0, ascent: 0, descent: 0}, |metrics: LineMetrics, (bbox, Glyph{x, id, face, ..})| LineMetrics{
 		width: (x + face.glyph_hor_side_bearing(id).unwrap() as i32 + bbox.max.x) as u32,
 		ascent: max(metrics.ascent, bbox.max.y as i16),
 		descent: min(metrics.descent, bbox.min.y as i16)
@@ -43,8 +43,7 @@ pub(crate) fn metrics<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> LineMetrics {
 }
 
 pub type Color = image::bgrf;
-#[derive(Clone,Copy,Debug)] pub enum FontStyle { Normal, Bold, /*Italic, BoldItalic*/ }
-impl Default for FontStyle { fn default() -> Self { Self::Normal } }
+#[derive(Clone,Copy,Default,Debug)] pub enum FontStyle { #[default] Normal, Bold, /*Italic, BoldItalic*/ }
 #[derive(Clone,Copy,Default,Debug)] pub struct Style { pub color: Color, pub style: FontStyle }
 pub type TextRange = std::ops::Range<GraphemeIndex>;
 #[derive(Clone,derive_more::Deref,Debug)] pub struct Attribute<T> { #[deref] pub range: TextRange, pub attribute: T }
@@ -224,4 +223,4 @@ pub type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
 
 impl AsRef<str> for Borrowed<'_> { fn as_ref(&self) -> &str { self.text } }
 impl AsRef<[Attribute<Style>]> for Borrowed<'_> {  fn as_ref(&self) -> &[Attribute<Style>] { self.style } }
-impl Borrowed<'t> { pub fn new(text: &'t str) -> Self { Borrowed{text, style: &default_style} } }
+impl<'t> Borrowed<'t> { pub fn new(text: &'t str) -> Self { Borrowed{text, style: &default_style} } }
