@@ -1,5 +1,5 @@
-cargo-features=['edition2021']
-package={name='ui', version='0.0.0', edition='2021'}
+cargo-features= ['edition2021']
+package= {name='ui', version='0.0.0', edition='2021'}
 example = [
 	{name= 'window', path= 'examples/window.rs', required-features= ['app']},
 	{name= 'text', path= 'examples/text.rs', required-features= ['app','text']},
@@ -9,7 +9,7 @@ example = [
 
 [features]
 widget= ['fehler','error','client-toolkit']
-app= ['fehler','num','futures','async-io','client-toolkit','widget','sc','vector']
+app= ['fehler','num','futures','async-io','client-toolkit','widget','vector']
 font= ['derive-more','fehler','ttf-parser','kurbo','image/num']
 graphic= ['fehler','widget','font']
 font-file= ['font','owning-ref','memmap']
@@ -29,7 +29,7 @@ owning-ref= {version='*', package='owning_ref', optional=true}
 error= {version='*', package='anyhow', optional=true}
 futures-lite='*'
 futures= {version='*', optional=true, package = 'futures-util'} # SelectAll, select_all, LocalBoxStream
-sc= {version='*', optional=true}
+rsix= '*'
 async-io= {version='*', optional=true}
 
 memmap= {version='*', optional=true}
