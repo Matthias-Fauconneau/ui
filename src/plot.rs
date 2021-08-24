@@ -50,7 +50,7 @@ pub struct Plot<'t> {
 	last: usize,
 }
 
-impl Plot<'t> {
+impl<'t> Plot<'t> {
 	pub fn new(keys: Box<[&'t [&'t str]]>, values: Vec<Frame>) -> Self {
 		use num::zero; Self{keys, values, x_minmax: MinMax{min: zero(), max: zero()}, sets_minmax: box [], top: 0, bottom: 0, left: 0, right: 0, last: 0}
 	}
@@ -124,7 +124,7 @@ impl crate::widget::Widget for Plot<'_> {
 		self.right = right;
 
 		for (i, label) in sets_labels.iter_mut().map(|set| set.iter_mut()).flatten().enumerate() {
-			label.paint(&mut target, sets_label_scale, xy{x: left+(i as u32)*(size.x-right-left)/(set_count as u32), y: 0}/sets_label_scale);
+			label.paint(&mut target, sets_label_scale, (xy{x: left+(i as u32)*(size.x-right-left)/(set_count as u32), y: 0}/sets_label_scale).signed());
 		}
 
 		let fg = bgra8{b:0xFF, g:0xFF, r:0xFF, a:0xFF};
@@ -138,7 +138,7 @@ impl crate::widget::Widget for Plot<'_> {
 				let p = xy{x: map_x(size, left, right, x_minmax, value).unwrap() as u32, y: size.y-self.bottom};
 				target.slice_mut(p-xy{x:0, y:tick_length}, xy{x:1, y:tick_length}).set(|_| fg);
 				let p = p/x_label_scale - xy{x: tick_label.size().x/2, y: 0};
-				tick_label.paint(&mut target, x_label_scale, p);
+				tick_label.paint(&mut target, x_label_scale, p.signed());
 			}
 		}
 
@@ -149,7 +149,7 @@ impl crate::widget::Widget for Plot<'_> {
 						let p = xy{x: [0, size.x-right][i], y: map_y(size, self.top, self.bottom, minmax, value).unwrap() as u32};
 						target.slice_mut(p+xy{x:[left,0][i],y:0}-xy{x:[0,tick_length][i],y:0}, xy{x:tick_length, y:1}).set(|_| fg);
 						let p = p/scale + xy{x: [left/scale-tick_label.size().x,0][i], y: 0} - xy{x: 0, y: tick_label.size().y/2};
-						tick_label.paint(&mut target, scale, p);
+						tick_label.paint(&mut target, scale, p.signed());
 					}
 				}
 			}

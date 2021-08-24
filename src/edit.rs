@@ -245,7 +245,7 @@ impl Widget for Edit<'_,'_> {
 #[derive(derive_more::Deref)] pub struct Scroll<'f,'t> { #[deref] pub edit: Edit<'f, 't>, pub offset: uint2 }
 impl<'f,'t> Scroll<'f,'t> {
 	pub fn new(edit: Edit<'f,'t>) -> Self { Self{edit, offset: zero()} }
-	pub fn paint_fit(&mut self, target : &mut Target) -> Ratio { let Self{edit: Edit{view, ..}, offset} = self; view.paint_fit(target, *offset) }
+	pub fn paint_fit(&mut self, target : &mut Target) -> Ratio { let Self{edit: Edit{view, ..}, offset} = self; view.paint_fit(target, -offset.signed()) }
 	pub fn keep_selection_in_view(&mut self, size: size) {
 		let Self{edit: Edit{view, selection, ..}, offset} = self;
 		let Rect{min,max} = view.span(selection.min(), selection.max());
@@ -273,7 +273,7 @@ impl Widget for Scroll<'_,'_> {
 	#[throws] fn paint(&mut self, target : &mut Target) {
 		let scale = self.paint_fit(target);
 		let Scroll{edit: Edit{view, selection, ..}, offset} = self;
-		view.paint_span(target, scale, *offset, *selection, image::bgr{b: true, g: true, r: true});
+		view.paint_span(target, scale, -offset.signed(), *selection, image::bgr{b: true, g: true, r: true});
 	}
 	#[throws] fn event(&mut self, size: size, event_context: &EventContext, event: &Event) -> bool { if self.event(size, event_context, event) != Change::None { true } else { false } }
 }

@@ -1,13 +1,15 @@
+pub use text_size::TextSize;
 pub type GraphemeIndex = usize;
 pub use unicode_segmentation::UnicodeSegmentation;
-pub fn index(s: &str, grapheme_index: GraphemeIndex) -> usize {
+pub fn index(s: &str, grapheme_index: GraphemeIndex) -> usize/*TextSize*/ {
 	match (grapheme_index as usize) .cmp( &s.grapheme_indices(true).count() ) {
 		std::cmp::Ordering::Less => s.grapheme_indices(true).nth(grapheme_index as usize).unwrap().0,
 		std::cmp::Ordering::Equal => s.len(),
 		_ => panic!()
-	}
+	}//.try_into().unwrap()
 }
-#[track_caller] #[throws(as Option)] pub fn find(s: &str, byte_index: usize) -> GraphemeIndex {
+#[track_caller] #[throws(as Option)] pub fn find(s: &str, byte_index: TextSize) -> GraphemeIndex {
+	let byte_index = byte_index.into();
 	assert!(byte_index<=s.len());
 	let mut grapheme_index = 0;
 	for (grapheme_byte_index,_) in s.grapheme_indices(true) {
@@ -48,5 +50,5 @@ use fehler::throws;
 	}
 }
 
-pub fn prev_word(text: &str, from: GraphemeIndex) -> GraphemeIndex { last_word_start(&text[..index(text, from)]).unwrap_or(from) }
-pub fn next_word(text: &str, from: GraphemeIndex) -> GraphemeIndex { from + next_word_start(&text[index(text, from)..]).unwrap_or(from) }
+pub fn prev_word(text: &str, from: GraphemeIndex) -> GraphemeIndex { last_word_start(&text[..index(text, from).into()]).unwrap_or(from) }
+pub fn next_word(text: &str, from: GraphemeIndex) -> GraphemeIndex { from + next_word_start(&text[index(text, from).into()..]).unwrap_or(from) }

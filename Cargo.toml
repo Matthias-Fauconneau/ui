@@ -13,7 +13,7 @@ app= ['fehler','num','futures','async-io','client-toolkit','widget','vector']
 font= ['derive-more','fehler','ttf-parser','kurbo','image/num']
 graphic= ['fehler','widget','font']
 font-file= ['font','owning-ref','memmap']
-text= ['unicode-segmentation','iter','num','font','widget','font-file','derive-more']
+text= ['unicode-segmentation','iter','num','font','widget','font-file','derive-more','text-size']
 color= ['vector']
 plot= ['text','color','itertools']
 default= ['color','text','app']
@@ -41,6 +41,7 @@ client-toolkit= {version='*', package='smithay-client-toolkit', optional=true, d
 kurbo= {version='*', optional=true}
 ttf-parser= {version='*', optional=true}
 unicode-segmentation= {version='*', optional=true}
+text-size= {version='*', optional=true}
 
 trace= {git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 itertools= {version='*', optional=true}

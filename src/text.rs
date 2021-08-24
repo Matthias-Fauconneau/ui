@@ -1,4 +1,4 @@
-use {std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, size, Rect}, ttf_parser::{Face,GlyphId}, fehler::throws, error::Error, num::{zero, Ratio}, crate::font::{self, Rasterize}};
+use {std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, int2, size, Rect}, ttf_parser::{Face,GlyphId}, fehler::throws, error::Error, num::{zero, Ratio}, crate::font::{self, Rasterize}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
@@ -151,9 +151,9 @@ impl<D:AsRef<str>> View<'_, D> {
 			.take_while(|&(_, x)| x <= position.x as i32).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
 	}
-	pub fn paint_span(&self, target : &mut Target, scale: Ratio, offset: uint2, span: Span, bgr: image::bgr<bool>) {
+	pub fn paint_span(&self, target : &mut Target, scale: Ratio, offset: int2, span: Span, bgr: image::bgr<bool>) {
 		let [min, max] = [span.min(), span.max()];
-		let mut invert = |r| Some(image::invert(&mut target.slice_mut_clip(scale*(r-offset))?, bgr));
+		let mut invert = |r:Rect| Some(image::invert(&mut target.slice_mut_clip(scale*(offset+r))?, bgr));
 		if min.line < max.line { invert(self.span(min,LineColumn{line: min.line, column: usize::MAX})); }
 		if min.line == max.line {
 			if min != max { invert(self.span(min,max)); } // selection
@@ -170,9 +170,9 @@ impl<D:AsRef<str>> View<'_, D> {
 }
 
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
-	pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio, offset: uint2) {
+	pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio, offset: int2) {
 		let Self{font, data, ..} = &*self;
-		dbg!(target.size, scale, offset);
+		//dbg!(target.size, scale, offset);
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
 																						/*.take_while({let clip = target.size.y/scale - offset.y; move |&(line_index,_)| (line_index as u32)*(font[0].height() as u32) < clip})*/ {
@@ -189,7 +189,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					x: (x+face.glyph_hor_side_bearing(id).unwrap() as i32),
 					y: ((line_index as u32)*(font[0].height() as u32) + (font[0].ascender()-bbox.max.y as i16) as u32) as i32
 				};
-				let offset = ::xy::ifloor(scale, position - offset.signed());
+				let offset = ::xy::ifloor(scale, offset + position);
 				let target_size = target.size.signed() - offset;
 				let target_offset = vector::component_wise_max(zero(), offset).unsigned();
 				let source_offset = vector::component_wise_max(zero(), -offset);
@@ -197,13 +197,13 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				let size = vector::component_wise_min(source_size, target_size);
 					if size.x > 0 && size.y > 0 {
 					let size = size.unsigned();
-					dbg!(target_offset, size, style.map(|x|x.attribute.color).unwrap_or((1.).into()), source_offset);
+					//dbg!(target_offset, size, style.map(|x|x.attribute.color).unwrap_or((1.).into()), source_offset);
 					image::fill_mask(&mut target.slice_mut(target_offset, size), style.map(|x|x.attribute.color).unwrap_or((1.).into()), &coverage.slice(source_offset.unsigned(), size));
 				}
 			}
 		}
 	}
-	pub fn paint_fit(&mut self, target : &mut Target, offset: uint2) -> Ratio {
+	pub fn paint_fit(&mut self, target : &mut Target, offset: int2) -> Ratio {
 		let scale = self.scale(target.size);
 		self.paint(target, scale, offset);
 		scale
