@@ -42,8 +42,8 @@ fn line(target: &mut Image<&mut[bgra8]>, p0: vec2, p1: vec2, color: bgrf) {
 use vector::MinMax;
 type Frame = (f64, Box<[Box<[f64]>]>);
 pub struct Plot<'t> {
-	keys: Box<[&'t [&'t str]]>,
-	pub values: Vec<Frame>,
+	keys: &'t [&'t [&'t str]],
+	pub values: &'t [Frame],
 	x_minmax: MinMax<f64>,
 	sets_minmax: Box<[MinMax<f64>]>,
 	top: u32, bottom: u32, left: u32, right: u32,
@@ -51,7 +51,7 @@ pub struct Plot<'t> {
 }
 
 impl<'t> Plot<'t> {
-	pub fn new(keys: Box<[&'t [&'t str]]>, values: Vec<Frame>) -> Self {
+	pub fn new(keys: &'t [&'t [&'t str]], values: &'t [Frame]) -> Self {
 		use num::zero; Self{keys, values, x_minmax: MinMax{min: zero(), max: zero()}, sets_minmax: box [], top: 0, bottom: 0, left: 0, right: 0, last: 0}
 	}
 }
@@ -79,7 +79,7 @@ impl crate::widget::Widget for Plot<'_> {
 		(vector::MinMax{min: 0., max}, map((0..=tick_count).map(|i| max*(i as f64)/(tick_count as f64)), |value| (value, format!("{:.1$}", value, precision))))
 	};
 
-	let values = map(&self.values, |(x,sets)| (x, map(sets.iter().zip(filter.iter()), |(set,filter)| map(set.iter().zip(filter.iter()).filter(|(_,&filter)| filter), |(&set,_)| set))));
+	let values = map(self.values, |(x,sets)| (x, map(sets.iter().zip(filter.iter()), |(set,filter)| map(set.iter().zip(filter.iter()).filter(|(_,&filter)| filter), |(&set,_)| set))));
 	let x_minmax = vector::minmax(values.iter().map(|&(x,_)| *x)).unwrap();
 	let (x_minmax, x_labels) = ticks(x_minmax);
 
@@ -142,7 +142,7 @@ impl crate::widget::Widget for Plot<'_> {
 			}
 		}
 
-		for i in 0..2 {
+		for i in 0..keys.len() {
 			if let (Some(&minmax), Some(labels), Some(ticks)) = (sets_minmax.get(i), sets_tick_labels.get(i), sets_ticks.get_mut(i)) {
 				if minmax.min < minmax.max {
 					for (&(value,_), tick_label) in labels.iter().zip(ticks.iter_mut()) {
