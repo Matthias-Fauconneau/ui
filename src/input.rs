@@ -29,7 +29,7 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 							repeat = {
 								let repeat = std::rc::Rc::new(std::cell::Cell::new(key));
 								let from_monotonic_millis = |t| {
-									let now = {let rsix::time::Timespec{tv_sec, tv_nsec} = rsix::time::clock_gettime(rsix::time::ClockId::Monotonic); tv_sec * 1000 + tv_nsec / 1000_000};
+									let now = {let rustix::time::Timespec{tv_sec, tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic); tv_sec * 1000 + tv_nsec / 1000_000};
 									std::time::Instant::now() - std::time::Duration::from_millis((now - t as i64) as u64)
 								};
 								use futures_lite::StreamExt;

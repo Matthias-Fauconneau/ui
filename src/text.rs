@@ -20,7 +20,7 @@ pub fn layout<'t>(font: &'t Font<'t>, iter: impl Iterator<Item=(GraphemeIndex, &
 		use iter::Single;
 		let c = g.chars().single().unwrap();
 		let (face, id) = font.iter().find_map(|face| face.glyph_index(if c == '\t' { ' ' } else { c }).map(|id| (face, id))).unwrap_or_else(||panic!("Missing glyph for '{:?}' {:x?}", c, c as u32));
-		if let Some(last_id) = *last_id { *x += face.kerning_subtables().next().map_or(0, |x| x.glyphs_kerning(last_id, id).unwrap_or(0) as i32); }
+		if let Some(last_id) = *last_id { *x += face.tables().kern.unwrap().subtables.into_iter().next().map_or(0, |x| x.glyphs_kerning(last_id, id).unwrap_or(0) as i32); }
 		*last_id = Some(id);
 		let next = Glyph{index, x: *x, id, face};
 		*x += face.glyph_hor_advance(id)? as i32;
