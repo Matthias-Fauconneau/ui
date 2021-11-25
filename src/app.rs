@@ -132,12 +132,13 @@ impl<'t, W:Widget> App<'t, W> {
 			need_update: true,
 	}
 }
-#[throws] pub async fn display(&mut self, mut idle: impl FnMut(&mut W)->Result<bool>) {
+pub async fn display(&mut self, mut idle: impl FnMut(&mut W)->Result<bool>) -> Result<()> {
 	while let Some(event) = std::pin::Pin::new(&mut self.streams).next().await {
 		event(self)?;
 		if self.display.is_none() { break; }
 		if idle(&mut self.widget)? { self.need_update = true; }
 	}
+	Ok(())
 }
 #[throws] pub fn draw(&mut self) {
 	let Self{display, pool, widget, size, surface, need_update, /*unscaled_size,*/ ..} = self;
