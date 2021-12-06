@@ -58,10 +58,14 @@ impl<'t> Plot<'t> {
 
 impl crate::widget::Widget for Plot<'_> {
 #[fehler::throws(error::Error)] fn paint(&mut self, mut target: &mut crate::widget::Target) {
-	let filter = self.values.iter()
-		.map(|(_,sets)| map(&**sets, |set| map(&**set, |&y| y>1e-6)))
-		.reduce(|a,b| map(a.iter().zip(b.iter()), |(a,b)| map(a.iter().zip(b.iter()), |(a,b)| a|b))).unwrap();
-	let keys = map(self.keys.iter().zip(filter.iter()), |(sets, filter)| map(sets.iter().zip(filter.iter()).filter(|(_,&filter)| filter), |(set,_)| set));
+	let (keys, values) = {
+		let filter = self.values.iter()
+			.map(|(_,sets)| map(&**sets, |set| map(&**set, |&_y| /*_y>1e-6*/true)))
+			.reduce(|a,b| map(a.iter().zip(b.iter()), |(a,b)| map(a.iter().zip(b.iter()), |(a,b)| a|b))).unwrap();
+		let keys = map(self.keys.iter().zip(filter.iter()), |(sets, filter)| map(sets.iter().zip(filter.iter()).filter(|(_,&filter)| filter), |(set,_)| set));
+		let values = map(self.values, |(x,sets)| (x, map(sets.iter().zip(filter.iter()), |(set,filter)| map(set.iter().zip(filter.iter()).filter(|(_,&filter)| filter), |(&set,_)| set))));
+		(keys, values)
+	};	
 	let set_count = keys.iter().map(|set| set.len()).sum::<usize>();
 
 	let sets_colors = map(&*keys, |set|
@@ -79,7 +83,6 @@ impl crate::widget::Widget for Plot<'_> {
 		(vector::MinMax{min: 0., max}, map((0..=tick_count).map(|i| max*(i as f64)/(tick_count as f64)), |value| (value, format!("{:.1$}", value, precision))))
 	};
 
-	let values = map(self.values, |(x,sets)| (x, map(sets.iter().zip(filter.iter()), |(set,filter)| map(set.iter().zip(filter.iter()).filter(|(_,&filter)| filter), |(&set,_)| set))));
 	let x_minmax = vector::minmax(values.iter().map(|&(x,_)| *x)).unwrap();
 	let (x_minmax, x_labels) = ticks(x_minmax);
 
@@ -148,7 +151,8 @@ impl crate::widget::Widget for Plot<'_> {
 					for (&(value,_), tick_label) in labels.iter().zip(ticks.iter_mut()) {
 						let p = xy{x: [0, size.x-right][i], y: map_y(size, self.top, self.bottom, minmax, value).unwrap() as u32};
 						target.slice_mut(p+xy{x:[left,0][i],y:0}-xy{x:[0,tick_length][i],y:0}, xy{x:tick_length, y:1}).set(|_| fg);
-						let p = p/scale + xy{x: [left/scale-tick_label.size().x,0][i], y: 0} - xy{x: 0, y: tick_label.size().y/2};
+						let sub = |a,b| (a as i32 - b as i32).max(0) as u32;
+						let p = p/scale + xy{x: [sub(left/scale, tick_label.size().x),0][i], y: 0} - xy{x: 0, y: tick_label.size().y/2};
 						tick_label.paint(&mut target, scale, p.signed());
 					}
 				}

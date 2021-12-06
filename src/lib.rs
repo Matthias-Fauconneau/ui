@@ -1,5 +1,6 @@
 #![cfg_attr(feature="app", feature(async_closure, box_syntax))]
 #![cfg_attr(feature="text", feature(derive_default_enum, once_cell, const_trait_impl))]
+#![cfg_attr(feature="color", feature(type_alias_impl_trait))]
 
 #[cfg(feature="color")] pub mod color;
 #[cfg(feature="widget")] pub mod widget; //cfg_if! { if #[cfg(feature="widget")] { pub mod widget; pub use widget::{Target, Widget}; }}
