@@ -56,7 +56,7 @@ cfg_if::cfg_if! { if #[cfg(all(feature="owning-ref",feature="memmap"))] {
 use {fehler::throws, error::Error};
 #[derive(derive_more::Deref)] pub struct Handle<'t>(ttf_parser::Face<'t>); // impl Deref
 pub type File<'t> = owning_ref::OwningHandle<Box<memmap::Mmap>, Handle<'t>>;
-#[throws] pub fn open(path: &std::path::Path) -> File {
+#[throws] pub fn open<'t>(path: &std::path::Path) -> File<'t> {
 	owning_ref::OwningHandle::new_with_fn(
 		Box::new(unsafe{memmap::Mmap::map(&std::fs::File::open(path)?)}?),
 		unsafe { |map| Handle(ttf_parser::Face::from_slice(&*map, 0).unwrap()) }
