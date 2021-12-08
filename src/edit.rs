@@ -17,14 +17,9 @@ pub enum Cow<'t> {
 impl Cow<'_> {
 	fn get_mut(&mut self) -> &mut Owned { if let Cow::Borrowed(b) = self  { *self = Cow::Owned(b.to_owned()) } if let Cow::Owned(o) = self { o } else { unreachable!() } }
 }
-/*impl<'f,'t> View<'f, Cow<'t>> {
-	pub fn get_mut(&mut self) -> &mut Cow { self.size = None; &mut self.data }
-}*/
-
-impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { match self { Cow::Borrowed(b) => b.text, Cow::Owned(o) => &o.text} } }
-impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { match self { Cow::Borrowed(b) => b.style, Cow::Owned(o) => &o.style} } }
-
-impl<'t> Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed::new(text)) } }
+impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { match self { Cow::Borrowed(b) => b.as_ref(), Cow::Owned(o) => o.as_ref()} } }
+impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { match self { Cow::Borrowed(b) => b.as_ref(), Cow::Owned(o) => o.as_ref()} } }
+//impl<'t> Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed{text, style: &default_style}) } }
 
 struct State {
 	text: String, // fixme: diff

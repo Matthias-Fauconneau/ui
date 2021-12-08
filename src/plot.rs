@@ -79,7 +79,7 @@ impl crate::widget::Widget for Plot<'_> {
 		let exp_fract_log10 = num::exp10(log10 - f64::floor(log10));
 		let (max, tick_count) = *[(1.,5),(1.2,6),(1.4,7),(2.,10),(2.5,5),(3.,3),(3.2,8),(4.,8),(5.,5),(6.,6),(8.,8),(10.,5)].iter().find(|(max,_)| exp_fract_log10-f64::exp2(-52.) <= *max).unwrap();
 		let max = max*num::exp10(f64::floor(log10));
-		let precision = if max <= 1. { 1 } else { 0 };
+		let precision = if max/(tick_count as f64) < 1. { 1 } else { 0 };
 		(vector::MinMax{min: 0., max}, map((0..=tick_count).map(|i| max*(i as f64)/(tick_count as f64)), |value| (value, format!("{:.1$}", value, precision))))
 	};
 

@@ -62,7 +62,7 @@ pub static CACHE: SyncLazy<Mutex<HashMap<(Ratio, GlyphId),Image<Vec<u8>>>>> = Sy
 
 pub struct View<'t, D> {
     pub font : Font<'t>,
-		pub data: D,
+	pub data: D,
     pub size : Option<size>
 }
 
@@ -172,7 +172,6 @@ impl<D:AsRef<str>> View<'_, D> {
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 	pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio, offset: int2) {
 		let Self{font, data, ..} = &*self;
-		//dbg!(target.size, scale, offset);
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
 																						/*.take_while({let clip = target.size.y/scale - offset.y; move |&(line_index,_)| (line_index as u32)*(font[0].height() as u32) < clip})*/ {
@@ -215,12 +214,14 @@ impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 	#[throws] fn paint(&mut self, target : &mut Target) { self.paint_fit(target, zero()); }
 }
 
+pub struct Plain<T>(pub T);
+impl<T:AsRef<str>> AsRef<str> for Plain<T> { fn as_ref(&self) -> &str { self.0.as_ref() } }
+impl<T> AsRef<[Attribute<Style>]> for Plain<T> {  fn as_ref(&self) -> &[Attribute<Style>] { &[] } }
+
 pub struct Buffer<T, S> {
 	pub text : T,
 	pub style: S,
 }
+impl<T:AsRef<str>,S> AsRef<str> for Buffer<T,S> { fn as_ref(&self) -> &str { self.text.as_ref() } }
+impl<T,S:AsRef<[Attribute<Style>]>> AsRef<[Attribute<Style>]> for Buffer<T,S> {  fn as_ref(&self) -> &[Attribute<Style>] { self.style.as_ref() } }
 pub type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
-
-impl AsRef<str> for Borrowed<'_> { fn as_ref(&self) -> &str { self.text } }
-impl AsRef<[Attribute<Style>]> for Borrowed<'_> {  fn as_ref(&self) -> &[Attribute<Style>] { self.style } }
-impl<'t> Borrowed<'t> { pub fn new(text: &'t str) -> Self { Borrowed{text, style: &default_style} } }

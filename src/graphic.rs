@@ -27,10 +27,10 @@ impl<'t> Graphic<'t> {
 		Self{scale, rects: vec![], parallelograms: vec![], font, glyphs: vec![]}
 	}
 	pub fn bounds(&self) -> Rect {
-		use vector::{Bounds, MinMax};
+		use vector::MinMax;
 		self.rects.iter().map(|r| MinMax{min: r.min, max: r.min.iter().zip(r.max.iter()).map(|(&o,&s)| if s < i32::MAX { s } else { o }).collect()})
-		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + self.font.glyph_size(g.id).into()}) )
-		.bounds()
+		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + self.font.glyph_size(g.id).signed()}) )
+		.reduce(MinMax::minmax)
 		.map(|MinMax{min, max}| Rect{min, max})
 		.unwrap_or_default()
 	}
@@ -50,7 +50,7 @@ impl widget::Widget for View<'_> {
 			for &Rect{min: top_left, max: bottom_right} in &self.graphic.rects {
 				let top_left = self.graphic.scale * (top_left-self.view.min).unsigned();
 				if top_left < target.size {
-					let bottom_right = ::xy::xy(|i| if bottom_right[i] == i32::MAX { target.size[i] } else { self.graphic.scale.ifloor(bottom_right[i]-self.view.min[i]) as u32 });
+					let bottom_right = xy::Component::enumerate().map(|i| if bottom_right[i] == i32::MAX { target.size[i] } else { self.graphic.scale.ifloor(bottom_right[i]-self.view.min[i]) as u32 }).into();
 					target.slice_mut(top_left, vector::component_wise_min(bottom_right, target.size)-top_left).set(|_| 1.);
 				}
 			}
