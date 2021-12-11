@@ -22,7 +22,7 @@ iter={git='https://github.com/Matthias-Fauconneau/iter', optional=true}
 num={git='https://github.com/Matthias-Fauconneau/num', optional=true}
 vector= {git='https://github.com/Matthias-Fauconneau/vector', optional=true}
 cfg-if='*'
-fehler={git='https://github.com/withoutboats/fehler', optional=true}
+fehler={version='*', optional=true}
 derive-more= {version='*', package='derive_more', optional=true}
 owning-ref= {version='*', package='owning_ref', optional=true}
 error= {git='https://github.com/Matthias-Fauconneau/error', optional=true}
