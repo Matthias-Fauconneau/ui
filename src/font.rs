@@ -1,5 +1,8 @@
 mod quad; mod cubic; mod raster;
-use {num::Ratio, ::xy::{xy, size, vec2}, image::Image, quad::quad, cubic::cubic, raster::line};
+use {num::Ratio, ::xy::{xy, size, vec2, Rect}, image::Image, quad::quad, cubic::cubic, raster::line};
+use ttf_parser::GlyphId;
+
+pub fn rect(r: ttf_parser::Rect) -> Rect { Rect{min:xy{x:r.x_min as i32, y:r.y_min as i32},max:xy{x:r.x_max as i32, y:r.y_max as i32}} }
 
 struct Outline<'t> { scale : Ratio /*f32 loses precision*/, x_min: f32, y_max: f32, target : &'t mut Image<&'t mut[f32]>, first : Option<vec2>, p0 : Option<vec2>}
 impl Outline<'_> { fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-self.x_min, y: -(self.scale*y)+self.y_max} } }
@@ -30,9 +33,9 @@ impl ttf_parser::OutlineBuilder for Outline<'_> {
 }
 
 pub trait Rasterize {
-	fn glyph_size(&self, id: ttf_parser::GlyphId) -> size;
-	fn glyph_scaled_size(&self, scale: Ratio, id: ttf_parser::GlyphId) -> size;
-	fn rasterize(&self, scale: Ratio, id: ttf_parser::GlyphId, bbox: ::xy::Rect) -> Image<Vec<f32>>;
+	fn glyph_size(&self, id: GlyphId) -> size;
+	fn glyph_scaled_size(&self, scale: Ratio, id: GlyphId) -> size;
+	fn rasterize(&self, scale: Ratio, id: GlyphId, bbox: Rect) -> Image<Vec<f32>>;
 }
 impl<'t> Rasterize for ttf_parser::Face<'t> {
 	fn glyph_size(&self, id: ttf_parser::GlyphId) -> size {
@@ -46,7 +49,7 @@ impl<'t> Rasterize for ttf_parser::Face<'t> {
 	fn rasterize(&self, scale: Ratio, id: ttf_parser::GlyphId, bbox: ::xy::Rect) -> Image<Vec<f32>> {
 		let x_min = scale.ifloor(bbox.min.x)-1; // Correct rasterization with f32 roundoff without bound checking
 		let y_max = scale.iceil(bbox.max.y as i32);
-		let mut target = Image::zero(self.glyph_scaled_size(scale, id)+xy{x:1, y:1/*2*/});
+		let mut target = Image::zero(self.glyph_scaled_size(scale, id)+xy{x:1, y:1});
 		self.outline_glyph(id, &mut Outline{scale: scale.into(), x_min: x_min as f32, y_max: y_max as f32, target: &mut target.as_mut(), first:None, p0:None}).unwrap();
 		raster::fill(&target.as_ref())
 	}

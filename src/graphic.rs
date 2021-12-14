@@ -40,27 +40,27 @@ pub struct View<'t> { graphic: Graphic<'t>, view: Rect }
 
 impl<'t> View<'t> { pub fn new(graphic: Graphic<'t>) -> Self { Self{view: graphic.bounds(), graphic} } }
 
-use {fehler::throws, error::{Error, Result}, num::zero, ::xy::size, image::{Image, sRGB, bgra8}, crate::{widget::{self, Target}, font::Rasterize}};
+use {fehler::throws, error::{Error, Result}, num::zero, ::xy::size, image::{Image, sRGB, bgra8}, crate::{widget::{self, Target}, font::{Rasterize, rect}}};
 
 impl widget::Widget for View<'_> {
     fn size(&mut self, _: size) -> size { xy::ceil(&self.graphic.scale, self.view.size()) }
     #[throws] fn paint(&mut self, target : &mut Target) {
 		let buffer = {
-			let mut target = Image::zero(target.size);
+			let mut target = Image::fill(target.size, 1.);
 			for &Rect{min: top_left, max: bottom_right} in &self.graphic.rects {
 				let top_left = self.graphic.scale * (top_left-self.view.min).unsigned();
 				if top_left < target.size {
 					let bottom_right = xy::Component::enumerate().map(|i| if bottom_right[i] == i32::MAX { target.size[i] } else { self.graphic.scale.ifloor(bottom_right[i]-self.view.min[i]) as u32 }).into();
-					target.slice_mut(top_left, vector::component_wise_min(bottom_right, target.size)-top_left).set(|_| 1.);
+					target.slice_mut(top_left, vector::component_wise_min(bottom_right, target.size)-top_left).set(|_| 0.);
 				}
 			}
 			for &Glyph{top_left, id} in &self.graphic.glyphs {
 				let offset = self.graphic.scale * (top_left-self.view.min).unsigned();
 				if offset < target.size {
-					let bbox = self.graphic.font.glyph_bounding_box(id).map(crate::text::rect).unwrap();
+					let bbox = self.graphic.font.glyph_bounding_box(id).map(rect).unwrap();
 					let coverage = self.graphic.font.rasterize(self.graphic.scale, id, bbox);
 					let size = vector::component_wise_min(coverage.size, target.size-offset);
-					target.slice_mut(offset, size).zip_map(coverage.slice(zero(), size), |_, &target, &coverage| target + coverage);
+					target.slice_mut(offset, size).zip_map(coverage.slice(zero(), size), |_, &target, &coverage| target - coverage);
 				}
 			}
 			target

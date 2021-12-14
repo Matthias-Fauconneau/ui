@@ -1,4 +1,4 @@
-use {std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, int2, size, Rect}, ttf_parser::{Face,GlyphId}, fehler::throws, error::Error, num::{zero, Ratio}, crate::font::{self, Rasterize}};
+use {std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, int2, size, Rect}, ttf_parser::{Face,GlyphId}, fehler::throws, error::Error, num::{zero, Ratio}, crate::font::{self, Rasterize, rect}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
@@ -28,7 +28,6 @@ pub fn layout<'t>(font: &'t Font<'t>, iter: impl Iterator<Item=(GraphemeIndex, &
 	})
 }
 
-pub fn rect(r: ttf_parser::Rect) -> Rect { Rect{min:xy{x:r.x_min as i32, y:r.y_min as i32},max:xy{x:r.x_max as i32, y:r.y_max as i32}} }
 pub(crate) fn bbox<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> impl Iterator<Item=(Rect, Glyph<'t>)> {
 	iter.filter_map(move |g| Some((g.face.glyph_bounding_box(g.id).map(rect)?, g)))
 }

@@ -1,12 +1,13 @@
-#![cfg_attr(feature="app", feature(async_closure, box_syntax))]
-#![cfg_attr(feature="text", feature(derive_default_enum, once_cell, const_trait_impl))]
-#![cfg_attr(feature="color", feature(type_alias_impl_trait))]
+#![feature(async_closure,let_else,box_syntax,once_cell,type_alias_impl_trait)]
+#![cfg_attr(feature="text", feature(/*derive_default_enum,*//*,const_trait_impl*/))]
+pub type Error = Box<dyn std::error::Error>;
+pub type Result<T=(),E=Error> = std::result::Result<T, E>;
 
-#[cfg(feature="color")] pub mod color;
-#[cfg(feature="widget")] pub mod widget; //cfg_if! { if #[cfg(feature="widget")] { pub mod widget; pub use widget::{Target, Widget}; }}
-#[cfg(feature="app")] mod as_raw_poll_fd;
-#[cfg(feature="app")] mod input;
-#[cfg(feature="app")] pub mod app;
+pub mod color;
+pub mod widget; pub use widget::{RenderContext, Widget};
+mod as_raw_poll_fd;
+mod input;
+mod window; pub use window::{Window, run};
 #[cfg(feature="font")] pub mod font;
 #[cfg(feature="text")] pub mod text; //cfg_if! { if #[cfg(feature="text")] { pub mod text; pub use text::{Text, default_font, default_style}; }}
 #[cfg(feature="text")] pub mod edit; //cfg_if! { if #[cfg(feature="text")] { pub mod edit; pub use edit::TextEdit; }}

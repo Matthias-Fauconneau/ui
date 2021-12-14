@@ -21,5 +21,5 @@ impl From<XYZ> for bgrf { fn from(XYZ{X,Y,Z}: XYZ) -> Self { Self{
 	g: - 0.9689 * X + 1.8758 * Y + 0.0415 * Z,
 	r:    3.2406 * X - 1.5372 * Y - 0.4986 * Z
 }}}
-impl From<LCh> for bgrf { fn from(v: LCh) -> Self { bgrf::from(XYZ::from(Luv::from(v))).clamp() } }
-impl From<LCh> for bgra8 { fn from(v: LCh) -> Self { bgrf::from(v).into() } }
+//impl From<LCh> for bgrf { fn from(v: LCh) -> Self { bgrf::from(XYZ::from(Luv::from(v))).clamp() } }
+//impl From<LCh> for bgra8 { fn from(v: LCh) -> Self { bgrf::from(v).into() } }
