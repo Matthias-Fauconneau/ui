@@ -1,4 +1,4 @@
-use {std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, int2, size, Rect}, ttf_parser::{Face,GlyphId}, fehler::throws, error::Error, num::{zero, Ratio}, crate::font::{self, Rasterize, rect}};
+use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, int2, size, Rect}, ttf_parser::{Face,GlyphId}, num::{zero, Ratio}, crate::font::{self, Rasterize, rect}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
@@ -93,11 +93,10 @@ impl<D:AsRef<str>> View<'_, D> {
 	pub fn scale(&mut self, fit: size) -> Ratio { self.size_scale(fit).1 }
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Copy,Debug)] pub struct LineColumn {
+#[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Copy,Debug,Default)] pub struct LineColumn {
 	pub line: usize,
 	pub column: GraphemeIndex // May be on the right of the corresponding line (preserves horizontal affinity during line up/down movement)
 }
-impl const Zero for LineColumn { const ZERO: Self = Self{line: 0, column: 0}; }
 
 pub fn index(text: &str, LineColumn{line, column}: LineColumn) -> GraphemeIndex {
 	let Range{start, end} = line_ranges(text).nth(line).unwrap().range;
@@ -116,7 +115,6 @@ impl LineColumn {
 	pub start: LineColumn,
 	pub end: LineColumn,
 }
-impl const Zero for Span { const ZERO : Self = Self{start: zero(), end: zero()}; }
 impl Span {
 	pub fn new(end: LineColumn) -> Self { Self{start: end, end} }
 	pub fn min(&self) -> LineColumn { min(self.start, self.end) }
@@ -139,8 +137,9 @@ impl<D:AsRef<str>> View<'_, D> {
 	pub fn text(&self) -> &str { AsRef::<str>::as_ref(&self.data) }
 	fn position(&self, cursor: LineColumn) -> uint2 { self::position(&self.font, self.text(), cursor) }
 	pub fn span(&self, min: LineColumn, max: LineColumn) -> Rect { Rect{min: self.position(min).signed(), max: (self.position(max)+xy{x:0, y: self.font[0].height() as u32}).signed()} }
-	pub fn cursor(&mut self, size: size, position: uint2) -> LineColumn {
-		if self.text().is_empty() { return zero(); }
+	#[throws(as Option)] pub fn cursor(&mut self, size: size, position: uint2) -> LineColumn {
+		fn ensure(s: bool) -> Option<()> { s.then(||()) }
+		ensure(!self.text().is_empty())?;
 		let position = position / self.scale(size);
 		let View{font, ..} = &self;
 		let line = ((position.y/font[0].height() as u32) as usize).min(line_ranges(self.text()).count()-1);
@@ -169,7 +168,7 @@ impl<D:AsRef<str>> View<'_, D> {
 }
 
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
-	pub fn paint(&mut self, target : &mut Image<&mut[bgra8]>, scale: Ratio, offset: int2) {
+	pub fn paint(&mut self, context: &mut RenderContext, scale: Ratio, offset: int2) {
 		let Self{font, data, ..} = &*self;
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
@@ -201,16 +200,16 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 			}
 		}
 	}
-	pub fn paint_fit(&mut self, target : &mut Target, offset: int2) -> Ratio {
-		let scale = self.scale(target.size);
-		self.paint(target, scale, offset);
+	pub fn paint_fit(&mut self, context: &mut RenderContext, size: size, offset: int2) -> Ratio {
+		let scale = self.scale(size);
+		self.paint(context, scale, offset);
 		scale
 	}
 }
-use crate::widget::{Widget, Target};
+use crate::widget::{Widget, RenderContext};
 impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 	fn size(&mut self, size: size) -> size { fit_width(size.x, Self::size(self)) }
-	#[throws] fn paint(&mut self, target : &mut Target) { self.paint_fit(target, zero()); }
+	#[throws] fn paint(&mut self, context: &mut RenderContext) { self.paint_fit(context, zero()); }
 }
 
 pub struct Plain<T>(pub T);

@@ -1,19 +1,19 @@
-package={name='app', version='0.0.0', edition='2021', autoexamples=false, default-run='empty'}
+package={name='app', version='0.0.0', edition='2021', autoexamples=false, default-run='text'}
 example=[
- #{name='empty', path='examples/empty.rs'}
+ {name='empty', path='examples/empty.rs'}
  #{name='text', path='examples/text.rs', required-features=['text']},
  #{name='compose', path='examples/compose.rs', required-features=['text']},
- #{name='edit', path='examples/edit.rs', required-features=['text']},
+ #{name='edit', path='examples/edit.rs', required-features=['edit']},
  #{name='plot', path='examples/plot.rs', required-features=['plot']}
 ]
-bin=[{name='empty',path='examples/empty.rs'}]
+bin=[{name='text',path='examples/text.rs',required-features=['text']}]
 
 [features]
 font=['derive-more','ttf-parser','kurbo','image/num']
-font-file=['font','owning-ref','memmap']
-#text=['unicode-segmentation','iter','font','font-file','derive-more','text-size']
+text=['unicode-segmentation','iter','font','derive-more','text-size']
+#edit=['text']
 #plot=['text','itertools']
-#default=['text']
+default=['text']
 
 [dependencies]
 fehler='*'
@@ -21,13 +21,12 @@ iter={git='https://github.com/Matthias-Fauconneau/iter', optional=true}
 vector= {git='https://github.com/Matthias-Fauconneau/vector'}
 num={git='https://github.com/Matthias-Fauconneau/num'}
 derive-more={version='*', package='derive_more', optional=true}
-owning-ref={version='*', package='owning_ref', optional=true}
+owning-ref={version='*', package='owning_ref'}
 futures-lite='*'
 futures={version='*', package = 'futures-util'} # SelectAll, select_all, LocalBoxStream
 rustix='*'
 async-io='*'
-
-memmap={version='*', optional=true}
+memmap={version='*'}
 dirs='*'
 xy={git='https://github.com/Matthias-Fauconneau/xy'}
 image={git='https://github.com/Matthias-Fauconneau/image'}

@@ -1,6 +1,6 @@
 use xy::vec2;
 
-cfg_if::cfg_if! { if #[cfg(feature="kurbo")] {
+#[cfg(feature="kurbo")]
 
 pub fn cubic(p0: vec2, p1: vec2, p2: vec2, p3: vec2, mut line_to: impl FnMut(vec2)) {
 	use kurbo::PathEl::*;
@@ -9,13 +9,12 @@ pub fn cubic(p0: vec2, p1: vec2, p2: vec2, p3: vec2, mut line_to: impl FnMut(vec
 	kurbo::flatten([MoveTo(p0),CurveTo(p1,p2,p3)], 1./4., |e| if let LineTo(kurbo::Point{x,y}) = e { line_to(vec2{x: x as f32, y: y as f32}); } /*Ignore first MoveTo*/)
 }
 
-} else {
-
-use crate::{vector::{vec2, sq}, quad::Quad};
-
-// Modified from https://github.com/linebender/kurbo MIT
-
+#[cfg(not(feature="kurbo"))]
 pub fn cubic(p0: vec2, p1: vec2, p2: vec2, p3: vec2, mut line_to: impl FnMut(vec2)) {
+	use crate::{vector::{vec2, sq}, quad::Quad};
+
+	// Modified from https://github.com/linebender/kurbo MIT
+
 	// Subdivide into quadratics, and estimate the number of
 	// subdivisions required for each, summing to arrive at an
 	// estimate for the number of subdivisions for the cubic.
@@ -73,5 +72,3 @@ pub fn cubic(p0: vec2, p1: vec2, p2: vec2, p3: vec2, mut line_to: impl FnMut(vec
 	}
 	line_to(p3);
 }
-
-}}

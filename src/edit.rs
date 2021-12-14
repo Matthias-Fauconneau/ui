@@ -1,5 +1,5 @@
 mod none;
-use {std::cmp::{min,max}, fehler::throws, error::Error, num::{IsZero, zero, Ratio}, iter::Single, xy::{uint2, Rect}};
+use {fehler::throws, super::Error, std::cmp::{min,max}, num::{IsZero, zero, Ratio}, iter::Single, xy::{uint2, Rect}};
 use crate::{text::{self, unicode_segmentation::{self, GraphemeIndex, prev_word, next_word},
 														LineColumn, Span, Attribute, Style, line_ranges, Font, View, Buffer, Borrowed},
 									 widget::{Event, EventContext, Widget, size, Target, ModifiersState, ButtonState::Pressed}};
@@ -190,7 +190,7 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 					key => { println!("{:?}", key); selection.end },
 				};
 				use none::IsNone;
-				if let Some(ReplaceRange{range, replace_with}) = replace_range.to_option() {
+				if let Some(ReplaceRange{range, replace_with}) = Some(replace_range).filter(|r| r != Default::default()) {
 					history.truncate(*history_index);
 					if !((change==Change::Insert || change==Change::Remove) && change == *last_change) { history.push(State{text: text.to_owned(), cursor: selection.end}); }
 					*history_index = history.len();

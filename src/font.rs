@@ -55,8 +55,7 @@ impl<'t> Rasterize for ttf_parser::Face<'t> {
 	}
 }
 
-cfg_if::cfg_if! { if #[cfg(all(feature="owning-ref",feature="memmap"))] {
-use {fehler::throws, error::Error};
+use {fehler::throws, super::Error};
 #[derive(derive_more::Deref)] pub struct Handle<'t>(ttf_parser::Face<'t>); // impl Deref
 pub type File<'t> = owning_ref::OwningHandle<Box<memmap::Mmap>, Handle<'t>>;
 #[throws] pub fn open<'t>(path: &std::path::Path) -> File<'t> {
@@ -65,4 +64,3 @@ pub type File<'t> = owning_ref::OwningHandle<Box<memmap::Mmap>, Handle<'t>>;
 		unsafe { |map| Handle(ttf_parser::Face::from_slice(&*map, 0).unwrap()) }
 	)
 }
-}}
