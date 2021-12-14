@@ -9,7 +9,7 @@ example=[
 bin=[{name='text',path='examples/text.rs',required-features=['text']}]
 
 [features]
-font=['derive-more','ttf-parser']
+font=['ttf-parser','derive-more','memmap','owning-ref']
 text=['unicode-segmentation','iter','font','derive-more','text-size']
 edit=['text']
 #plot=['text','itertools']
@@ -17,40 +17,33 @@ default=['text']
 
 [dependencies]
 fehler='*'
-iter={git='https://github.com/Matthias-Fauconneau/iter', optional=true}
-vector= {git='https://github.com/Matthias-Fauconneau/vector'}
-num={git='https://github.com/Matthias-Fauconneau/num'}
-derive-more={version='*', package='derive_more', optional=true}
-owning-ref={version='*', package='owning_ref'}
 futures-lite='*'
 futures={version='*', package = 'futures-util'} # SelectAll, select_all, LocalBoxStream
-rustix='*'
 async-io='*'
-memmap={version='*'}
+rustix='*'
 dirs='*'
-xy={git='https://github.com/Matthias-Fauconneau/xy'}
+
+vector= {git='https://github.com/Matthias-Fauconneau/vector'}
+xy= {git='https://github.com/Matthias-Fauconneau/xy'}
+num= {git='https://github.com/Matthias-Fauconneau/num'}
+
 image={git='https://github.com/Matthias-Fauconneau/image'}
-client-toolkit={version='*', package='smithay-client-toolkit', default-features=false}
-
-piet-gpu-hal={git='https://github.com/linebender/piet-gpu'}
-raw-window-handle='^0.3'
-wayland-client={version='*', features=['use_system_lib']}
-piet-gpu={git='https://github.com/linebender/piet-gpu'}
-piet-gpu-types={git='https://github.com/linebender/piet-gpu'}
-piet='^0.2'
-
-#kurbo={version='*', optional=true}
 ttf-parser={version='*', optional=true}
+derive-more={version='*', package='derive_more', optional=true}
+owning-ref={version='*', package='owning_ref', optional=true}
+memmap={version='*', optional=true}
+
+iter={git='https://github.com/Matthias-Fauconneau/iter', optional=true}
 unicode-segmentation={version='*', optional=true}
 text-size={version='*', optional=true}
 
+client-toolkit={version='*', package='smithay-client-toolkit', default-features=false}
+wayland-client={version='*', features=['use_system_lib']}
+raw-window-handle='^0.3'
+piet-gpu-hal={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
+piet-gpu={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
+piet-gpu-types={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
+piet='^0.2'
+
 trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 itertools={version='*', optional=true}
-
-[patch.'https://github.com/linebender/piet-gpu']
-piet-gpu-hal={path='../piet-gpu/piet-gpu-hal'}
-piet-gpu={path='../piet-gpu/piet-gpu'}
-piet-gpu-types={path='../piet-gpu/piet-gpu-types'}
-
-[patch.'https://github.com/Matthias-Fauconneau/xy']
-xy={path='../xy'}

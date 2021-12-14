@@ -183,7 +183,9 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				};
 				if face.outline_glyph(id, &mut PathEncoder{scale: scale.into(), offset: f32::from(scale)*vec2::from(offset + position), context, first: zero(), p0: zero()}).is_some() {
 					print!(".");
-					context.fill_glyph(piet::Color::BLACK.as_rgba_u32());
+					use piet::IntoBrush;
+					let brush = piet::Color::BLACK.make_brush(context, || unreachable!());
+					context.encode_brush(&brush);
 				}
 			}
 		}

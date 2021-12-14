@@ -39,7 +39,8 @@ pub(crate) fn deref_mut<'t:'d, 'd, W>(mut app: DispatchData<'d>) -> &'d mut App<
 	let present_semaphore = unsafe{session.create_semaphore()}?;
 	let mut renderer = unsafe{piet_gpu::Renderer::new(&session, size.x as _, size.y as _, 1)}?;
 	let mut context = piet_gpu::PietGpuRenderContext::new();
-	context.fill(piet::kurbo::Rect::new(0., 0., size.x as _, size.y as _), piet::Color::WHITE);
+	use piet::RenderContext;
+	context.fill(piet::kurbo::Rect::new(0., 0., size.x as _, size.y as _), &piet::Color::WHITE);
 	widget.paint(&mut context, size)?;
 	if context.path_count() > 0 {
 		renderer.upload_render_ctx(&mut context, 0)?;
