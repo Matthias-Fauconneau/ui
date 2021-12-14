@@ -1,4 +1,4 @@
-use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, int2, size, Rect}, ttf_parser::{Face,GlyphId}, num::{zero, Ratio}, crate::font::{self, Rasterize, rect}};
+use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, int2, size, Rect, vec2}, ttf_parser::{Face,GlyphId}, num::{zero, Ratio}, crate::font::{self, rect, PathEncoder}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
@@ -56,8 +56,6 @@ use {std::{lazy::SyncLazy, path::Path}};
 pub fn default_font() -> Font<'static> { iter::from_iter(iter::into::IntoMap::map(&*default_font_files, |x| std::ops::Deref::deref(x))) }
 #[allow(non_upper_case_globals)]
 pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
-use std::{sync::Mutex, collections::HashMap};
-pub static CACHE: SyncLazy<Mutex<HashMap<(Ratio, GlyphId),Image<Vec<u8>>>>> = SyncLazy::new(|| Mutex::new(HashMap::new())); //default();
 
 pub struct View<'t, D> {
     pub font : Font<'t>,
@@ -70,8 +68,7 @@ impl<'t, D> View<'t, D> {
 	pub fn new_with_face(face : &'t Face<'t>, data: D) -> Self { Self{font: [&face, &face], data, size: None} }
 }
 
-use {image::{Image, bgra8}, num::{IsZero, Zero, div_ceil}};
-
+use num::{IsZero, div_ceil};
 pub fn fit_width(width: u32, from : size) -> size { if from.is_zero() { return zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
 pub fn fit_height(height: u32, from : size) -> size { if from.is_zero() { return zero(); } xy{x: div_ceil(height * from.x, from.y), y: height} }
 pub fn fit(size: size, from: size) -> size { if size.x*from.y < size.y*from.x { fit_width(size.x, from) } else { fit_height(size.y, from) } }
@@ -149,7 +146,7 @@ impl<D:AsRef<str>> View<'_, D> {
 			.take_while(|&(_, x)| x <= position.x as i32).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
 	}
-	pub fn paint_span(&self, target : &mut Target, scale: Ratio, offset: int2, span: Span, bgr: image::bgr<bool>) {
+	/*pub fn paint_span(&self, context: &mut Context, scale: Ratio, offset: int2, span: Span, bgr: image::bgr<bool>) {
 		let [min, max] = [span.min(), span.max()];
 		let mut invert = |r:Rect| Some(image::invert(&mut target.slice_mut_clip(scale*(offset+r))?, bgr));
 		if min.line < max.line { invert(self.span(min,LineColumn{line: min.line, column: usize::MAX})); }
@@ -164,52 +161,43 @@ impl<D:AsRef<str>> View<'_, D> {
 			invert(self.span(LineColumn{line, column: 0},LineColumn{line, column: usize::MAX}));
 		}}
 		if max.line > min.line { invert(self.span(LineColumn{line: max.line, column: 0}, max)); }
-	}
+	}*/
 }
 
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
-	pub fn paint(&mut self, context: &mut RenderContext, scale: Ratio, offset: int2) {
+	pub fn paint(&mut self, context: &mut RenderContext, size: size, scale: Ratio, offset: int2) {
 		let Self{font, data, ..} = &*self;
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
-																						/*.take_while({let clip = target.size.y/scale - offset.y; move |&(line_index,_)| (line_index as u32)*(font[0].height() as u32) < clip})*/ {
-			for (bbox, Glyph{index, x, id, face}) in bbox(layout(font, line.graphemes(true).enumerate().map(|(i,e)| (line.range.start+i, e)))) {
+																						.take_while({let clip = (size.y/scale) as i32 - offset.y; move |&(line_index,_)| (((line_index as u32)*(font[0].height() as u32)) as i32) < clip}) {
+			for Glyph{index, x, id, face} in layout(font, line.graphemes(true).enumerate().map(|(i,e)| (line.range.start+i, e))) {
 				style = style.filter(|style:&&Attribute<Style>| style.contains(&index));
 				while let Some(next) = styles.peek() {
 					if next.end <= index { styles.next(); } // skips whitespace style
 					else if next.contains(&index) { style = styles.next(); }
 					else { break; }
 				}
-				let mut cache = CACHE.lock().unwrap();
-				let coverage = cache.entry((scale, id)).or_insert_with(|| image::from_linear(&face.rasterize(scale, id, bbox).as_ref()));
 				let position = xy{
-					x: (x+face.glyph_hor_side_bearing(id).unwrap() as i32),
-					y: ((line_index as u32)*(font[0].height() as u32) + (font[0].ascender()-bbox.max.y as i16) as u32) as i32
+					x: x+face.glyph_hor_side_bearing(id).unwrap() as i32,
+					y: ((line_index as u32)*(font[0].height() as u32) + font[0].ascender() as u32) as i32
 				};
-				let offset = ::xy::ifloor(scale, offset + position);
-				let target_size = target.size.signed() - offset;
-				let target_offset = vector::component_wise_max(zero(), offset).unsigned();
-				let source_offset = vector::component_wise_max(zero(), -offset);
-				let source_size = coverage.size.signed() - source_offset;
-				let size = vector::component_wise_min(source_size, target_size);
-					if size.x > 0 && size.y > 0 {
-					let size = size.unsigned();
-					//dbg!(target_offset, size, style.map(|x|x.attribute.color).unwrap_or((1.).into()), source_offset);
-					image::fill_mask(&mut target.slice_mut(target_offset, size), style.map(|x|x.attribute.color).unwrap_or((1.).into()), &coverage.slice(source_offset.unsigned(), size));
+				if face.outline_glyph(id, &mut PathEncoder{scale: scale.into(), offset: f32::from(scale)*vec2::from(offset + position), context, first: zero(), p0: zero()}).is_some() {
+					print!(".");
+					context.fill_glyph(piet::Color::BLACK.as_rgba_u32());
 				}
 			}
 		}
 	}
 	pub fn paint_fit(&mut self, context: &mut RenderContext, size: size, offset: int2) -> Ratio {
 		let scale = self.scale(size);
-		self.paint(context, scale, offset);
+		self.paint(context, size, scale, offset);
 		scale
 	}
 }
 use crate::widget::{Widget, RenderContext};
 impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 	fn size(&mut self, size: size) -> size { fit_width(size.x, Self::size(self)) }
-	#[throws] fn paint(&mut self, context: &mut RenderContext) { self.paint_fit(context, zero()); }
+	#[throws] fn paint(&mut self, context: &mut RenderContext, size: size) { self.paint_fit(context, size, zero()); }
 }
 
 pub struct Plain<T>(pub T);

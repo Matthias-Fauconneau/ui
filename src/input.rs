@@ -6,7 +6,7 @@ use std::lazy::SyncLazy;
 	&['⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘']].concat());
 #[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
 
-use {::xy::xy, super::{Result, window::{Window, deref_mut}, widget::{Widget, EventContext, Event, ModifiersState}}};
+use {::xy::xy, super::{Result, app::{App, deref_mut}, widget::{Widget, EventContext, Event, ModifiersState}}};
 use client_toolkit::{seat::{SeatData, pointer::ThemeManager}, get_surface_scale_factor, reexports::client::{Attached, protocol::{wl_seat::WlSeat as Seat, wl_keyboard as keyboard, wl_pointer as pointer}}};
 
 pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, seat_data: &SeatData) {
@@ -37,7 +37,7 @@ pub fn seat<'t, W:Widget>(theme_manager: &ThemeManager, seat: &Attached<Seat>, s
 									.filter_map({
 										let repeat = std::rc::Rc::downgrade(&repeat);
 										// stops and autodrops from streams when weak link fails to upgrade (repeat cell dropped)
-										move |_| { repeat.upgrade().map(|x| {let key = x.get(); (box move |w| { w.key(key)?; w.draw() }) as Box::<dyn FnOnce(&mut Window<'t,W>)->Result<()>>}) }
+										move |_| { repeat.upgrade().map(|x| {let key = x.get(); (box move |w| { w.key(key)?; w.draw() }) as Box::<dyn FnOnce(&mut App<'t,W>)->Result<()>>}) }
 									})
 									.fuse()
 									.boxed_local()

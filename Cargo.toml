@@ -1,4 +1,4 @@
-package={name='app', version='0.0.0', edition='2021', autoexamples=false, default-run='text'}
+package={name='ui', version='0.0.0', edition='2021', autoexamples=false, default-run='text'}
 example=[
  {name='empty', path='examples/empty.rs'}
  #{name='text', path='examples/text.rs', required-features=['text']},
@@ -9,9 +9,9 @@ example=[
 bin=[{name='text',path='examples/text.rs',required-features=['text']}]
 
 [features]
-font=['derive-more','ttf-parser','kurbo','image/num']
+font=['derive-more','ttf-parser']
 text=['unicode-segmentation','iter','font','derive-more','text-size']
-#edit=['text']
+edit=['text']
 #plot=['text','itertools']
 default=['text']
 
@@ -33,12 +33,13 @@ image={git='https://github.com/Matthias-Fauconneau/image'}
 client-toolkit={version='*', package='smithay-client-toolkit', default-features=false}
 
 piet-gpu-hal={git='https://github.com/linebender/piet-gpu'}
-raw-window-handle='*'
+raw-window-handle='^0.3'
 wayland-client={version='*', features=['use_system_lib']}
 piet-gpu={git='https://github.com/linebender/piet-gpu'}
+piet-gpu-types={git='https://github.com/linebender/piet-gpu'}
 piet='^0.2'
 
-kurbo={version='*', optional=true}
+#kurbo={version='*', optional=true}
 ttf-parser={version='*', optional=true}
 unicode-segmentation={version='*', optional=true}
 text-size={version='*', optional=true}
@@ -49,3 +50,7 @@ itertools={version='*', optional=true}
 [patch.'https://github.com/linebender/piet-gpu']
 piet-gpu-hal={path='../piet-gpu/piet-gpu-hal'}
 piet-gpu={path='../piet-gpu/piet-gpu'}
+piet-gpu-types={path='../piet-gpu/piet-gpu-types'}
+
+[patch.'https://github.com/Matthias-Fauconneau/xy']
+xy={path='../xy'}
