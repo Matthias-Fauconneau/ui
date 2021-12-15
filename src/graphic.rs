@@ -18,18 +18,20 @@ pub struct Graphic<'t> {
 	pub scale: Ratio,
 	pub rects: Vec<Rect>,
 	pub parallelograms: Vec<Parallelogram>,
-	pub font: &'t Face<'t>,
+	pub face: &'t Face<'t>,
 	pub glyphs: Vec<Glyph>,
 }
 
+use {fehler::throws, crate::{Error, Result, widget::{self, RenderContext, size}, font::{rect, PathEncoder}}, ::xy::{xy, Component, ifloor, ceil}, num::zero};
+
 impl<'t> Graphic<'t> {
-	pub fn new(scale: Ratio, font: &'t Face) -> Self {
-		Self{scale, rects: vec![], parallelograms: vec![], font, glyphs: vec![]}
+	pub fn new(scale: Ratio, face: &'t Face) -> Self {
+		Self{scale, rects: vec![], parallelograms: vec![], face, glyphs: vec![]}
 	}
 	pub fn bounds(&self) -> Rect {
 		use vector::MinMax;
 		self.rects.iter().map(|r| MinMax{min: r.min, max: r.min.iter().zip(r.max.iter()).map(|(&o,&s)| if s < i32::MAX { s } else { o }).collect()})
-		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + self.font.glyph_size(g.id).signed()}) )
+		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + rect(self.face.glyph_bounding_box(g.id).unwrap()).size().signed()}) )
 		.reduce(MinMax::minmax)
 		.map(|MinMax{min, max}| Rect{min, max})
 		.unwrap_or_default()
@@ -40,37 +42,44 @@ pub struct View<'t> { graphic: Graphic<'t>, view: Rect }
 
 impl<'t> View<'t> { pub fn new(graphic: Graphic<'t>) -> Self { Self{view: graphic.bounds(), graphic} } }
 
-use {fehler::throws, error::{Error, Result}, num::zero, ::xy::size, image::{Image, sRGB, bgra8}, crate::{widget::{self, Target}, font::{Rasterize, rect}}};
-
 impl widget::Widget for View<'_> {
-    fn size(&mut self, _: size) -> size { xy::ceil(&self.graphic.scale, self.view.size()) }
-    #[throws] fn paint(&mut self, target : &mut Target) {
-		let buffer = {
-			let mut target = Image::fill(target.size, 1.);
-			for &Rect{min: top_left, max: bottom_right} in &self.graphic.rects {
-				let top_left = self.graphic.scale * (top_left-self.view.min).unsigned();
-				if top_left < target.size {
-					let bottom_right = xy::Component::enumerate().map(|i| if bottom_right[i] == i32::MAX { target.size[i] } else { self.graphic.scale.ifloor(bottom_right[i]-self.view.min[i]) as u32 }).into();
-					target.slice_mut(top_left, vector::component_wise_min(bottom_right, target.size)-top_left).set(|_| 0.);
+    fn size(&mut self, _: size) -> size { ceil(self.graphic.scale, self.view.size()) }
+    #[throws] fn paint(&mut self, context: &mut RenderContext, size: size) {
+		let Self{graphic: Graphic{scale, rects, parallelograms, face, glyphs}, view: Rect{min, ..}} = &self;
+		use piet::RenderContext;
+		for &Rect{min: top_left, max: bottom_right} in rects {
+			let top_left = top_left - min;
+			if top_left < (size/scale).signed() {
+				let top_left = ifloor(*scale, top_left);
+				let bottom_right : int2 = Component::enumerate().map(|i| if bottom_right[i] == i32::MAX { size[i] as _ } else { scale.ifloor(bottom_right[i]-min[i]) }).into();
+				context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
+			}
+		}
+		for &Parallelogram{top_left, bottom_right, vertical_thickness: _} in parallelograms {
+			let top_left = top_left - min;
+			if top_left < (size/scale).signed() {
+				let top_left = ifloor(*scale, top_left);
+				let bottom_right : int2 = Component::enumerate().map(|i| if bottom_right[i] == i32::MAX { size[i] as _ } else { scale.ifloor(bottom_right[i]-min[i]) }).into();
+				context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
+			}
+		}
+		for &Glyph{top_left, id} in glyphs {
+			let top_left = top_left - min;
+			if top_left < (size/scale).signed() {
+				let offset = ifloor(*scale, top_left + xy{x: -face.glyph_hor_side_bearing(id).unwrap() as _, y: face.glyph_bounding_box(id).unwrap().y_max as _}).into();
+				if face.outline_glyph(id, &mut PathEncoder{scale: (*scale).into(), offset, context, first: zero(), p0: zero()}).is_some() {
+					print!(".");
+					use piet::IntoBrush;
+					let brush = piet::Color::BLACK.make_brush(context, || unreachable!());
+					context.encode_brush(&brush);
 				}
 			}
-			for &Glyph{top_left, id} in &self.graphic.glyphs {
-				let offset = self.graphic.scale * (top_left-self.view.min).unsigned();
-				if offset < target.size {
-					let bbox = self.graphic.font.glyph_bounding_box(id).map(rect).unwrap();
-					let coverage = self.graphic.font.rasterize(self.graphic.scale, id, bbox);
-					let size = vector::component_wise_min(coverage.size, target.size-offset);
-					target.slice_mut(offset, size).zip_map(coverage.slice(zero(), size), |_, &target, &coverage| target - coverage);
-				}
-			}
-			target
-		};
-		target.set_map(&buffer, |_, &buffer| bgra8{a: 0xFF, ..sRGB(&f32::min(buffer,1.)).into()});
+		}
 	}
 }
 
 pub struct Widget<T>(pub T);
 impl<'t, T:Fn(size)->Result<Graphic<'t>>> widget::Widget for Widget<T> {
     fn size(&mut self, size: size) -> size { View::new(self.0(size).unwrap()).size(size) }
-    #[throws] fn paint(&mut self, target : &mut Target) { View::new(self.0(target.size)?).paint(target)? }
+    #[throws] fn paint(&mut self, context: &mut RenderContext, size: size) { View::new(self.0(size)?).paint(context, size)? }
 }
