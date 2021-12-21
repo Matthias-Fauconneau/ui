@@ -20,7 +20,7 @@ fehler='*'
 futures-lite='*'
 futures={version='*', package = 'futures-util'} # SelectAll, select_all, LocalBoxStream
 async-io='*'
-rustix='*'
+rustix={git='https://github.com/bytecodealliance/rustix'}
 dirs='*'
 
 vector= {git='https://github.com/Matthias-Fauconneau/vector'}

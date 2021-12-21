@@ -14,16 +14,16 @@ pub(crate) fn line_ranges<'t>(text: &'t str) -> impl Iterator<Item=LineRange<'t>
 }
 
 pub type Font<'t> = [&'t Face<'t>; 2];
-pub struct Glyph<'t> {pub index: GraphemeIndex, pub x: i32, pub id: GlyphId, face: &'t Face<'t> }
+pub struct Glyph<'t> {pub index: GraphemeIndex, pub x: u32, pub id: GlyphId, face: &'t Face<'t> }
 pub fn layout<'t>(font: &'t Font<'t>, iter: impl Iterator<Item=(GraphemeIndex, &'t str)>+'t) -> impl 't+Iterator<Item=Glyph<'t>> {
 	iter.scan((None, 0), move |(last_id, x), (index, g)| {
 		use iter::Single;
 		let c = g.chars().single().unwrap();
-		let (face, id) = font.iter().find_map(|face| face.glyph_index(if c == '\t' { ' ' } else { c }).map(|id| (face, id))).unwrap_or_else(||panic!("Missing glyph for '{:?}' {:x?}", c, c as u32));
+		let (face, id) = font.iter().find_map(|face| face.glyph_index(if c == '\t' { ' ' } else { c }).map(|id| (face, id))).unwrap_or_else(||panic!("Missing glyph for '{c}' {:x?}", c as u32));
 		//if let Some(last_id) = *last_id { *x += face.tables().kern.unwrap().subtables.into_iter().next().map_or(0, |x| x.glyphs_kerning(last_id, id).unwrap_or(0) as i32); }
 		*last_id = Some(id);
 		let next = Glyph{index, x: *x, id, face};
-		*x += face.glyph_hor_advance(id)? as i32;
+		*x += face.glyph_hor_advance(id)? as u32;
 		Some(next)
 	})
 }
@@ -35,7 +35,7 @@ pub(crate) fn bbox<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> impl Iterator<Ite
 struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
 fn metrics<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> LineMetrics {
 	bbox(iter).fold(LineMetrics{width: 0, ascent: 0, descent: 0}, |metrics: LineMetrics, (bbox, Glyph{x, id, face, ..})| LineMetrics{
-		width: (x + face.glyph_hor_side_bearing(id).unwrap() as i32 + bbox.max.x) as u32,
+		width: (x as i32 + face.glyph_hor_side_bearing(id).unwrap() as i32 + bbox.max.x) as u32,
 		ascent: max(metrics.ascent, bbox.max.y as i16),
 		descent: min(metrics.descent, bbox.min.y as i16)
 	})
@@ -123,7 +123,7 @@ fn position(font: &Font<'_>, text: &str, LineColumn{line, column}: LineColumn) -
 	if text.is_empty() { assert!(line==0&&column==0); zero() } else {
 	xy{
 		x: layout(font, line_ranges(text).nth(line).unwrap().graphemes(true).enumerate()).nth_or_last(column as usize).map_or_else(
-			|last| last.map_or(0, |Glyph{x,id,face,..}| x+(face.glyph_hor_advance(id).unwrap() as i32)),
+			|last| last.map_or(0, |Glyph{x,id,face,..}| x+face.glyph_hor_advance(id).unwrap() as u32),
 			|layout| layout.x
 		) as u32,
 		y: (line as u32)*(font[0].height() as u32)
@@ -142,8 +142,8 @@ impl<D:AsRef<str>> View<'_, D> {
 		let line = ((position.y/font[0].height() as u32) as usize).min(line_ranges(self.text()).count()-1);
 		LineColumn{line, column:
 			layout(font, line_ranges(self.text()).nth(line).unwrap().graphemes(true).enumerate())
-			.map(|Glyph{index, x, id, face}| (index, x+face.glyph_hor_advance(id).unwrap() as i32/2))
-			.take_while(|&(_, x)| x <= position.x as i32).last().map(|(index,_)| index+1).unwrap_or(0)
+			.map(|Glyph{index, x, id, face}| (index, x+face.glyph_hor_advance(id).unwrap() as u32/2))
+			.take_while(|&(_, x)| x <= position.x).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
 	}
 	/*pub fn paint_span(&self, context: &mut Context, scale: Ratio, offset: int2, span: Span, bgr: image::bgr<bool>) {
@@ -178,11 +178,10 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					else { break; }
 				}
 				let position = xy{
-					x: x+face.glyph_hor_side_bearing(id).unwrap() as i32,
-					y: ((line_index as u32)*(font[0].height() as u32) + font[0].ascender() as u32) as i32
+					x: x+face.glyph_hor_side_bearing(id).unwrap() as u32,
+					y: (line_index as u32) * (font[0].height() as u32) + font[0].ascender() as u32
 				};
-				if face.outline_glyph(id, &mut PathEncoder{scale: scale.into(), offset: f32::from(scale)*vec2::from(offset + position), context, first: zero(), p0: zero()}).is_some() {
-					print!(".");
+				if face.outline_glyph(id, &mut PathEncoder{scale: scale.into(), offset: f32::from(scale)*vec2::from(offset + position.signed()), context, first: zero(), p0: zero()}).is_some() {
 					use piet::IntoBrush;
 					let brush = piet::Color::BLACK.make_brush(context, || unreachable!());
 					context.encode_brush(&brush);
