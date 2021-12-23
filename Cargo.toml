@@ -12,8 +12,9 @@ bin=[{name='text',path='examples/text.rs',required-features=['text']}]
 font=['ttf-parser','derive-more','memmap','owning-ref']
 text=['unicode-segmentation','iter','font','derive-more','text-size']
 edit=['text']
+window-handle=['wayland-backend/client_system']
 #plot=['text','itertools']
-default=['text']
+default=['text','window-handle']
 
 [dependencies]
 fehler='*'
@@ -37,8 +38,10 @@ iter={git='https://github.com/Matthias-Fauconneau/iter', optional=true}
 unicode-segmentation={version='*', optional=true}
 text-size={version='*', optional=true}
 
-client-toolkit={version='*', package='smithay-client-toolkit', default-features=false}
-wayland-client={version='*', features=['use_system_lib']}
+#client-toolkit={version='*', package='smithay-client-toolkit', default-features=false}
+wayland-protocols={git='https://github.com/smithay/wayland-rs',branch='rework-317',features=["client"]}
+wayland-client={git='https://github.com/smithay/wayland-rs',branch='rework-317'}
+wayland-backend={git='https://github.com/smithay/wayland-rs',branch='rework-317'}
 raw-window-handle='^0.3'
 piet-gpu-hal={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
 piet-gpu={git='https://github.com/Matthias-Fauconneau/piet-gpu'}

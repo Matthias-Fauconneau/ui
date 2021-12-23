@@ -1,4 +1,4 @@
-#![feature(async_closure,let_else,box_syntax,once_cell,type_alias_impl_trait)]
+#![feature(async_closure,let_else,box_syntax,once_cell,type_alias_impl_trait,crate_visibility_modifier,try_blocks)]
 #![cfg_attr(feature="text", feature(derive_default_enum))]
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T=(),E=Error> = std::result::Result<T, E>;
@@ -7,8 +7,7 @@ pub mod color;
 pub use num::Ratio;
 pub mod widget; pub use widget::{Widget, RenderContext, size};
 mod as_raw_poll_fd;
-mod input;
-mod app; pub use app::{App, run};
+mod app; pub use app::run;
 #[cfg(feature="font")] pub mod font;
 #[cfg(feature="text")] pub mod text; //cfg_if! { if #[cfg(fecd ature="text")] { pub mod text; pub use text::{Text, default_font, default_style}; }}
 #[cfg(feature="text")] pub mod graphic; #[cfg(feature="text")] pub use graphic::Graphic; 

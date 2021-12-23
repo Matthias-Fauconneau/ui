@@ -1,11 +1,18 @@
 use super::Result;
 pub use xy::size;
-pub use client_toolkit::{seat::{keyboard::ModifiersState, pointer::ThemedPointer}, reexports::client::protocol::wl_pointer::ButtonState};
+pub use wayland_client::protocol::wl_pointer::ButtonState;
+//pub use client_toolkit::{seat::{keyboard::ModifiersState, pointer::ThemedPointer}, };
+pub struct ModifiersState {
+
+}
+pub struct ThemedPointer {
+	
+}
 pub use piet_gpu::PietGpuRenderContext as RenderContext;
 use xy::uint2;
 
 pub struct EventContext<'t> {
-	pub modifiers_state: ModifiersState,
+	pub modifiers_state: &'t ModifiersState,
 	pub pointer: Option<&'t mut ThemedPointer>,
 }
 

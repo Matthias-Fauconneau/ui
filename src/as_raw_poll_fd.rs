@@ -9,4 +9,4 @@ impl<T:nix::AsRawPollFd> std::os::unix::io::AsRawFd for AsRawFd<T> { fn as_raw_f
 impl<T> std::ops::Deref for AsRawFd<T> { type Target = T; fn deref(&self) -> &Self::Target { &self.0 } }
 impl<T> std::ops::DerefMut for AsRawFd<T> { fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 } }
 impl<T:nix::AsRawPollFd> Async<T> { pub fn new(io: T) -> Result<async_io::Async<AsRawFd<T>>, std::io::Error> { async_io::Async::new(AsRawFd(io)) } }
-impl nix::AsRawPollFd for client_toolkit::reexports::client::EventQueue { fn as_raw_poll_fd(&self) -> nix::RawPollFd { self.display().get_connection_fd() } }
+impl nix::AsRawPollFd for wayland_client::Connection { fn as_raw_poll_fd(&self) -> nix::RawPollFd { self.backend().lock().unwrap().connection_fd() } }
