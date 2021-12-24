@@ -1,27 +1,20 @@
 use super::Result;
-pub use xy::size;
-pub use wayland_client::protocol::wl_pointer::ButtonState;
-//pub use client_toolkit::{seat::{keyboard::ModifiersState, pointer::ThemedPointer}, };
-pub struct ModifiersState {
-
-}
-pub struct ThemedPointer {
-	
-}
+pub use xy::{size, vec2};
+pub use wayland_client::protocol::wl_pointer::{WlPointer as Pointer, ButtonState};
+#[derive(Default,Clone,Copy)] pub struct ModifiersState { pub shift: bool, pub ctrl: bool, pub logo: bool, pub alt: bool }
 pub use piet_gpu::PietGpuRenderContext as RenderContext;
-use xy::uint2;
 
 pub struct EventContext<'t> {
-	pub modifiers_state: &'t ModifiersState,
-	pub pointer: Option<&'t mut ThemedPointer>,
+	pub modifiers_state: ModifiersState,
+	pub pointer: Option<&'t Pointer>,
 }
 
 pub type MouseButtons = u32;
 
 pub enum Event {
 	Key { key: char },
-	Button { position: uint2, button: u8, state: ButtonState },
-	Motion { position: uint2, mouse_buttons: MouseButtons },
+	Button { position: vec2, button: u8, state: ButtonState },
+	Motion { position: vec2, mouse_buttons: MouseButtons },
 	Scroll (f32)
 }
 

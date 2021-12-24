@@ -12,15 +12,11 @@ bin=[{name='text',path='examples/text.rs',required-features=['text']}]
 font=['ttf-parser','derive-more','memmap','owning-ref']
 text=['unicode-segmentation','iter','font','derive-more','text-size']
 edit=['text']
-window-handle=['wayland-backend/client_system']
 #plot=['text','itertools']
-default=['text','window-handle']
+default=['text']
 
 [dependencies]
 fehler='*'
-futures-lite='*'
-futures={version='*', package = 'futures-util'} # SelectAll, select_all, LocalBoxStream
-async-io='*'
 rustix={git='https://github.com/bytecodealliance/rustix'}
 dirs='*'
 
@@ -38,10 +34,9 @@ iter={git='https://github.com/Matthias-Fauconneau/iter', optional=true}
 unicode-segmentation={version='*', optional=true}
 text-size={version='*', optional=true}
 
-#client-toolkit={version='*', package='smithay-client-toolkit', default-features=false}
 wayland-protocols={git='https://github.com/smithay/wayland-rs',branch='rework-317',features=["client"]}
 wayland-client={git='https://github.com/smithay/wayland-rs',branch='rework-317'}
-wayland-backend={git='https://github.com/smithay/wayland-rs',branch='rework-317'}
+wayland-backend={git='https://github.com/smithay/wayland-rs',branch='rework-317', features=['client_system']}
 raw-window-handle='^0.3'
 piet-gpu-hal={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
 piet-gpu={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
