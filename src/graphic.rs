@@ -6,7 +6,7 @@ impl Parallelogram {
 	pub fn translate(&mut self, offset: int2) { self.top_left += offset; self.bottom_right += offset; }
 }
 
-pub struct Glyph { pub top_left: int2, pub face: &'static Face<'static>, pub id: ttf_parser::GlyphId }
+pub struct Glyph { pub top_left: int2, pub face: &'static Face<'static>, pub id: ttf_parser::GlyphId, pub scale: f32 }
 
 impl Glyph {
 	pub fn translate(&mut self, offset: int2) { self.top_left += offset; }
@@ -62,11 +62,11 @@ impl widget::Widget for View {
 				context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
 			}
 		}
-		for Glyph{top_left, face, id} in glyphs {
+		for Glyph{top_left, face, id, scale: glyph_scale} in glyphs {
 			let top_left = top_left - min;
 			if top_left < (size/scale).signed() {
 				let offset = ifloor(*scale, top_left + xy{x: -face.glyph_hor_side_bearing(*id).unwrap() as _, y: face.glyph_bounding_box(*id).unwrap().y_max as _}).into();
-				if face.outline_glyph(*id, &mut PathEncoder{scale: (*scale).into(), offset, context, first: zero(), p0: zero()}).is_some() {
+				if face.outline_glyph(*id, &mut PathEncoder{scale: f32::from(*scale)*glyph_scale, offset, context, first: zero(), p0: zero()}).is_some() {
 					use piet::IntoBrush;
 					let brush = piet::Color::BLACK.make_brush(context, || unreachable!());
 					context.encode_brush(&brush);
