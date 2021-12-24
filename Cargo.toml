@@ -1,12 +1,12 @@
-package={name='ui', version='0.0.0', edition='2021', autoexamples=false, default-run='text'}
-example=[
- {name='empty', path='examples/empty.rs'}
+package={name='ui', version='0.0.0', edition='2021', autoexamples=false}#, default-run='text'}
+#example=[
+ #{name='empty', path='examples/empty.rs'}
  #{name='text', path='examples/text.rs', required-features=['text']},
  #{name='compose', path='examples/compose.rs', required-features=['text']},
  #{name='edit', path='examples/edit.rs', required-features=['edit']},
  #{name='plot', path='examples/plot.rs', required-features=['plot']}
-]
-bin=[{name='text',path='examples/text.rs',required-features=['text']}]
+#]
+#bin=[{name='text',path='examples/text.rs',required-features=['text']}]
 
 [features]
 font=['ttf-parser','derive-more','memmap','owning-ref']
