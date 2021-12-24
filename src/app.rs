@@ -1,5 +1,5 @@
-use {fehler::throws, crate::{Error, Result}};
-use wayland_client::{Connection, Dispatch, ConnectionHandle, QueueHandle as Queue, DataInit, protocol::{
+use crate::prelude::*;
+use wayland_client::{Connection, Dispatch, ConnectionHandle, QueueHandle as Queue, DataInit, Proxy, protocol::{
 	wl_registry::{self as registry, WlRegistry as Registry},
 	wl_compositor::{self as compositor, WlCompositor as Compositor}, 
 	wl_seat::WlSeat as Seat,
@@ -36,7 +36,7 @@ impl<W:Widget+'static> State<W> { #[throws] pub fn run(widget: W, mut idle: impl
 	let cx = Connection::connect_to_env()?;
     let mut event_queue = cx.new_event_queue::<State<W>>();
     let queue_handle = event_queue.handle();
-    let mut display = cx.handle().display();
+    let display = cx.handle().display();
     display.get_registry(&mut cx.handle(), &queue_handle, ())?;
 	let ref mut state = Self {
 		running: true,
@@ -54,22 +54,28 @@ impl<W:Widget+'static> State<W> { #[throws] pub fn run(widget: W, mut idle: impl
 		mouse_buttons: 0
 	};
 	while state.running {
-		event_queue.blocking_dispatch(state).unwrap();
+		cx.flush()?;
+		event_queue.dispatch_pending(state)?;
+		let mut fd = [rustix::io::PollFd::from_borrowed_fd(unsafe{rustix::fd::BorrowedFd::borrow_raw_fd(cx.backend().lock().unwrap().connection_fd())}, rustix::io::PollFlags::IN | rustix::io::PollFlags::ERR)];
+        loop { match rustix::io::poll(&mut fd, -1) {
+            Ok(_) => { break; },
+            Err(rustix::io::Error::INTR) => { dbg!(); continue;},
+            Err(e) => panic!("{e:?}"),
+        }}
+		event_queue.blocking_dispatch(state)?;
 		let Self{widget, surface, size, need_update, ..} = state;
-		if idle(widget)? { *need_update = true; }
+		if idle(widget)? { *need_update = true; dbg!(); }
 		if *need_update && !size.is_zero() {
 			struct RawWindowHandle(raw_window_handle::RawWindowHandle);
 			unsafe impl raw_window_handle::HasRawWindowHandle for RawWindowHandle { fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle { self.0 } }
 			let (instance, gpu_surface) = piet_gpu_hal::Instance::new(Some(&RawWindowHandle(raw_window_handle::RawWindowHandle::Wayland({
 				let mut s=raw_window_handle::unix::WaylandHandle::empty(); 
-				s.display = &mut display as *mut wayland_client::protocol::wl_display::WlDisplay as  *mut _;
-				s.surface = surface.as_mut().unwrap() as *mut Surface as  *mut _; 
+				s.display = display.id().as_ptr() as *mut wayland_client::protocol::wl_display::WlDisplay as  *mut _;
+				s.surface = surface.as_ref().unwrap().id().as_ptr() as *mut Surface as  *mut _; 
 				s
 			}))), Default::default())?;
 			let device = unsafe{instance.device(gpu_surface.as_ref())}?;
-			dbg!();
 			let mut swapchain = gpu_surface.map(|surface| unsafe{instance.swapchain(size.x as _, size.y as _, &device, &surface)}).transpose()?;
-			dbg!();
 			let session = piet_gpu_hal::Session::new(device);
 			let present_semaphore = unsafe{session.create_semaphore()}?;
 			let mut renderer = unsafe{piet_gpu::Renderer::new(&session, size.x as _, size.y as _, 1)}?;
@@ -105,7 +111,6 @@ impl<W:Widget+'static> State<W> { #[throws] pub fn run(widget: W, mut idle: impl
 				}
 			}
 			*need_update = false;
-			dbg!();
 		}
 	}
 }}
@@ -167,7 +172,7 @@ impl<W> Dispatch<WmBase> for State<W> {
 impl<W:Widget> Dispatch<XdgSurface> for State<W> {
     type UserData = ();
     fn event(&mut self, xdg_surface: &XdgSurface, event: xdg_surface::Event, _: &Self::UserData, cx: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) {
-		if let xdg_surface::Event::Configure{serial, .. } = event {
+		if let xdg_surface::Event::Configure{serial} = event {
 			let Self{ref scale, output, widget, unscaled_size, size, need_update, ..} = self;
 			if unscaled_size.x == 0 || unscaled_size.y == 0 {
 				let size = widget.size(*output);
@@ -175,8 +180,11 @@ impl<W:Widget> Dispatch<XdgSurface> for State<W> {
 				*unscaled_size = ::xy::div_ceil(size, *scale);
 			}
 			xdg_surface.ack_configure(cx, serial);
-			*size = *scale * *unscaled_size;
-			*need_update = true;
+			let new_size = *scale * *unscaled_size;
+			if new_size != *size {
+				*size = new_size;
+				*need_update = true;
+			}
 		} else { unreachable!() }
     }
 }
