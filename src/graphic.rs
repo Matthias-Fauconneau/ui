@@ -1,6 +1,6 @@
 pub use ::xy::int2;
 
-pub struct Parallelogram { pub top_left: int2, pub bottom_right: int2, pub vertical_thickness: u8 }
+pub struct Parallelogram { pub top_left: int2, pub bottom_right: int2, pub vertical_thickness: u32 }
 
 impl Parallelogram {
 	pub fn translate(&mut self, offset: int2) { self.top_left += offset; self.bottom_right += offset; }
@@ -13,6 +13,8 @@ impl Glyph {
 }
 
 pub use {::num::Ratio, ::xy::Rect, ttf_parser::Face};
+
+pub fn vertical(x: i32, dx: u32, y0: i32, y1: i32) -> Rect { Rect{ min: xy{ x: x-(dx/2) as i32, y: y0 }, max: xy{ x: x+(dx/2) as i32, y: y1 } } }
 
 pub struct Graphic {
 	pub scale: Ratio,
@@ -27,7 +29,7 @@ impl Graphic {
 	pub fn new(scale: Ratio) -> Self { Self{scale, rects: vec![], parallelograms: vec![], glyphs: vec![]} }
 	pub fn bounds(&self) -> Rect {
 		use vector::MinMax;
-		self.rects.iter().map(|r| MinMax{min: r.min, max: std::iter::zip(r.min, r.max).map(|(o,s)| if s < i32::MAX as _ { s } else { o }).collect()})
+		self.rects.iter().map(|r| MinMax{min: r.min, max: std::iter::zip(r.min, r.max).map(|(min,max)| if max < i32::MAX as _ { max } else { min }).collect()})
 		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + rect(g.face.glyph_bounding_box(g.id).unwrap()).size().signed()}) )
 		.reduce(MinMax::minmax)
 		.map(|MinMax{min, max}| Rect{min: min, max: max})
