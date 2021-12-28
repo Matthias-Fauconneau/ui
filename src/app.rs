@@ -1,9 +1,9 @@
 use crate::prelude::*;
 use wayland_client::{Connection, Dispatch, ConnectionHandle, QueueHandle as Queue, DataInit, Proxy, protocol::{
 	wl_registry::{self as registry, WlRegistry as Registry},
-	wl_compositor::{self as compositor, WlCompositor as Compositor}, 
+	wl_compositor::{self as compositor, WlCompositor as Compositor},
 	wl_seat::WlSeat as Seat,
-	wl_output::{self as output, WlOutput as Output}, 
+	wl_output::{self as output, WlOutput as Output},
 	wl_surface::{self as surface, WlSurface as Surface}
 }};
 use wayland_protocols::xdg_shell::client::{
@@ -14,9 +14,9 @@ use wayland_protocols::xdg_shell::client::{
 use crate::widget::{Widget, ModifiersState};
 use {::xy::{xy, size, vec2}, num::{zero, IsZero}};
 
-pub struct State<W> {
+pub struct State {
 	running: bool,
-	crate widget: W,
+	crate widget: Box<dyn Widget+'static>,
 	wm_base: Option<WmBase>,
 	scale: u32,
 	output: size,
@@ -32,18 +32,22 @@ pub struct State<W> {
 	//gpu_surface: Option<piet_gpu_hal::Surface>,
 }
 
-impl<W:Widget+'static> State<W> { #[throws] pub fn run(widget: W, mut idle: impl FnMut(&mut W)->Result<bool>) { 
-	let cx = Connection::connect_to_env()?;
-    let mut event_queue = cx.new_event_queue::<State<W>>();
-    let queue_handle = event_queue.handle();
-    let display = cx.handle().display();
-    display.get_registry(&mut cx.handle(), &queue_handle, ())?;
+impl State { #[throws] pub fn run(widget: Box<dyn Widget+'static>, idle: &mut dyn FnMut(&mut dyn Widget)->Result<bool>) {
+	let connection = Connection::connect_to_env()?;
+    let mut event_queue = connection.new_event_queue();
+    let ref queue = event_queue.handle();
+	let display = {
+		let ref mut cx = connection.handle();
+    	let display = cx.display();
+    	display.get_registry(cx, queue, ())?;
+		display
+	};
 	let ref mut state = Self {
 		running: true,
 		widget,
+		output: zero(),
 		wm_base: None,
 		scale: 1,
-		output: zero(),
 		surface: None,
 		xdg_surface: None,
 		unscaled_size: zero(),
@@ -54,24 +58,32 @@ impl<W:Widget+'static> State<W> { #[throws] pub fn run(widget: W, mut idle: impl
 		mouse_buttons: 0
 	};
 	while state.running {
-		cx.flush()?;
+		/*connection.flush()?;
 		event_queue.dispatch_pending(state)?;
-		let mut fd = [rustix::io::PollFd::from_borrowed_fd(unsafe{rustix::fd::BorrowedFd::borrow_raw_fd(cx.backend().lock().unwrap().connection_fd())}, rustix::io::PollFlags::IN | rustix::io::PollFlags::ERR)];
+		let mut fd = [rustix::io::PollFd::from_borrowed_fd(unsafe{rustix::fd::BorrowedFd::borrow_raw_fd(connection.backend().lock().unwrap().connection_fd())}, rustix::io::PollFlags::IN | rustix::io::PollFlags::ERR)];
         loop { match rustix::io::poll(&mut fd, -1) {
             Ok(_) => { break; },
             Err(rustix::io::Error::INTR) => { dbg!(); continue;},
             Err(e) => panic!("{e:?}"),
-        }}
+        }}*/
 		event_queue.blocking_dispatch(state)?;
 		let Self{widget, surface, size, need_update, ..} = state;
-		if idle(widget)? { *need_update = true; dbg!(); }
+		if idle(widget.as_mut())? { *need_update = true; dbg!(); }
+		if state.xdg_surface.is_none() { if let (false, Some(wm_base), Some(surface)) = (state.output.is_zero(), state.wm_base.as_ref(), &surface) {
+			let ref mut cx = connection.handle();
+			let xdg_surface = wm_base.get_xdg_surface(cx, surface.clone(), queue, ()).unwrap();
+			let toplevel = xdg_surface.get_toplevel(cx, queue, ()).unwrap();
+			toplevel.set_title(cx, "piet-gpu".into());
+			surface.commit(cx);
+			state.xdg_surface = Some((xdg_surface, toplevel));
+		}}
 		if *need_update && !size.is_zero() {
 			struct RawWindowHandle(raw_window_handle::RawWindowHandle);
 			unsafe impl raw_window_handle::HasRawWindowHandle for RawWindowHandle { fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle { self.0 } }
 			let (instance, gpu_surface) = piet_gpu_hal::Instance::new(Some(&RawWindowHandle(raw_window_handle::RawWindowHandle::Wayland({
-				let mut s=raw_window_handle::unix::WaylandHandle::empty(); 
+				let mut s=raw_window_handle::WaylandHandle::empty();
 				s.display = display.id().as_ptr() as *mut wayland_client::protocol::wl_display::WlDisplay as  *mut _;
-				s.surface = surface.as_ref().unwrap().id().as_ptr() as *mut Surface as  *mut _; 
+				s.surface = surface.as_ref().unwrap().id().as_ptr() as *mut Surface as  *mut _;
 				s
 			}))), Default::default())?;
 			let device = unsafe{instance.device(gpu_surface.as_ref())}?;
@@ -102,7 +114,7 @@ impl<W:Widget+'static> State<W> { #[throws] pub fn run(widget: W, mut idle: impl
 				cmd_buf.blit_image(&renderer.image_dev, &image);
 				cmd_buf.image_barrier(&image, ImageLayout::BlitDst, ImageLayout::Present);
 				cmd_buf.finish();
-				if let Some(swapchain) = swapchain { 
+				if let Some(swapchain) = swapchain {
 					let submitted = session.run_cmd_buf(cmd_buf, &[&acquisition_semaphore.unwrap()], &[&present_semaphore])?;
 					swapchain.present(0, &[&present_semaphore])?;
 					submitted.wait()?;
@@ -115,7 +127,7 @@ impl<W:Widget+'static> State<W> { #[throws] pub fn run(widget: W, mut idle: impl
 	}
 }}
 
-impl<W: Widget+'static> Dispatch<Registry> for State<W> {
+impl Dispatch<Registry> for State {
     type UserData = ();
     fn event(&mut self, registry: &Registry, event: registry::Event, _: &Self::UserData, cx: &mut ConnectionHandle, queue: &Queue<Self>, _: &mut DataInit<'_>) {
 		match event {
@@ -128,24 +140,17 @@ impl<W: Widget+'static> Dispatch<Registry> for State<W> {
 			},
 			_ => {}
 		};
-		if self.xdg_surface.is_none() { if let (Some(wm_base), Some(surface)) = (self.wm_base.as_ref(), self.surface.as_ref()) {
-			let xdg_surface = wm_base.get_xdg_surface(cx, surface.clone(), queue, ()).unwrap();
-			let toplevel = xdg_surface.get_toplevel(cx, queue, ()).unwrap();
-			toplevel.set_title(cx, "piet-gpu".into());
-			surface.commit(cx);
-			self.xdg_surface = Some((xdg_surface, toplevel));
-		}}
 	}
 }
 
-impl<W> Dispatch<Compositor> for State<W> {
+impl Dispatch<Compositor> for State {
     type UserData = ();
     fn event(&mut self, _: &Compositor, _: compositor::Event, _: &Self::UserData, _: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) {}
 }
 
-impl<W> Dispatch<Output> for State<W> {
+impl Dispatch<Output> for State {
     type UserData = ();
-    fn event(&mut self, _: &Output, event: output::Event, _: &Self::UserData, cx: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) { 
+    fn event(&mut self, _: &Output, event: output::Event, _: &Self::UserData, cx: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) {
 		match event {
 			output::Event::Mode{width, height,..} => self.output = xy{x: width as _, y: height as _},
 			output::Event::Scale{factor} => {
@@ -157,19 +162,19 @@ impl<W> Dispatch<Output> for State<W> {
 	}
 }
 
-impl<W> Dispatch<Surface> for State<W> {
+impl Dispatch<Surface> for State {
     type UserData = ();
     fn event(&mut self, _: &Surface, _: surface::Event, _: &Self::UserData, _: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) {}
 }
 
-impl<W> Dispatch<WmBase> for State<W> {
+impl Dispatch<WmBase> for State {
     type UserData = ();
     fn event(&mut self, wm_base: &WmBase, event: wm_base::Event, _: &Self::UserData, cx: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) {
 		if let wm_base::Event::Ping{serial} = event { wm_base.pong(cx, serial); } else { unreachable!() };
     }
 }
 
-impl<W:Widget> Dispatch<XdgSurface> for State<W> {
+impl Dispatch<XdgSurface> for State {
     type UserData = ();
     fn event(&mut self, xdg_surface: &XdgSurface, event: xdg_surface::Event, _: &Self::UserData, cx: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) {
 		if let xdg_surface::Event::Configure{serial} = event {
@@ -189,7 +194,7 @@ impl<W:Widget> Dispatch<XdgSurface> for State<W> {
     }
 }
 
-impl<W> Dispatch<TopLevel> for State<W> {
+impl Dispatch<TopLevel> for State {
     type UserData = ();
     fn event(&mut self, _: &TopLevel, event: toplevel::Event, _: &Self::UserData, _: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) {
 		match event {
@@ -202,4 +207,4 @@ impl<W> Dispatch<TopLevel> for State<W> {
 
 #[path="input.rs"] mod input;
 
-#[throws] pub fn run(widget: impl Widget+'static) { State::run(widget, |_| Ok(false))? }
+#[throws] pub fn run(widget: Box<dyn Widget+'static>) { State::run(widget, &mut |_| Ok(false))? }

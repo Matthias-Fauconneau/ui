@@ -181,7 +181,13 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					x: x+face.glyph_hor_side_bearing(id).unwrap() as u32,
 					y: (line_index as u32) * (font[0].height() as u32) + font[0].ascender() as u32
 				};
-				if face.outline_glyph(id, &mut PathEncoder{scale: scale.into(), offset: f32::from(scale)*vec2::from(offset + position.signed()), context, first: zero(), p0: zero()}).is_some() {
+				let mut encoder = piet_gpu::encoder::GlyphEncoder::default();
+				let mut path_encoder = PathEncoder{scale: scale.into(), offset: f32::from(scale)*vec2::from(offset + position.signed()), path_encoder: encoder.path_encoder()};
+				if face.outline_glyph(id, &mut path_encoder).is_some() {
+					let mut path_encoder = path_encoder.path_encoder;
+					path_encoder.path();
+					let n_pathseg = path_encoder.n_pathseg();
+    				encoder.finish_path(n_pathseg);
 					use piet::IntoBrush;
 					let brush = piet::Color::BLACK.make_brush(context, || unreachable!());
 					context.encode_brush(&brush);

@@ -24,7 +24,7 @@ pub struct Graphic {
 	pub glyphs: Vec<Glyph>,
 }
 
-use {fehler::throws, crate::{Error, Result, widget::{self, RenderContext, size}, font::{rect, PathEncoder}}, ::xy::{xy, Component, ifloor, ceil}, num::zero};
+use {fehler::throws, crate::{Error, Result, widget::{self, RenderContext, size}, font::{rect, PathEncoder}}, ::xy::{xy, Component, ifloor, ceil}};
 
 impl Graphic {
 	pub fn new(scale: Ratio) -> Self { Self{scale, rects: vec![], parallelograms: vec![], glyphs: vec![]} }
@@ -67,7 +67,13 @@ impl widget::Widget for View {
 			let top_left = top_left - min;
 			if top_left < (size/scale).signed() {
 				let offset = ifloor(*scale, top_left + xy{x: -face.glyph_hor_side_bearing(*id).unwrap() as _, y: face.glyph_bounding_box(*id).unwrap().y_max as _}).into();
-				if face.outline_glyph(*id, &mut PathEncoder{scale: f32::from(*scale)*glyph_scale, offset, context, first: zero(), p0: zero()}).is_some() {
+				let mut encoder = piet_gpu::encoder::GlyphEncoder::default();
+				let mut path_encoder = PathEncoder{scale: f32::from(*scale)*glyph_scale, offset, path_encoder: encoder.path_encoder()};
+				if face.outline_glyph(*id, &mut path_encoder).is_some() {
+					let mut path_encoder = path_encoder.path_encoder;
+					path_encoder.path();
+					let n_pathseg = path_encoder.n_pathseg();
+    				encoder.finish_path(n_pathseg);
 					use piet::IntoBrush;
 					let brush = piet::Color::BLACK.make_brush(context, || unreachable!());
 					context.encode_brush(&brush);
@@ -77,8 +83,8 @@ impl widget::Widget for View {
 	}
 }
 
-pub struct Widget<T>(pub T);
-impl<T:Fn(size)->Result<Graphic>> widget::Widget for Widget<T> {
+pub struct Widget(pub Box<dyn Fn(size)->Result<Graphic>>);
+impl widget::Widget for Widget {
     fn size(&mut self, size: size) -> size { View::new(self.0(size).unwrap()).size(size) }
     #[throws] fn paint(&mut self, context: &mut RenderContext, size: size) { View::new(self.0(size)?).paint(context, size)? }
 }

@@ -6,7 +6,7 @@ use crate::prelude::*;
 #[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
 
 use ::xy::xy;
-use crate::widget::{Widget, EventContext, Event, ModifiersState};
+use crate::widget::{EventContext, Event, ModifiersState};
 use wayland_client::{Dispatch, ConnectionHandle, QueueHandle as Queue, DataInit, WEnum, protocol::{
 	wl_seat::{self as seat, WlSeat as Seat},
 	wl_keyboard::{self as keyboard, WlKeyboard as Keyboard},
@@ -14,7 +14,7 @@ use wayland_client::{Dispatch, ConnectionHandle, QueueHandle as Queue, DataInit,
 }};
 use super::State;
 
-impl<W: Widget+'static> Dispatch<Seat> for State<W> {
+impl Dispatch<Seat> for State {
     type UserData = ();
     fn event(&mut self, seat: &Seat, event: seat::Event, _: &Self::UserData, cx: &mut ConnectionHandle, queue: &Queue<Self>, _: &mut DataInit<'_>) {
         match event {
@@ -27,14 +27,14 @@ impl<W: Widget+'static> Dispatch<Seat> for State<W> {
     }
 }
 
-impl<W:Widget> State<W> { #[throws] pub fn key(&mut self, key: char) -> bool {
+impl State { #[throws] pub fn key(&mut self, key: char) -> bool {
 	let Self{size, modifiers_state, widget, ..} = self;
 	if widget.event(*size, &EventContext{modifiers_state: *modifiers_state, pointer: None}, &Event::Key{key})? { self.need_update = true; true }
 	else if key == '⎋' { self.running=false; false }
 	else { false }
 }}
 
-impl<W:Widget> Dispatch<Keyboard> for State<W> {
+impl Dispatch<Keyboard> for State {
     type UserData = (); //let mut repeat : Option<std::rc::Rc<std::cell::Cell<_>>> = None;
     fn event(&mut self, _: &Keyboard, event: keyboard::Event, _: &Self::UserData, _: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) {
         use keyboard::{Event::*, KeyState};
@@ -92,7 +92,7 @@ impl<W:Widget> Dispatch<Keyboard> for State<W> {
 	}
 }
 
-impl<W:Widget> Dispatch<Pointer> for State<W> {
+impl Dispatch<Pointer> for State {
     type UserData = ();
     fn event(&mut self, pointer: &Pointer, event: pointer::Event, _: &Self::UserData, _: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) {
 		let event_context = EventContext{modifiers_state: self.modifiers_state, pointer: Some(pointer)};
