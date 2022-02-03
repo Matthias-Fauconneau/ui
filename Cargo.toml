@@ -14,7 +14,7 @@ font=['ttf-parser','derive-more','memmap','owning-ref']
 text=['unicode-segmentation','iter','font','derive-more','text-size']
 edit=['text']
 #plot=['text','itertools']
-default=['text']
+#default=['text']
 
 [dependencies]
 fehler='*'
@@ -47,8 +47,8 @@ piet='^0.2'
 trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 itertools={version='*', optional=true}
 
-[patch.'https://github.com/Matthias-Fauconneau/piet-gpu']
-piet-gpu-hal={path='../piet-gpu/piet-gpu-hal'}
+#[patch.'https://github.com/Matthias-Fauconneau/piet-gpu']
+#piet-gpu-hal={path='../piet-gpu/piet-gpu-hal'}
 [patch.crates-io]
 ash-window={path='../ash/ash-window'}
 ash={path='../ash/ash'}

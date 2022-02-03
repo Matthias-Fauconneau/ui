@@ -57,6 +57,17 @@ impl State { #[throws] pub fn run(widget: Box<dyn Widget+'static>, idle: &mut dy
 		cursor_position: zero(),
 		mouse_buttons: 0
 	};
+
+	struct RenderContext {
+		_instance: piet_gpu_hal::Instance,
+		swapchain: Option<piet_gpu_hal::Swapchain>,
+		session: piet_gpu_hal::Session,
+		present_semaphore: piet_gpu_hal::Semaphore,
+		target: image::Image<Box<[image::bgra8]>>,
+		buffer: piet_gpu_hal::Buffer
+	}
+	let mut render_context = None;
+
 	while state.running {
 		/*connection.flush()?;
 		event_queue.dispatch_pending(state)?;
@@ -78,45 +89,45 @@ impl State { #[throws] pub fn run(widget: Box<dyn Widget+'static>, idle: &mut dy
 			state.xdg_surface = Some((xdg_surface, toplevel));
 		}}
 		if *need_update && !size.is_zero() {
-			struct RawWindowHandle(raw_window_handle::RawWindowHandle);
-			unsafe impl raw_window_handle::HasRawWindowHandle for RawWindowHandle { fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle { self.0 } }
-			let (instance, gpu_surface) = piet_gpu_hal::Instance::new(Some(&RawWindowHandle(raw_window_handle::RawWindowHandle::Wayland({
-				let mut s=raw_window_handle::WaylandHandle::empty();
-				s.display = display.id().as_ptr() as *mut wayland_client::protocol::wl_display::WlDisplay as  *mut _;
-				s.surface = surface.as_ref().unwrap().id().as_ptr() as *mut Surface as  *mut _;
-				s
-			}))), Default::default())?;
-			let device = unsafe{instance.device(gpu_surface.as_ref())}?;
-			let mut swapchain = gpu_surface.map(|surface| unsafe{instance.swapchain(size.x as _, size.y as _, &device, &surface)}).transpose()?;
-			let session = piet_gpu_hal::Session::new(device);
-			let present_semaphore = unsafe{session.create_semaphore()}?;
-			let mut renderer = unsafe{piet_gpu::Renderer::new(&session, size.x as _, size.y as _, 1)}?;
-			let mut context = piet_gpu::PietGpuRenderContext::new();
-			use piet::RenderContext;
-			context.fill(piet::kurbo::Rect::new(0., 0., size.x as _, size.y as _), &piet::Color::WHITE);
-			widget.paint(&mut context, *size)?;
-			if context.path_count() > 0 {
-				renderer.upload_render_ctx(&mut context, 0)?;
+			use num::Zero;
+			if render_context.as_ref().map(|r:&RenderContext| r.target.size).unwrap_or(size::ZERO) != *size {
+				struct RawWindowHandle(raw_window_handle::RawWindowHandle);
+				unsafe impl raw_window_handle::HasRawWindowHandle for RawWindowHandle { fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle { self.0 } }
+				let (instance, gpu_surface) = piet_gpu_hal::Instance::new(Some(&RawWindowHandle(raw_window_handle::RawWindowHandle::Wayland({
+					let mut s=raw_window_handle::WaylandHandle::empty();
+					s.display = display.id().as_ptr() as *mut wayland_client::protocol::wl_display::WlDisplay as  *mut _;
+					s.surface = surface.as_ref().unwrap().id().as_ptr() as *mut Surface as  *mut _;
+					s
+				}))), Default::default())?;
+				let device = unsafe{instance.device(gpu_surface.as_ref())}?;
+				let swapchain = gpu_surface.map(|surface| unsafe{instance.swapchain(size.x as _, size.y as _, &device, &surface)}).transpose()?;
+				let session = piet_gpu_hal::Session::new(device);
+				let present_semaphore = unsafe{session.create_semaphore()}?;
+				let target = image::Image::uninitialized(*size);
+				let buffer = session.create_buffer((target.len() * 4) as u64, piet_gpu_hal::BufferUsage::MAP_WRITE|piet_gpu_hal::BufferUsage::COPY_SRC)?;
+				render_context = Some(RenderContext{_instance: instance, session, present_semaphore, target, buffer, swapchain});
 			}
-			let (image, acquisition_semaphore) = if let Some(swapchain) = swapchain.as_mut() {
+			let RenderContext{session, target, buffer, swapchain, present_semaphore, ..} = render_context.as_mut().unwrap();
+			widget.paint(&mut target.as_mut(), *size)?;
+			unsafe{buffer.write(&target)?};
+
+			let (image_idx, image, acquisition_semaphore) = if let Some(swapchain) = swapchain.as_mut() {
 				let (image_idx, acquisition_semaphore) = unsafe{swapchain.next()}?;
-				(unsafe{swapchain.image(image_idx)}, Some(acquisition_semaphore))
+				(image_idx, unsafe{swapchain.image(image_idx)}, Some(acquisition_semaphore))
 			} else {
-				(unsafe{session.create_image2d(size.x, size.y)}?, None)
+				(0, unsafe{session.create_image2d(size.x, size.y)}?, None)
 			};
-			let ref query_pool = session.create_query_pool(8)?;
 			let mut cmd_buf = session.cmd_buf()?;
 			unsafe{
 				cmd_buf.begin();
-				renderer.record(&mut cmd_buf, &query_pool, 0);
 				use piet_gpu_hal::ImageLayout;
 				cmd_buf.image_barrier(&image, ImageLayout::Undefined, ImageLayout::BlitDst);
-				cmd_buf.blit_image(&renderer.image_dev, &image);
+				cmd_buf.copy_buffer_to_image(&buffer, &image);
 				cmd_buf.image_barrier(&image, ImageLayout::BlitDst, ImageLayout::Present);
 				cmd_buf.finish();
-				if let Some(swapchain) = swapchain {
+				if let Some(swapchain) = swapchain.as_mut() {
 					let submitted = session.run_cmd_buf(cmd_buf, &[&acquisition_semaphore.unwrap()], &[&present_semaphore])?;
-					swapchain.present(0, &[&present_semaphore])?;
+					swapchain.present(image_idx, &[&present_semaphore])?;
 					submitted.wait()?;
 				} else {
 					unimplemented!()
