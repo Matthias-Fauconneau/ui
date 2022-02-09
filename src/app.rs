@@ -12,7 +12,7 @@ use wayland_protocols::xdg_shell::client::{
 	xdg_toplevel::{self as toplevel, XdgToplevel as TopLevel}
 };
 use crate::widget::{Widget, ModifiersState};
-use {::xy::{xy, size, vec2}, num::{zero, IsZero}};
+use {vector::{xy, size, vec2}, num::{zero, IsZero}};
 
 pub struct State {
 	running: bool,
@@ -193,7 +193,7 @@ impl Dispatch<XdgSurface> for State {
 			if unscaled_size.x == 0 || unscaled_size.y == 0 {
 				let size = widget.size(*output);
 				assert!(size <= *output);
-				*unscaled_size = ::xy::div_ceil(size, *scale);
+				*unscaled_size = vector::div_ceil(size, *scale);
 			}
 			xdg_surface.ack_configure(cx, serial);
 			let new_size = *scale * *unscaled_size;

@@ -22,7 +22,6 @@ rustix={git='https://github.com/bytecodealliance/rustix'}
 dirs='*'
 
 vector= {git='https://github.com/Matthias-Fauconneau/vector'}
-xy= {git='https://github.com/Matthias-Fauconneau/xy'}
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 
 image={git='https://github.com/Matthias-Fauconneau/image'}
@@ -47,8 +46,8 @@ piet='^0.2'
 trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 itertools={version='*', optional=true}
 
+[patch.crates-io]
+ash-window={git='https://github.com/Matthias-Fauconneau/ash'}
+ash={git='https://github.com/Matthias-Fauconneau/ash'}
 #[patch.'https://github.com/Matthias-Fauconneau/piet-gpu']
 #piet-gpu-hal={path='../piet-gpu/piet-gpu-hal'}
-[patch.crates-io]
-ash-window={path='../ash/ash-window'}
-ash={path='../ash/ash'}

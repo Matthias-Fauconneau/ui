@@ -1,5 +1,5 @@
 use super::Result;
-pub use xy::{size, vec2};
+pub use vector::{size, vec2};
 pub use wayland_client::protocol::wl_pointer::{WlPointer as Pointer, ButtonState};
 #[derive(Default,Clone,Copy)] pub struct ModifiersState { pub shift: bool, pub ctrl: bool, pub logo: bool, pub alt: bool }
 //pub use piet_gpu::PietGpuRenderContext as RenderContext;

@@ -1,14 +1,14 @@
 #![allow(non_snake_case)]
 use num::{cos,sin,cb};
 pub struct LCh { pub L: f32, pub C: f32, pub h: f32}
-vector::vector!(2 uv T T, u v, U V);
+mod vector_uv { vector::vector!(2 uv T T, u v, U V); } use vector_uv::uv;
 
 struct Luv { L: f32, uv: uv<f32> }
 impl From<LCh> for Luv { fn from(LCh{L, C, h}: LCh) -> Self { Self{L, uv: uv{u: C*cos(h), v: C*sin(h)}} } }
 struct XYZ { X: f32, Y: f32, Z: f32 }
 impl From<Luv> for XYZ{ fn from(Luv{L, uv}: Luv) -> Self {
 	if L == 0. { return XYZ{X: 0., Y: 0., Z: 0.} }
-	vector::vector!(2 xy T T, x y, X Y);
+	use vector::xy;
 	let n = xy{x: 0.3127, y: 0.3290}; // D65 white point (2° observer)
 	let n = uv{u: 4.*n.x / (-2.*n.x + 12.*n.y + 3.), v: 9.*n.y / (-2.*n.x + 12.*n.y + 3.)};
 	let uv{u,v} = n + (1./(13.*L)) * uv;

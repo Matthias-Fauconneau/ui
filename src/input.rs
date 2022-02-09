@@ -5,7 +5,7 @@ use crate::prelude::*;
 	&['⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘']].concat());
 #[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
 
-use ::xy::xy;
+use vector::xy;
 use crate::widget::{EventContext, Event, ModifiersState};
 use wayland_client::{Dispatch, ConnectionHandle, QueueHandle as Queue, DataInit, WEnum, protocol::{
 	wl_seat::{self as seat, WlSeat as Seat},
