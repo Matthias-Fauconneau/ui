@@ -78,7 +78,7 @@ impl Dispatch<Keyboard> for State {
 					const ALT : u32 = 0b1000;
 					const LOGO : u32 = 0b1000000;
 					const NUM_LOCK : u32 = 0b10000000000000000000;
-					assert_eq!([mods_depressed&!(SHIFT|CAPS|CTRL|ALT|LOGO|NUM_LOCK), mods_latched, mods_locked&!CAPS, locked_group], [0,0,0,0]);
+					//assert_eq!([mods_depressed&!(SHIFT|CAPS|CTRL|ALT|LOGO|NUM_LOCK), mods_latched, mods_locked&!CAPS, locked_group], [0,0,0,0]);
 					self.modifiers_state = ModifiersState {
 							shift: mods_depressed&SHIFT != 0,
 							ctrl: mods_depressed&CTRL != 0,
