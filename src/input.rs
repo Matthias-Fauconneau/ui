@@ -43,7 +43,7 @@ impl Dispatch<Keyboard> for State {
 			Enter{ /*keysyms,*/ .. } => {},
 			Leave{ .. } => {}
 			Key{state: WEnum::Value(state), key, .. } => {
-				let key = *usb_hid_usage_table.get(key as usize).unwrap_or_else(|| panic!("{:x}", key));
+				if let Some(&key) = usb_hid_usage_table.get(key as usize) {
 				match state {
 					KeyState::Released => { /*if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None }*/ },
 					KeyState::Pressed => {
@@ -69,7 +69,8 @@ impl Dispatch<Keyboard> for State {
 						};*/
 					},
 					_ => unreachable!(),
-				}
+				}}
+				// else { panic!("{:x}", key); }
 			},
 			Modifiers {mods_depressed, mods_latched, mods_locked, group: locked_group, ..} => {
 					const SHIFT : u32 = 0b001;
