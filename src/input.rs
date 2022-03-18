@@ -29,7 +29,7 @@ impl Dispatch<Seat> for State {
 
 impl State { #[throws] pub fn key(&mut self, key: char) -> bool {
 	let Self{size, modifiers_state, widget, ..} = self;
-	if widget.event(*size, &EventContext{modifiers_state: *modifiers_state, pointer: None}, &Event::Key{key})? { self.need_update = true; true }
+	if widget.event(*size, &EventContext{modifiers_state: *modifiers_state, pointer: None}, &Event::Key(key))? { self.need_update = true; true }
 	else if key == '⎋' { self.running=false; false }
 	else { false }
 }}

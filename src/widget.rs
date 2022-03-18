@@ -13,7 +13,7 @@ pub struct EventContext<'t> {
 pub type MouseButtons = u32;
 
 pub enum Event {
-	Key { key: char },
+	Key (char),
 	Button { position: vec2, button: u8, state: ButtonState },
 	Motion { position: vec2, mouse_buttons: MouseButtons },
 	Scroll (f32)
