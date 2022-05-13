@@ -8,7 +8,7 @@ pub fn index(s: &str, grapheme_index: GraphemeIndex) -> usize/*TextSize*/ {
 		_ => panic!()
 	}//.try_into().unwrap()
 }
-#[track_caller] #[throws(as Option)] pub fn find(s: &str, byte_index: TextSize) -> GraphemeIndex {
+#[track_caller] pub fn find(s: &str, byte_index: TextSize) -> GraphemeIndex {
 	let byte_index = byte_index.into();
 	assert!(byte_index<=s.len());
 	let mut grapheme_index = 0;
@@ -17,16 +17,16 @@ pub fn index(s: &str, grapheme_index: GraphemeIndex) -> usize/*TextSize*/ {
 		grapheme_index += 1;
 	}
 	assert_eq!(byte_index, s.len());
-	return grapheme_index;
+	grapheme_index
 }
 
 #[derive(PartialEq,Clone,Copy)] enum Class { Space, Alphanumeric, Symbol }
 fn classify(g: &str) -> Class {
-	use {iter::Single, Class::*};
+	use {super::iter::Single, Class::*};
 	g.chars().single().map_or(Symbol, |c| if c.is_whitespace() {Space} else if c.is_alphanumeric() {Alphanumeric} else {Symbol} )
 }
 fn run_class<'t>(graphemes: &mut std::iter::Peekable<impl Iterator<Item=(GraphemeIndex, &'t str)>>, class: Class) -> Option<GraphemeIndex> {
-	use iter::PeekableExt;
+	use super::iter::PeekableExt;
 	graphemes.peeking_take_while(|&(_,g)| classify(g) == class).last().map(|(last,_)| last)
 }
 use fehler::throws;

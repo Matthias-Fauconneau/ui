@@ -1,4 +1,4 @@
-use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, ::xy::{xy, uint2, int2, size, Rect, vec2}, ttf_parser::{Face,GlyphId}, num::{zero, Ratio}, crate::font::{self, rect, PathEncoder}};
+use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, ::vector::{xy, uint2, int2, size, Rect, vec2}, ttf_parser::{Face,GlyphId}, num::{zero, Ratio}, crate::font::{self, rect, PathEncoder}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
@@ -17,8 +17,8 @@ pub type Font<'t> = [&'t Face<'t>; 2];
 pub struct Glyph<'t> {pub index: GraphemeIndex, pub x: u32, pub id: GlyphId, face: &'t Face<'t> }
 pub fn layout<'t>(font: &'t Font<'t>, iter: impl Iterator<Item=(GraphemeIndex, &'t str)>+'t) -> impl 't+Iterator<Item=Glyph<'t>> {
 	iter.scan((None, 0), move |(last_id, x), (index, g)| {
-		use iter::Single;
-		let c = g.chars().single().unwrap();
+		let c = iter::Single::single(g.chars()).unwrap();
+		//let [c] = arrayvec::ArrayVec::from_iter(g.chars()).into_inner().unwrap();
 		let (face, id) = font.iter().find_map(|face| face.glyph_index(if c == '\t' { ' ' } else { c }).map(|id| (face, id))).unwrap_or_else(||panic!("Missing glyph for '{c}' {:x?}", c as u32));
 		//if let Some(last_id) = *last_id { *x += face.tables().kern.unwrap().subtables.into_iter().next().map_or(0, |x| x.glyphs_kerning(last_id, id).unwrap_or(0) as i32); }
 		*last_id = Some(id);
@@ -53,7 +53,7 @@ impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { from(col
 use {std::{lazy::SyncLazy, path::Path}};
 #[allow(non_upper_case_globals)] pub static default_font_files : SyncLazy<[font::File<'static>; 2]> = SyncLazy::new(||
 	["/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf","/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(Path::new(p)).unwrap()));
-pub fn default_font() -> Font<'static> { iter::from_iter(iter::into::IntoMap::map(&*default_font_files, |x| std::ops::Deref::deref(x))) }
+pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| std::ops::Deref::deref(x)) }
 #[allow(non_upper_case_globals)]
 pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
 
@@ -90,7 +90,7 @@ impl<D:AsRef<str>> View<'_, D> {
 	pub fn scale(&mut self, fit: size) -> Ratio { self.size_scale(fit).1 }
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Copy,Debug,Default)] pub struct LineColumn {
+#[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Copy,Debug)] pub struct LineColumn {
 	pub line: usize,
 	pub column: GraphemeIndex // May be on the right of the corresponding line (preserves horizontal affinity during line up/down movement)
 }
@@ -118,6 +118,7 @@ impl Span {
 	pub fn max(&self) -> LineColumn { max(self.start, self.end) }
 }
 
+crate mod iter;
 use iter::NthOrLast;
 fn position(font: &Font<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 {
 	if text.is_empty() { assert!(line==0&&column==0); zero() } else {
@@ -133,10 +134,12 @@ fn position(font: &Font<'_>, text: &str, LineColumn{line, column}: LineColumn) -
 impl<D:AsRef<str>> View<'_, D> {
 	pub fn text(&self) -> &str { AsRef::<str>::as_ref(&self.data) }
 	fn position(&self, cursor: LineColumn) -> uint2 { self::position(&self.font, self.text(), cursor) }
-	pub fn span(&self, min: LineColumn, max: LineColumn) -> Rect { Rect{min: self.position(min).signed(), max: (self.position(max)+xy{x:0, y: self.font[0].height() as u32}).signed()} }
-	#[throws(as Option)] pub fn cursor(&mut self, size: size, position: uint2) -> LineColumn {
-		fn ensure(s: bool) -> Option<()> { s.then(||()) }
-		ensure(!self.text().is_empty())?;
+	pub fn span(&self, min: LineColumn, max: LineColumn) -> Rect {
+		Rect{min: self.position(min).signed(), max: (self.position(max)+xy{x:0, y: self.font[0].height() as u32}).signed()}
+	}
+	/*#[throws(as Option)]*/ pub fn cursor(&mut self, size: size, position: uint2) -> LineColumn {
+		//fn ensure(s: bool) -> Option<()> { s.then(||()) }
+		//ensure(!self.text().is_empty())?;
 		let position = position / self.scale(size);
 		let View{font, ..} = &self;
 		let line = ((position.y/font[0].height() as u32) as usize).min(line_ranges(self.text()).count()-1);
@@ -146,9 +149,9 @@ impl<D:AsRef<str>> View<'_, D> {
 			.take_while(|&(_, x)| x <= position.x).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
 	}
-	/*pub fn paint_span(&self, context: &mut Context, scale: Ratio, offset: int2, span: Span, bgr: image::bgr<bool>) {
+	pub fn paint_span(&self, _context: &mut RenderContext, _scale: Ratio, _offset: int2, span: Span, _bgr: image::bgr<bool>) {
 		let [min, max] = [span.min(), span.max()];
-		let mut invert = |r:Rect| Some(image::invert(&mut target.slice_mut_clip(scale*(offset+r))?, bgr));
+		let /*mut*/ invert = |_r:Rect| {};//image::invert(&mut target.slice_mut_clip(scale*(offset+r))?, bgr);
 		if min.line < max.line { invert(self.span(min,LineColumn{line: min.line, column: usize::MAX})); }
 		if min.line == max.line {
 			if min != max { invert(self.span(min,max)); } // selection
@@ -161,7 +164,7 @@ impl<D:AsRef<str>> View<'_, D> {
 			invert(self.span(LineColumn{line, column: 0},LineColumn{line, column: usize::MAX}));
 		}}
 		if max.line > min.line { invert(self.span(LineColumn{line: max.line, column: 0}, max)); }
-	}*/
+	}
 }
 
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
@@ -178,7 +181,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					else { break; }
 				}
 				let position = xy{
-					x: x+face.glyph_hor_side_bearing(id).unwrap() as u32,
+					x: (x as i32+face.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
 					y: (line_index as u32) * (font[0].height() as u32) + font[0].ascender() as u32
 				};
 				let mut encoder = piet_gpu::encoder::GlyphEncoder::default();
@@ -195,16 +198,16 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 			}
 		}
 	}
-	pub fn paint_fit(&mut self, context: &mut RenderContext, size: size, offset: int2) -> Ratio {
+	pub fn paint_fit(&mut self, cx: &mut RenderContext, size: size, offset: int2) -> Ratio {
 		let scale = self.scale(size);
-		self.paint(context, size, scale, offset);
+		self.paint(cx, size, scale, offset);
 		scale
 	}
 }
 use crate::widget::{Widget, RenderContext};
 impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 	fn size(&mut self, size: size) -> size { fit_width(size.x, Self::size(self)) }
-	#[throws] fn paint(&mut self, context: &mut RenderContext, size: size) { self.paint_fit(context, size, zero()); }
+	#[throws] fn paint(&mut self, cx: &mut RenderContext, size: size, offset: int2) { self.paint_fit(cx, size, offset); }
 }
 
 pub struct Plain<T>(pub T);

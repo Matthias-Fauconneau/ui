@@ -7,20 +7,36 @@ use crate::prelude::*;
 
 use vector::xy;
 use crate::widget::{EventContext, Event, ModifiersState};
-use wayland_client::{Dispatch, ConnectionHandle, QueueHandle as Queue, DataInit, WEnum, protocol::{
+use wayland_client::{Connection, Dispatch, QueueHandle as Queue, WEnum, protocol::{
 	wl_seat::{self as seat, WlSeat as Seat},
 	wl_keyboard::{self as keyboard, WlKeyboard as Keyboard},
-	wl_pointer::{self as pointer, WlPointer as Pointer}
+	wl_pointer::{self as pointer, WlPointer as Pointer},
+	wl_surface::WlSurface as Surface
 }};
 use super::State;
 
+pub struct Cursor<'t> {
+	crate pointer: &'t Pointer,
+	crate surface: &'t Surface,
+	crate theme: &'t mut wayland_cursor::CursorTheme,
+}
+
+impl Cursor<'_> {
+	pub fn set(&mut self, name: &str) {
+		let ref cursor = self.theme.get_cursor(name).unwrap()[0];
+		self.surface.attach(Some(&cursor), 0, 0);
+        self.surface.commit();
+		let (x,y) = cursor.hotspot();
+		self.pointer.set_cursor(0, Some(self.surface), x as i32, y as i32); }
+}
+
 impl Dispatch<Seat> for State {
     type UserData = ();
-    fn event(&mut self, seat: &Seat, event: seat::Event, _: &Self::UserData, cx: &mut ConnectionHandle, queue: &Queue<Self>, _: &mut DataInit<'_>) {
-        match event {
+    fn event(&mut self, seat: &Seat, event: seat::Event, _: &Self::UserData, _: &Connection, queue: &Queue<Self>) {
+		match event {
 			seat::Event::Capabilities{capabilities: WEnum::Value(capabilities)} => {
-				if capabilities.contains(seat::Capability::Keyboard) { seat.get_keyboard(cx, queue, ()).unwrap(); }
-				if capabilities.contains(seat::Capability::Pointer) { seat.get_pointer(cx, queue, ()).unwrap(); }
+				if capabilities.contains(seat::Capability::Keyboard) { seat.get_keyboard(queue, ()).unwrap(); }
+				if capabilities.contains(seat::Capability::Pointer) { seat.get_pointer(queue, ()).unwrap(); }
 			},
 			_ => {}
         }
@@ -29,14 +45,14 @@ impl Dispatch<Seat> for State {
 
 impl State { #[throws] pub fn key(&mut self, key: char) -> bool {
 	let Self{size, modifiers_state, widget, ..} = self;
-	if widget.event(*size, &EventContext{modifiers_state: *modifiers_state, pointer: None}, &Event::Key(key))? { self.need_update = true; true }
+	if widget.event(*size, &mut EventContext{modifiers_state: *modifiers_state, cursor: None}, &Event::Key(key))? { self.need_update = true; true }
 	else if key == '⎋' { self.running=false; false }
 	else { false }
 }}
 
 impl Dispatch<Keyboard> for State {
     type UserData = (); //let mut repeat : Option<std::rc::Rc<std::cell::Cell<_>>> = None;
-    fn event(&mut self, _: &Keyboard, event: keyboard::Event, _: &Self::UserData, _: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) {
+    fn event(&mut self, _: &Keyboard, event: keyboard::Event, _: &Self::UserData, _: &Connection, _: &Queue<Self>) {
         use keyboard::{Event::*, KeyState};
 		match event {
 			Keymap{..} => {},
@@ -72,13 +88,13 @@ impl Dispatch<Keyboard> for State {
 				}}
 				// else { panic!("{:x}", key); }
 			},
-			Modifiers {mods_depressed, mods_latched, mods_locked, group: locked_group, ..} => {
+			Modifiers {mods_depressed, mods_latched: _, mods_locked: _, group: _locked_group, ..} => {
 					const SHIFT : u32 = 0b001;
-					const CAPS : u32 = 0b010;
+					const _CAPS : u32 = 0b010;
 					const CTRL : u32 = 0b100;
 					const ALT : u32 = 0b1000;
 					const LOGO : u32 = 0b1000000;
-					const NUM_LOCK : u32 = 0b10000000000000000000;
+					const _NUM_LOCK : u32 = 0b10000000000000000000;
 					//assert_eq!([mods_depressed&!(SHIFT|CAPS|CTRL|ALT|LOGO|NUM_LOCK), mods_latched, mods_locked&!CAPS, locked_group], [0,0,0,0]);
 					self.modifiers_state = ModifiersState {
 							shift: mods_depressed&SHIFT != 0,
@@ -95,20 +111,23 @@ impl Dispatch<Keyboard> for State {
 
 impl Dispatch<Pointer> for State {
     type UserData = ();
-    fn event(&mut self, pointer: &Pointer, event: pointer::Event, _: &Self::UserData, _: &mut ConnectionHandle, _: &Queue<Self>, _: &mut DataInit<'_>) {
-		let event_context = EventContext{modifiers_state: self.modifiers_state, pointer: Some(pointer)};
+    fn event(&mut self, pointer: &Pointer, event: pointer::Event, _: &Self::UserData, _: &Connection, _: &Queue<Self>) {
+		let mut event_context = EventContext {
+			modifiers_state: self.modifiers_state,
+			cursor: Some(Cursor{pointer, surface: self.cursor_surface.as_ref().unwrap(), theme: self.cursor_theme.as_mut().unwrap()})
+		};
 		match event {
 			pointer::Event::Motion{surface_x: x, surface_y: y, ..} => {
 				self.cursor_position = self.scale as f32*xy{x: x as _, y: y as _};
-				if self.widget.event(self.size, &event_context, &Event::Motion{position: self.cursor_position, mouse_buttons: self.mouse_buttons}).unwrap() { self.need_update = true; }
+				if self.widget.event(self.size, &mut event_context, &Event::Motion{position: self.cursor_position, mouse_buttons: self.mouse_buttons}).unwrap() { self.need_update = true; }
 			},
 			pointer::Event::Button{button, state: WEnum::Value(state), ..} => {
 				let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
 				if state == pointer::ButtonState::Pressed { self.mouse_buttons |= 1<<button; } else { self.mouse_buttons &= !(1<<button); }
-				if self.widget.event(self.size, &event_context, &Event::Button{button, state, position: self.cursor_position}).unwrap() { self.need_update = true; }
+				if self.widget.event(self.size, &mut event_context, &Event::Button{button, state, position: self.cursor_position}).unwrap() { self.need_update = true; }
 			},
 			pointer::Event::Axis {axis: WEnum::Value(pointer::Axis::VerticalScroll), value, ..} => {
-				if self.widget.event(self.size, &event_context, &Event::Scroll(value as f32)).unwrap() { self.need_update = true; }
+				if self.widget.event(self.size, &mut event_context, &Event::Scroll(value as f32)).unwrap() { self.need_update = true; }
 			},
 			_ => {},
 		}
