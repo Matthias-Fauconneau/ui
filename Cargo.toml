@@ -37,19 +37,25 @@ text-size={version='*', optional=true}
 unicode-segmentation={version='*', optional=true}
 ttf-parser={version='*', optional=true}
 
-wayland-client= '0.30.0-alpha'
-wayland-protocols= {version= '0.30.0-alpha', features=['client']}
-wayland-backend= {version= '0.1.0-alpha', features=['client_system']}
+#wayland-client= '0.30.0-alpha'
+#wayland-protocols= {version= '0.30.0-alpha', features=['client']}
+#wayland-backend= {version= '0.1.0-alpha', features=['client_system']}
+#wayland-cursor= '0.30.0-alpha'
+
+wayland-client= {git='https://github.com/smithay/wayland-rs'}
+wayland-protocols= {git='https://github.com/smithay/wayland-rs', features=['client']}
+wayland-backend= {git='https://github.com/smithay/wayland-rs', features=['client_system']}
+wayland-cursor= {git='https://github.com/smithay/wayland-rs'}
+
 raw-window-handle='^0.4'
 piet-gpu-hal={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
 piet-gpu={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
 piet-gpu-types={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
 piet='^0.2'
-wayland-cursor= '0.30.0-alpha'
 
-[patch.'crates-io']
-wayland-client= {git='https://github.com/smithay/wayland-rs'}
-wayland-protocols= {git='https://github.com/smithay/wayland-rs'}
-wayland-backend= {git='https://github.com/smithay/wayland-rs'}
-wayland-cursor= {git='https://github.com/smithay/wayland-rs'}
+#[patch.'crates-io']
+#wayland-client= {git='https://github.com/smithay/wayland-rs'}
+#wayland-protocols= {git='https://github.com/smithay/wayland-rs'}
+#wayland-backend= {git='https://github.com/smithay/wayland-rs'}
+#wayland-cursor= {git='https://github.com/smithay/wayland-rs'}
 
