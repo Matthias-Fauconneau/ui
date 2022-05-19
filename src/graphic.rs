@@ -1,4 +1,4 @@
-pub use ::vector::int2;
+pub use vector::int2;
 
 pub struct Parallelogram { pub top_left: int2, pub bottom_right: int2, pub vertical_thickness: u32 }
 
@@ -12,7 +12,7 @@ impl Glyph {
 	pub fn translate(&mut self, offset: int2) { self.top_left += offset; }
 }
 
-pub use {::num::Ratio, ::vector::Rect, ttf_parser::Face};
+pub use {num::Ratio, vector::Rect, ttf_parser::Face};
 
 pub fn horizontal(y: i32, dy: u32, x0: i32, x1: i32) -> Rect { Rect{ min: xy{ y: y-(dy/2) as i32, x: x0 }, max: xy{ y: y+(dy/2) as i32, x: x1 } } }
 pub fn vertical   (x: i32, dx: u32, y0: i32, y1: i32) -> Rect { Rect{ min: xy{ x: x-(dx/2) as i32, y: y0 }, max: xy{ x: x+(dx/2) as i32, y: y1 } } }
@@ -24,7 +24,7 @@ pub struct Graphic {
 	pub glyphs: Vec<Glyph>,
 }
 
-use {fehler::throws, crate::{Error, Result, widget::{self, RenderContext, size}, font::{rect, PathEncoder}}, ::vector::{xy, ifloor, ceil}};
+use {fehler::throws, crate::{Error, Result, widget::{self, RenderContext, size}, font::{rect, PathEncoder}}, vector::{xy, ifloor, ceil}};
 
 impl Graphic {
 	pub fn new(scale: Ratio) -> Self { Self{scale, rects: vec![], parallelograms: vec![], glyphs: vec![]} }
@@ -67,16 +67,15 @@ impl widget::Widget for View {
 			let top_left = top_left - min;
 			if top_left < (size/scale).signed() {
 				let offset = ifloor(*scale, top_left + xy{x: -face.glyph_hor_side_bearing(*id).unwrap() as _, y: face.glyph_bounding_box(*id).unwrap().y_max as _}).into();
-				let mut encoder = piet_gpu::encoder::GlyphEncoder::default();
-				let mut path_encoder = PathEncoder{scale: f32::from(*scale)*glyph_scale, offset, path_encoder: encoder.path_encoder()};
+				let mut glyph = piet_gpu::encoder::GlyphEncoder::default();
+				let mut path_encoder = PathEncoder{scale: f32::from(*scale)*glyph_scale, offset, path_encoder: glyph.path_encoder()};
 				if face.outline_glyph(*id, &mut path_encoder).is_some() {
 					let mut path_encoder = path_encoder.path_encoder;
 					path_encoder.path();
 					let n_pathseg = path_encoder.n_pathseg();
-    				encoder.finish_path(n_pathseg);
-					use piet::IntoBrush;
-					let brush = piet::Color::BLACK.make_brush(context, || unreachable!());
-					context.encode_brush(&brush);
+    				glyph.finish_path(n_pathseg);
+					context.encode_glyph(&glyph);
+					context.fill_glyph(piet::Color::BLACK.as_rgba_u32());
 				}
 			}
 		}

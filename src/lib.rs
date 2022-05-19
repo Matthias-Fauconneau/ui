@@ -1,7 +1,7 @@
-#![feature(async_closure,let_else,box_syntax,once_cell,type_alias_impl_trait,crate_visibility_modifier,array_methods)]
+#![feature(async_closure,let_else,box_syntax,once_cell,type_alias_impl_trait,array_methods)]
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T=(),E=Error> = std::result::Result<T, E>;
-crate mod prelude { pub use {fehler::throws, super::{Error, Result}}; }
+pub(crate) mod prelude { pub use {fehler::throws, super::{Error, Result}}; }
 
 pub mod color;
 pub use num::Ratio;

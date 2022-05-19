@@ -1,4 +1,4 @@
-use ::vector::{xy, vec2, Rect};
+use vector::{xy, vec2, Rect};
 
 pub fn rect(r: ttf_parser::Rect) -> Rect { Rect{min: xy{ x: r.x_min as i32, y: r.y_min as i32}, max: xy{ x: r.x_max as i32, y: r.y_max as i32} } }
 

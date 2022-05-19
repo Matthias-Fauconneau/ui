@@ -1,4 +1,4 @@
-use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, ::vector::{xy, uint2, int2, size, Rect, vec2}, ttf_parser::{Face,GlyphId}, num::{zero, Ratio}, crate::font::{self, rect, PathEncoder}};
+use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect, vec2}, ttf_parser::{Face,GlyphId}, num::{zero, Ratio}, crate::font::{self, rect, PathEncoder}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
@@ -41,8 +41,8 @@ fn metrics<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> LineMetrics {
 	})
 }
 
-pub type Color = image::bgrf;
-pub use image::bgr;
+pub type Color = crate::color::bgrf;
+pub use crate::color::bgr;
 #[derive(Clone,Copy,Default,Debug)] pub enum FontStyle { #[default] Normal, Bold, /*Italic, BoldItalic*/ }
 #[derive(Clone,Copy,Default,Debug)] pub struct Style { pub color: Color, pub style: FontStyle }
 pub type TextRange = std::ops::Range<GraphemeIndex>;
@@ -118,7 +118,7 @@ impl Span {
 	pub fn max(&self) -> LineColumn { max(self.start, self.end) }
 }
 
-crate mod iter;
+pub(crate) mod iter;
 use iter::NthOrLast;
 fn position(font: &Font<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 {
 	if text.is_empty() { assert!(line==0&&column==0); zero() } else {
@@ -149,7 +149,7 @@ impl<D:AsRef<str>> View<'_, D> {
 			.take_while(|&(_, x)| x <= position.x).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
 	}
-	pub fn paint_span(&self, _context: &mut RenderContext, _scale: Ratio, _offset: int2, span: Span, _bgr: image::bgr<bool>) {
+	pub fn paint_span(&self, _context: &mut RenderContext, _scale: Ratio, _offset: int2, span: Span, _bgr: crate::color::bgr<bool>) {
 		let [min, max] = [span.min(), span.max()];
 		let /*mut*/ invert = |_r:Rect| {};//image::invert(&mut target.slice_mut_clip(scale*(offset+r))?, bgr);
 		if min.line < max.line { invert(self.span(min,LineColumn{line: min.line, column: usize::MAX})); }
@@ -184,16 +184,15 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					x: (x as i32+face.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
 					y: (line_index as u32) * (font[0].height() as u32) + font[0].ascender() as u32
 				};
-				let mut encoder = piet_gpu::encoder::GlyphEncoder::default();
-				let mut path_encoder = PathEncoder{scale: scale.into(), offset: f32::from(scale)*vec2::from(offset + position.signed()), path_encoder: encoder.path_encoder()};
+				let mut glyph = piet_gpu::encoder::GlyphEncoder::default();
+				let mut path_encoder = PathEncoder{scale: scale.into(), offset: f32::from(scale)*vec2::from(offset + position.signed()), path_encoder: glyph.path_encoder()};
 				if face.outline_glyph(id, &mut path_encoder).is_some() {
 					let mut path_encoder = path_encoder.path_encoder;
 					path_encoder.path();
 					let n_pathseg = path_encoder.n_pathseg();
-    				encoder.finish_path(n_pathseg);
-					use piet::IntoBrush;
-					let brush = piet::Color::BLACK.make_brush(context, || unreachable!());
-					context.encode_brush(&brush);
+    				glyph.finish_path(n_pathseg);
+					context.encode_glyph(&glyph);
+					context.fill_glyph(piet::Color::BLACK.as_rgba_u32());
 				}
 			}
 		}

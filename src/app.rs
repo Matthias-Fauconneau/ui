@@ -15,21 +15,21 @@ use {vector::{xy, size, vec2}, num::{zero, IsZero}};
 
 pub struct State {
 	running: bool,
-	crate widget: Box<dyn Widget+'static>,
+	pub(crate) widget: Box<dyn Widget+'static>,
 	wm_base: Option<WmBase>,
 	scale: u32,
 	configure_bounds: size,
-	crate surface: Option<Surface>,
+	pub(crate) surface: Option<Surface>,
 	//memfd: rustix::io::OwnedFd,
-	crate cursor_surface: Option<Surface>,
-	crate cursor_theme: Option<wayland_cursor::CursorTheme>,
+	pub(crate) cursor_surface: Option<Surface>,
+	pub(crate) cursor_theme: Option<wayland_cursor::CursorTheme>,
 	xdg_surface: Option<(XdgSurface, TopLevel)>,
 	unscaled_size: size,
-	crate size: size,
-	crate need_update: bool,
-	crate modifiers_state: ModifiersState,
-	crate cursor_position: vec2,
-	crate mouse_buttons: u32,
+	pub(crate) size: size,
+	pub(crate) need_update: bool,
+	pub(crate) modifiers_state: ModifiersState,
+	pub(crate) cursor_position: vec2,
+	pub(crate) mouse_buttons: u32,
 	/*instance: piet_gpu_hal::Instance,
 	gpu_surface: Option<piet_gpu_hal::Surface>,*/
 }
@@ -94,13 +94,13 @@ impl State { #[throws] pub fn run(widget: Box<dyn Widget+'static>, idle: &mut dy
 		if *need_update && !size.is_zero() {
 			//let RenderContext{session, swapchain, present_semaphore, ..} = render_context;
 			let mut renderer = unsafe{piet_gpu::Renderer::new(&session, size.x as _, size.y as _, 1)}?;
-			let mut cx = piet_gpu::PietGpuRenderContext::new();
-			//piet::RenderContext::fill(&mut , piet::kurbo::Rect::new(0., 0., size.x as _, size.y as _), &piet::Color::WHITE);
-			//widget.paint(&mut context, *size, xy::ZERO)?;
-			use piet::{Text, TextLayoutBuilder};
-    		let layout = piet::RenderContext::text(&mut cx).new_text_layout("Hello World!").default_attribute(piet::TextAttribute::FontSize(size.y as _)).build().unwrap();
-    		piet::RenderContext::draw_text(&mut cx, &layout, piet::kurbo::Point{x: 0., y: size.y as _});
-			renderer.upload_render_ctx(&mut cx, 0)?;
+			let mut context = piet_gpu::PietGpuRenderContext::new();
+			piet::RenderContext::fill(&mut context, piet::kurbo::Rect::new(0., 0., size.x as _, size.y as _), &piet::Color::WHITE);
+			widget.paint(&mut context, *size, num::zero())?;
+			/*use piet::{Text, TextLayoutBuilder};
+    		let layout = piet::RenderContext::text(&mut context).new_text_layout("Hello World!").default_attribute(piet::TextAttribute::FontSize(size.y as _)).build().unwrap();
+    		piet::RenderContext::draw_text(&mut context, &layout, piet::kurbo::Point{x: 0., y: size.y as _});*/
+			renderer.upload_render_ctx(&mut context, 0)?;
 
 			let (image_idx, acquisition_semaphore) = unsafe{swapchain.next()}?;
 			let image = unsafe{swapchain.image(image_idx)};
@@ -126,7 +126,7 @@ impl State { #[throws] pub fn run(widget: Box<dyn Widget+'static>, idle: &mut dy
 
 impl Dispatch<Registry> for State {
     type UserData = ();
-    fn event(&mut self, registry: &Registry, event: registry::Event, _: &Self::UserData, cx: &Connection, queue: &Queue<Self>) {
+    fn event(&mut self, registry: &Registry, event: registry::Event, _: &Self::UserData, connection: &Connection, queue: &Queue<Self>) {
 		match event {
 			registry::Event::Global{name, interface, version, ..} => match &interface[..] {
 				"wl_compositor" => {
@@ -140,8 +140,8 @@ impl Dispatch<Registry> for State {
 				"xdg_wm_base" => self.wm_base = Some(registry.bind::<WmBase, _>(name, version, queue, ()).unwrap()),
 				"wl_shm" => {
                     let shm = registry.bind::<Shm, _>(name, 1, queue, ()).unwrap();
-                    //let pool = shm.create_pool(cx, self.memfd.as_raw_fd(), (256<<10) as i32, queue, ()).unwrap();
-					self.cursor_theme = Some(wayland_cursor::CursorTheme::load(cx, shm, 64).unwrap());
+                    //let pool = shm.create_pool(connection, self.memfd.as_raw_fd(), (256<<10) as i32, queue, ()).unwrap();
+					self.cursor_theme = Some(wayland_cursor::CursorTheme::load(connection, shm, 64).unwrap());
                 }
 				_ => {}
 			},

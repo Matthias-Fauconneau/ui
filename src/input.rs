@@ -16,9 +16,9 @@ use wayland_client::{Connection, Dispatch, QueueHandle as Queue, WEnum, protocol
 use super::State;
 
 pub struct Cursor<'t> {
-	crate pointer: &'t Pointer,
-	crate surface: &'t Surface,
-	crate theme: &'t mut wayland_cursor::CursorTheme,
+	pub(crate) pointer: &'t Pointer,
+	pub(crate) surface: &'t Surface,
+	pub(crate) theme: &'t mut wayland_cursor::CursorTheme,
 }
 
 impl Cursor<'_> {
