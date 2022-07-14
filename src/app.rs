@@ -124,24 +124,23 @@ impl State { #[throws] pub fn run(widget: Box<dyn Widget+'static>, idle: &mut dy
 	}
 }}
 
-impl Dispatch<Registry> for State {
-    type UserData = ();
-    fn event(&mut self, registry: &Registry, event: registry::Event, _: &Self::UserData, connection: &Connection, queue: &Queue<Self>) {
+impl Dispatch<Registry, ()> for State {
+    fn event(Self{wm_base, scale, cursor_theme, surface, cursor_surface, ..}: &mut Self, registry: &Registry, event: registry::Event, _: &(), connection: &Connection, queue: &Queue<Self>) {
 		match event {
 			registry::Event::Global{name, interface, version, ..} => match &interface[..] {
 				"wl_compositor" => {
-					let compositor = registry.bind::<Compositor, _>(name, version, queue, ()).unwrap();
-					self.surface = Some(compositor.create_surface(queue, ()).unwrap());
-					self.surface.as_ref().unwrap().set_buffer_scale(self.scale as _);
-					self.cursor_surface = Some(compositor.create_surface(queue, ()).unwrap());
+					let compositor = registry.bind::<Compositor, _, _>(name, version, queue, ()).unwrap();
+					*surface = Some(compositor.create_surface(queue, ()).unwrap());
+					surface.as_ref().unwrap().set_buffer_scale(*scale as _);
+					*cursor_surface = Some(compositor.create_surface(queue, ()).unwrap());
 				},
-				"wl_seat" => { registry.bind::<Seat, _>(name, version, queue, ()).unwrap(); }
-				"wl_output" => { registry.bind::<Output, _>(name, version, queue, ()).unwrap(); }
-				"xdg_wm_base" => self.wm_base = Some(registry.bind::<WmBase, _>(name, version, queue, ()).unwrap()),
+				"wl_seat" => { registry.bind::<Seat, _, _>(name, version, queue, ()).unwrap(); }
+				"wl_output" => { registry.bind::<Output, _, _>(name, version, queue, ()).unwrap(); }
+				"xdg_wm_base" => *wm_base = Some(registry.bind::<WmBase, _, _>(name, version, queue, ()).unwrap()),
 				"wl_shm" => {
-                    let shm = registry.bind::<Shm, _>(name, 1, queue, ()).unwrap();
+                    let shm = registry.bind::<Shm, _, _>(name, 1, queue, ()).unwrap();
                     //let pool = shm.create_pool(connection, self.memfd.as_raw_fd(), (256<<10) as i32, queue, ()).unwrap();
-					self.cursor_theme = Some(wayland_cursor::CursorTheme::load(connection, shm, 64).unwrap());
+					*cursor_theme = Some(wayland_cursor::CursorTheme::load(connection, shm, 64).unwrap());
                 }
 				_ => {}
 			},
@@ -150,47 +149,40 @@ impl Dispatch<Registry> for State {
 	}
 }
 
-impl Dispatch<Compositor> for State {
-    type UserData = ();
-    fn event(&mut self, _: &Compositor, _: compositor::Event, _: &Self::UserData, _: &Connection, _: &Queue<Self>) {}
+impl Dispatch<Compositor, ()> for State {
+    fn event(_: &mut Self, _: &Compositor, _: compositor::Event, _: &(), _: &Connection, _: &Queue<Self>) {}
 }
 
-impl Dispatch<Shm> for State {
-    type UserData = ();
-    fn event(&mut self, _: &Shm, _: shm::Event, _: &Self::UserData, _: &Connection, _: &Queue<Self>) {}
+impl Dispatch<Shm, ()> for State {
+    fn event(_: &mut Self, _: &Shm, _: shm::Event, _: &(), _: &Connection, _: &Queue<Self>) {}
 }
 
-impl Dispatch<Output> for State {
-    type UserData = ();
-    fn event(&mut self, _: &Output, event: output::Event, _: &Self::UserData, _: &Connection, _: &Queue<Self>) {
+impl Dispatch<Output, ()> for State {
+    fn event(Self{scale, surface, ..}: &mut Self, _: &Output, event: output::Event, _: &(), _: &Connection, _: &Queue<Self>) {
 		match event {
 			//output::Event::Mode{width, height,..} => self.configure_bounds = xy{x: width as _, y: height as _},
 			output::Event::Scale{factor} => {
-				self.scale = factor as _;
-				self.surface.as_ref().unwrap().set_buffer_scale(self.scale as _);
+				*scale = factor as _;
+				surface.as_ref().unwrap().set_buffer_scale(*scale as _);
 			}
 			_ => {}
 		}
 	}
 }
 
-impl Dispatch<Surface> for State {
-    type UserData = ();
-    fn event(&mut self, _: &Surface, _: surface::Event, _: &Self::UserData, _: &Connection, _: &Queue<Self>) {}
+impl Dispatch<Surface, ()> for State {
+    fn event(_: &mut Self, _: &Surface, _: surface::Event, _: &(), _: &Connection, _: &Queue<Self>) {}
 }
 
-impl Dispatch<WmBase> for State {
-    type UserData = ();
-    fn event(&mut self, wm_base: &WmBase, event: wm_base::Event, _: &Self::UserData, _: &Connection, _: &Queue<Self>) {
+impl Dispatch<WmBase, ()> for State {
+    fn event(_: &mut Self, wm_base: &WmBase, event: wm_base::Event, _: &(), _: &Connection, _: &Queue<Self>) {
 		if let wm_base::Event::Ping{serial} = event { wm_base.pong(serial); } else { unreachable!() };
     }
 }
 
-impl Dispatch<XdgSurface> for State {
-    type UserData = ();
-    fn event(&mut self, xdg_surface: &XdgSurface, event: xdg_surface::Event, _: &Self::UserData, _: &Connection, _: &Queue<Self>) {
+impl Dispatch<XdgSurface, ()> for State {
+    fn event(Self{ref scale, configure_bounds, widget, unscaled_size, size, need_update, ..}: &mut Self, xdg_surface: &XdgSurface, event: xdg_surface::Event, _: &(), _: &Connection, _: &Queue<Self>) {
 		if let xdg_surface::Event::Configure{serial} = event {
-			let Self{ref scale, configure_bounds, widget, unscaled_size, size, need_update, ..} = self;
 			if unscaled_size.x == 0 || unscaled_size.y == 0 {
 				let size = widget.size(*configure_bounds);
 				assert!(size <= *configure_bounds);
@@ -206,13 +198,12 @@ impl Dispatch<XdgSurface> for State {
     }
 }
 
-impl Dispatch<TopLevel> for State {
-    type UserData = ();
-    fn event(&mut self, _: &TopLevel, event: toplevel::Event, _: &Self::UserData, _: &Connection, _: &Queue<Self>) {
+impl Dispatch<TopLevel, ()> for State {
+    fn event(Self{configure_bounds, unscaled_size, xdg_surface, ..}: &mut Self, _: &TopLevel, event: toplevel::Event, _: &(), _: &Connection, _: &Queue<Self>) {
 		match event {
-			toplevel::Event::ConfigureBounds{width, height} => { self.configure_bounds=xy{x:width as u32, y:height as u32}; }
-			toplevel::Event::Configure{width, height, ..} => { self.unscaled_size=xy{x:width as u32, y:height as u32}; }
-        	toplevel::Event::Close => self.xdg_surface = None,
+			toplevel::Event::ConfigureBounds{width, height} => { *configure_bounds=xy{x:width as u32, y:height as u32}; }
+			toplevel::Event::Configure{width, height, ..} => { *unscaled_size=xy{x:width as u32, y:height as u32}; }
+        	toplevel::Event::Close => *xdg_surface = None,
 			_ => panic!("{event:? 	}")
         }
     }

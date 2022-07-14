@@ -1,5 +1,5 @@
 use crate::prelude::*;
-#[allow(non_upper_case_globals)] static usb_hid_usage_table: std::lazy::SyncLazy<Vec<char>> = std::lazy::SyncLazy::new(|| [
+#[allow(non_upper_case_globals)] static usb_hid_usage_table: std::sync::LazyLock<Vec<char>> = std::sync::LazyLock::new(|| [
 	&['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪'],
 	&(1..=10).map(|i| (0xF700u32+i).try_into().unwrap()).collect::<Vec<_>>()[..], &['\0'; 20], &['\u{F70B}','\u{F70C}'], &['\0'; 8],
 	&['⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘']].concat());
@@ -30,9 +30,8 @@ impl Cursor<'_> {
 		self.pointer.set_cursor(0, Some(self.surface), x as i32, y as i32); }
 }
 
-impl Dispatch<Seat> for State {
-    type UserData = ();
-    fn event(&mut self, seat: &Seat, event: seat::Event, _: &Self::UserData, _: &Connection, queue: &Queue<Self>) {
+impl Dispatch<Seat, ()> for State {
+    fn event(_: &mut Self, seat: &Seat, event: seat::Event, _: &(), _: &Connection, queue: &Queue<Self>) {
 		match event {
 			seat::Event::Capabilities{capabilities: WEnum::Value(capabilities)} => {
 				if capabilities.contains(seat::Capability::Keyboard) { seat.get_keyboard(queue, ()).unwrap(); }
@@ -50,9 +49,9 @@ impl State { #[throws] pub fn key(&mut self, key: char) -> bool {
 	else { false }
 }}
 
-impl Dispatch<Keyboard> for State {
-    type UserData = (); //let mut repeat : Option<std::rc::Rc<std::cell::Cell<_>>> = None;
-    fn event(&mut self, _: &Keyboard, event: keyboard::Event, _: &Self::UserData, _: &Connection, _: &Queue<Self>) {
+impl Dispatch<Keyboard, ()> for State {
+    //let mut repeat : Option<std::rc::Rc<std::cell::Cell<_>>> = None;
+    fn event(app: &mut Self, _: &Keyboard, event: keyboard::Event, _: &(), _: &Connection, _: &Queue<Self>) {
         use keyboard::{Event::*, KeyState};
 		match event {
 			Keymap{..} => {},
@@ -63,7 +62,7 @@ impl Dispatch<Keyboard> for State {
 				match state {
 					KeyState::Released => { /*if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None }*/ },
 					KeyState::Pressed => {
-						self.key(key).unwrap();
+						app.key(key).unwrap();
 						/*repeat = {
 							let repeat = std::rc::Rc::new(std::cell::Cell::new(key));
 							let from_monotonic_millis = |t| {
@@ -71,7 +70,7 @@ impl Dispatch<Keyboard> for State {
 								std::time::Instant::now() - std::time::Duration::from_millis((now - t as i64) as u64)
 							};
 							use futures_lite::StreamExt;
-							self.streams.push(
+							state.streams.push(
 								async_io::Timer::interval_at(from_monotonic_millis(time)+std::time::Duration::from_millis(150), std::time::Duration::from_millis(33))
 								.filter_map({
 									let repeat = std::rc::Rc::downgrade(&repeat);
@@ -96,7 +95,7 @@ impl Dispatch<Keyboard> for State {
 					const LOGO : u32 = 0b1000000;
 					const _NUM_LOCK : u32 = 0b10000000000000000000;
 					//assert_eq!([mods_depressed&!(SHIFT|CAPS|CTRL|ALT|LOGO|NUM_LOCK), mods_latched, mods_locked&!CAPS, locked_group], [0,0,0,0]);
-					self.modifiers_state = ModifiersState {
+					app.modifiers_state = ModifiersState {
 							shift: mods_depressed&SHIFT != 0,
 							ctrl: mods_depressed&CTRL != 0,
 							logo: mods_depressed&LOGO != 0,
@@ -109,25 +108,24 @@ impl Dispatch<Keyboard> for State {
 	}
 }
 
-impl Dispatch<Pointer> for State {
-    type UserData = ();
-    fn event(&mut self, pointer: &Pointer, event: pointer::Event, _: &Self::UserData, _: &Connection, _: &Queue<Self>) {
+impl Dispatch<Pointer, ()> for State {
+    fn event(Self{scale, cursor_theme, cursor_surface, size, modifiers_state, cursor_position, mouse_buttons, need_update, widget, ..}: &mut Self, pointer: &Pointer, event: pointer::Event, _: &(), _: &Connection, _: &Queue<Self>) {
 		let mut event_context = EventContext {
-			modifiers_state: self.modifiers_state,
-			cursor: Some(Cursor{pointer, surface: self.cursor_surface.as_ref().unwrap(), theme: self.cursor_theme.as_mut().unwrap()})
+			modifiers_state: *modifiers_state,
+			cursor: Some(Cursor{pointer, surface: cursor_surface.as_ref().unwrap(), theme: cursor_theme.as_mut().unwrap()})
 		};
 		match event {
 			pointer::Event::Motion{surface_x: x, surface_y: y, ..} => {
-				self.cursor_position = self.scale as f32*xy{x: x as _, y: y as _};
-				if self.widget.event(self.size, &mut event_context, &Event::Motion{position: self.cursor_position, mouse_buttons: self.mouse_buttons}).unwrap() { self.need_update = true; }
+				*cursor_position = *scale as f32*xy{x: x as _, y: y as _};
+				if widget.event(*size, &mut event_context, &Event::Motion{position: *cursor_position, mouse_buttons: *mouse_buttons}).unwrap() { *need_update = true; }
 			},
 			pointer::Event::Button{button, state: WEnum::Value(state), ..} => {
 				let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
-				if state == pointer::ButtonState::Pressed { self.mouse_buttons |= 1<<button; } else { self.mouse_buttons &= !(1<<button); }
-				if self.widget.event(self.size, &mut event_context, &Event::Button{button, state, position: self.cursor_position}).unwrap() { self.need_update = true; }
+				if state == pointer::ButtonState::Pressed { *mouse_buttons |= 1<<button; } else { *mouse_buttons &= !(1<<button); }
+				if widget.event(*size, &mut event_context, &Event::Button{button, state, position: *cursor_position}).unwrap() { *need_update = true; }
 			},
 			pointer::Event::Axis {axis: WEnum::Value(pointer::Axis::VerticalScroll), value, ..} => {
-				if self.widget.event(self.size, &mut event_context, &Event::Scroll(value as f32)).unwrap() { self.need_update = true; }
+				if widget.event(*size, &mut event_context, &Event::Scroll(value as f32)).unwrap() { *need_update = true; }
 			},
 			_ => {},
 		}
