@@ -38,16 +38,16 @@ pub struct Edit<'f, 't> {
 
 const fn empty() -> String { String::new() }
 const fn nothing() -> String { String::new() }
-use std::{sync::Mutex, lazy::SyncLazy}; pub static CLIPBOARD : SyncLazy<Mutex<String>> = SyncLazy::new(|| Mutex::new(empty()));
+pub static CLIPBOARD : std::sync::LazyLock<std::sync::Mutex<String>> = std::sync::LazyLock::new(|| std::sync::Mutex::new(empty()));
 
-pub static KEYMAP: SyncLazy<Vec<(char, (char,char))>> = SyncLazy::new(|| {
+pub static KEYMAP: std::sync::LazyLock<Vec<(char, (char,char))>> = std::sync::LazyLock::new(|| {
 	std::str::from_utf8(&std::fs::read(dirs::config_dir().unwrap().join("keymap")).unwrap()).unwrap().lines().map(|line| {
 		let mut chars = line.chars();
 		(chars.next().unwrap(), (chars.next().unwrap(), chars.next().unwrap()))
 	}).collect()
 });
 
-pub static COMPOSE: SyncLazy<Vec<(Vec<char>, char)>> = SyncLazy::new(|| {
+pub static COMPOSE: std::sync::LazyLock<Vec<(Vec<char>, char)>> = std::sync::LazyLock::new(|| {
 	std::str::from_utf8(&std::fs::read(dirs::config_dir().unwrap().join("compose")).unwrap()).unwrap().lines().map(|line| {
 		let mut fields = line.split_ascii_whitespace();
 		(fields.next().unwrap().chars().collect(), fields.next().unwrap().chars().single().unwrap())
