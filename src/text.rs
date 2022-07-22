@@ -1,4 +1,4 @@
-use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect, vec2}, ttf_parser::{Face,GlyphId}, num::{zero, Ratio}, crate::font::{self, rect, PathEncoder}};
+use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect}, ttf_parser::{Face,GlyphId}, num::{zero, Ratio}, crate::font::{self, rect}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
@@ -53,8 +53,11 @@ impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { from(col
 #[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(||
 	["/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf","/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(std::path::Path::new(p)).unwrap()));
 pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| std::ops::Deref::deref(x)) }
-#[allow(non_upper_case_globals)]
-pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
+#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:0.,r:0.,g:0.})];
+//#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
+
+use {std::{sync::Mutex, collections::HashMap}, image::Image};
+pub static CACHE: std::sync::LazyLock<Mutex<HashMap<(Ratio, GlyphId),(Image<Box<[u8]>>,Image<Box<[u8]>>)>>> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub struct View<'t, D> {
     pub font : Font<'t>,
@@ -148,7 +151,7 @@ impl<D:AsRef<str>> View<'_, D> {
 			.take_while(|&(_, x)| x <= position.x).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
 	}
-	pub fn paint_span(&self, _context: &mut RenderContext, _scale: Ratio, _offset: int2, span: Span, _bgr: crate::color::bgr<bool>) {
+	pub fn paint_span(&self, _target: &mut Target, _scale: Ratio, _offset: int2, span: Span, _bgr: crate::color::bgr<bool>) {
 		let [min, max] = [span.min(), span.max()];
 		let /*mut*/ invert = |_r:Rect| {};//image::invert(&mut target.slice_mut_clip(scale*(offset+r))?, bgr);
 		if min.line < max.line { invert(self.span(min,LineColumn{line: min.line, column: usize::MAX})); }
@@ -167,23 +170,48 @@ impl<D:AsRef<str>> View<'_, D> {
 }
 
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
-	pub fn paint(&mut self, context: &mut RenderContext, size: size, scale: Ratio, offset: int2) {
+	pub fn paint(&mut self, target: &mut Target, size: size, scale: Ratio, offset: int2) {
 		let Self{font, data, ..} = &*self;
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
 																						.take_while({let clip = (size.y/scale) as i32 - offset.y; move |&(line_index,_)| (((line_index as u32)*(font[0].height() as u32)) as i32) < clip}) {
-			for Glyph{index, x, id, face} in layout(font, line.graphemes(true).enumerate().map(|(i,e)| (line.range.start+i, e))) {
+			for (bbox, Glyph{index, x, id, face}) in bbox(layout(font, line.graphemes(true).enumerate().map(|(i,e)| (line.range.start+i, e)))) {
 				style = style.filter(|style:&&Attribute<Style>| style.contains(&index));
 				while let Some(next) = styles.peek() {
 					if next.end <= index { styles.next(); } // skips whitespace style
 					else if next.contains(&index) { style = styles.next(); }
 					else { break; }
 				}
+
+				let mut cache = CACHE.lock().unwrap();
+				let coverage = cache.entry((scale, id)).or_insert_with(|| {
+					let linear = font::Rasterize::rasterize(face, scale, id, bbox);
+					(image::sRGB::from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::sRGB::sRGB8(1.-v))))
+				});
+
 				let position = xy{
-					x: (x as i32+face.glyph_hor_side_bearing(id).unwrap() as i32) as u32,
-					y: (line_index as u32) * (font[0].height() as u32) + font[0].ascender() as u32
+					x: (x as i32+face.glyph_hor_side_bearing(id).unwrap() as i32),
+					y: ((line_index as u32)*(font[0].height() as u32) + (font[0].ascender()-bbox.max.y as i16) as u32) as i32
 				};
-				let mut glyph = piet_gpu::encoder::GlyphEncoder::default();
+
+				let offset = vector::ifloor(scale, offset + position);
+				let target_size = target.size.signed() - offset;
+				let target_offset = vector::component_wise_max(zero(), offset).unsigned();
+				let source_offset = vector::component_wise_max(zero(), -offset);
+				let source_size = coverage.0.size.signed() - source_offset;
+				let size = vector::component_wise_min(source_size, target_size);
+					if size.x > 0 && size.y > 0 {
+					let size = size.unsigned();
+					//dbg!(target_offset, size, style.map(|x|x.attribute.color).unwrap_or((1.).into()), source_offset);
+					let color = style.map(|x|x.attribute.color).unwrap_or((0./*1.*/).into());
+					if /*(color.b+color.g+color.r)/3. > 1./2.*/color != zero() { // Bright (on black)
+						image::multiply(&mut target.slice_mut(target_offset, size), color, &coverage.0.slice(source_offset.unsigned(), size));
+					} else { // Dark (on white)
+						target.slice_mut(target_offset, size).set_map(&coverage.1, |_,&s| image::bgra{a : 0xFF, b: s as u8, g: s as u8, r: s as u8}); // FIXME: color
+					}
+				}
+
+				/*let mut glyph = piet_gpu::encoder::GlyphEncoder::default();
 				let mut path_encoder = PathEncoder{scale: scale.into(), offset: f32::from(scale)*vec2::from(offset + position.signed()), path_encoder: glyph.path_encoder()};
 				if face.outline_glyph(id, &mut path_encoder).is_some() {
 					let mut path_encoder = path_encoder.path_encoder;
@@ -192,20 +220,20 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
     				glyph.finish_path(n_pathseg);
 					context.encode_glyph(&glyph);
 					context.fill_glyph(piet::Color::BLACK.as_rgba_u32());
-				}
+				}*/
 			}
 		}
 	}
-	pub fn paint_fit(&mut self, cx: &mut RenderContext, size: size, offset: int2) -> Ratio {
+	pub fn paint_fit(&mut self, target: &mut Target, size: size, offset: int2) -> Ratio {
 		let scale = self.scale(size);
-		self.paint(cx, size, scale, offset);
+		self.paint(target, size, scale, offset);
 		scale
 	}
 }
-use crate::widget::{Widget, RenderContext};
+use crate::widget::{Widget, Target};
 impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 	fn size(&mut self, size: size) -> size { fit_width(size.x, Self::size(self)) }
-	#[throws] fn paint(&mut self, cx: &mut RenderContext, size: size, offset: int2) { self.paint_fit(cx, size, offset); }
+	#[throws] fn paint(&mut self, target: &mut Target, size: size, offset: int2) { self.paint_fit(target, size, offset); }
 }
 
 pub struct Plain<T>(pub T);

@@ -42,7 +42,7 @@ impl Server {
 		self.last_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 	}
 	fn sendmsg<const N: usize>(&mut self, id: u32, opcode: u16, args: [Arg; N], fd: Option<std::os::unix::io::RawFd>) {
-		println!("{} {opcode} {args:?}", &self.names[id as usize]);
+		//println!("{} {opcode} {args:?}", &self.names[id as usize]);
 		let mut request = Vec::new();
 		use std::io::Write;
 		let size = (2+N as u32+args.iter().map(|arg| if let Arg::String(arg) = arg { (arg.as_bytes().len() as u32+1+3)/4 } else { 0 }).sum::<u32>())*4;
@@ -118,7 +118,8 @@ impl std::io::Read for Server {
 	const geometry : u16 = 0; const mode : u16 = 1; const done : u16 = 2; const scale : u16 = 3;
 
 	let mut scale_factor = 3;
-	let mut size = xy{x: 3840, y: 2400};
+	let configure_bounds = xy{x: 3840, y: 2400};
+	let size = widget.size(configure_bounds);
 	let file = rustix::fs::memfd_create("buffer", rustix::fs::MemfdFlags::empty()).unwrap();
 	let length = (size.y*size.x*4) as usize;
 	rustix::fs::ftruncate(&file, length as u64).unwrap();
@@ -131,15 +132,15 @@ impl std::io::Read for Server {
 	// buffer: ; release
 	mod buffer { pub const release : u16 = 0; }
 
-	// shm_pool: create_buffer(buffer, offset, width, height, stride, `shm.format)
+	// shm_pool: create_buffer(buffer, offset, width, height, stride, shm.format)
 	enum ShmPool { create_buffer }
-	enum ShmFormat { argb8888 }
+	enum ShmFormat { argb8888, xrgb8888 }
 
 	let buffer = server.new("buffer");
-	server.request(pool, ShmPool::create_buffer as u16, [UInt(buffer), UInt(0), UInt(size.x), UInt(size.y), UInt(size.x*4), UInt(ShmFormat::argb8888 as u32)]);
+	server.request(pool, ShmPool::create_buffer as u16, [UInt(buffer), UInt(0), UInt(size.x), UInt(size.y), UInt(size.x*4), UInt(ShmFormat::xrgb8888 as u32)]);
 
 	// surface: attach(buffer, x, y), set_buffer_scale(factor); enter(output)
-	enum Surface { destroy, attach, damage, frame, set_opaque_region, set_input_region, commit, set_buffer_scale }
+	enum Surface { destroy, attach, damage, frame, set_opaque_region, set_input_region, commit, set_buffer_transform, set_buffer_scale }
 	mod surface { pub const enter : u16 = 0; }
 
 	enum Compositor { create_surface }
@@ -196,7 +197,7 @@ impl std::io::Read for Server {
 
 	loop {
 		let Message{id, opcode, ..} = message(server);
-		println!("{} {opcode}", server.names[id as usize]);
+		//println!("{} {opcode}", server.names[id as usize]);
 		/**/ if id == display && opcode == error {
 			println!("{:?}", args(server, {use Type::*; [UInt, UInt, String]}));
 		}
@@ -211,7 +212,7 @@ impl std::io::Read for Server {
 		}
 		else if id == output && opcode == mode {
 			let [_, UInt(x), UInt(y), _] = args(server, {use Type::*; [UInt, UInt, UInt, UInt]}) else {panic!()};
-			#[allow(unused_assignments)] size = xy{x,y};
+			let _configure_bounds = xy{x,y};
 		}
 		else if id == output && opcode == done {
 		}
@@ -253,6 +254,9 @@ impl std::io::Read for Server {
 		}
 		else if id == keyboard && opcode == keyboard::enter {
 			args(server, {use Type::*; [UInt,UInt,Array]});
+		}
+		else if id == keyboard && opcode == keyboard::leave {
+			args(server, {use Type::*; [UInt,UInt]});
 		}
 		else if id == wm_base && opcode == wm_base::ping {
 			let [UInt(serial)] = args(server, {use Type::*; [UInt]}) else {panic!()};
