@@ -82,8 +82,8 @@ impl widget::Widget for View {
 	}
 }
 
-pub struct Widget(pub Box<dyn Fn(size)->Result<Graphic>>);
-impl widget::Widget for Widget {
+pub struct Widget<'t>(pub Box<dyn 't+Fn(size)->Result<Graphic>>);
+impl widget::Widget for Widget<'_> {
     fn size(&mut self, size: size) -> size { View::new(self.0(size).unwrap()).size(size) }
     #[throws] fn paint(&mut self, context: &mut RenderContext, size: size, offset: int2) { View::new(self.0(size)?).paint(context, size, offset)? }
 }

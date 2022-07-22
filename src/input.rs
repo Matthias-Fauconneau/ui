@@ -30,26 +30,26 @@ impl Cursor<'_> {
 		self.pointer.set_cursor(0, Some(self.surface), x as i32, y as i32); }
 }
 
-impl Dispatch<Seat, ()> for State {
+impl Dispatch<Seat, ()> for State<'_> {
     fn event(_: &mut Self, seat: &Seat, event: seat::Event, _: &(), _: &Connection, queue: &Queue<Self>) {
 		match event {
 			seat::Event::Capabilities{capabilities: WEnum::Value(capabilities)} => {
-				if capabilities.contains(seat::Capability::Keyboard) { seat.get_keyboard(queue, ()).unwrap(); }
-				if capabilities.contains(seat::Capability::Pointer) { seat.get_pointer(queue, ()).unwrap(); }
+				//if capabilities.contains(seat::Capability::Keyboard) { seat.get_keyboard(queue, ()).unwrap(); }
+				//if capabilities.contains(seat::Capability::Pointer) { seat.get_pointer(queue, ()).unwrap(); }
 			},
 			_ => {}
         }
     }
 }
 
-impl State { #[throws] pub fn key(&mut self, key: char) -> bool {
+impl State<'_> { #[throws] pub fn key(&mut self, key: char) -> bool {
 	let Self{size, modifiers_state, widget, ..} = self;
 	if widget.event(*size, &mut EventContext{modifiers_state: *modifiers_state, cursor: None}, &Event::Key(key))? { self.need_update = true; true }
 	else if key == '⎋' { self.running=false; false }
 	else { false }
 }}
 
-impl Dispatch<Keyboard, ()> for State {
+impl Dispatch<Keyboard, ()> for State<'_> {
     //let mut repeat : Option<std::rc::Rc<std::cell::Cell<_>>> = None;
     fn event(app: &mut Self, _: &Keyboard, event: keyboard::Event, _: &(), _: &Connection, _: &Queue<Self>) {
         use keyboard::{Event::*, KeyState};
@@ -108,7 +108,7 @@ impl Dispatch<Keyboard, ()> for State {
 	}
 }
 
-impl Dispatch<Pointer, ()> for State {
+impl Dispatch<Pointer, ()> for State<'_> {
     fn event(Self{scale, cursor_theme, cursor_surface, size, modifiers_state, cursor_position, mouse_buttons, need_update, widget, ..}: &mut Self, pointer: &Pointer, event: pointer::Event, _: &(), _: &Connection, _: &Queue<Self>) {
 		let mut event_context = EventContext {
 			modifiers_state: *modifiers_state,

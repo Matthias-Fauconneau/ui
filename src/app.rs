@@ -1,214 +1,269 @@
-use crate::prelude::*;
-use wayland_client::{Connection, Dispatch, QueueHandle as Queue, Proxy, protocol::{
-	wl_registry::{self as registry, WlRegistry as Registry},
-	wl_compositor::{self as compositor, WlCompositor as Compositor},
-	wl_seat::WlSeat as Seat,
-	wl_output::{self as output, WlOutput as Output},
-	wl_surface::{self as surface, WlSurface as Surface},
-	wl_shm::{self as shm, WlShm as Shm},
-}};
-use wayland_protocols::xdg::shell::client::{
-	xdg_wm_base::{self as wm_base, XdgWmBase as WmBase}, xdg_surface::{self, XdgSurface}, xdg_toplevel::{self as toplevel, XdgToplevel as TopLevel}
-};
-use crate::widget::{Widget, ModifiersState};
-use {vector::{xy, size, vec2}, num::{zero, IsZero}};
+use {vector::xy, image::{Image, bgra}, crate::{prelude::*, widget::Widget}};
 
-pub struct State {
-	running: bool,
-	pub(crate) widget: Box<dyn Widget+'static>,
-	wm_base: Option<WmBase>,
-	scale: u32,
-	configure_bounds: size,
-	pub(crate) surface: Option<Surface>,
-	//memfd: rustix::io::OwnedFd,
-	pub(crate) cursor_surface: Option<Surface>,
-	pub(crate) cursor_theme: Option<wayland_cursor::CursorTheme>,
-	xdg_surface: Option<(XdgSurface, TopLevel)>,
-	unscaled_size: size,
-	pub(crate) size: size,
-	pub(crate) need_update: bool,
-	pub(crate) modifiers_state: ModifiersState,
-	pub(crate) cursor_position: vec2,
-	pub(crate) mouse_buttons: u32,
-	/*instance: piet_gpu_hal::Instance,
-	gpu_surface: Option<piet_gpu_hal::Surface>,*/
+#[repr(C)] #[derive(Clone, Copy, Debug)] struct Message {
+	id: u32,
+	opcode: u16,
+	size: u16
+}
+unsafe impl bytemuck::Zeroable for Message {}
+unsafe impl bytemuck::Pod for Message {}
+#[derive(Debug)] enum Arg { UInt(u32), Array(Box<[u8]>), String(String) }
+
+fn message(s: &mut impl std::io::Read) -> Message {
+	let mut buf = [0; std::mem::size_of::<Message>()]; std::io::Read::read(s, &mut buf).unwrap(); *bytemuck::from_bytes(&buf)
 }
 
-impl State { #[throws] pub fn run(widget: Box<dyn Widget+'static>, idle: &mut dyn FnMut(&mut dyn Widget)->Result<bool>) {
-	let connection = Connection::connect_to_env()?;
-    let mut event_queue = connection.new_event_queue();
-    let ref queue = event_queue.handle();
-	let display = connection.display();
-    display.get_registry(queue, ())?;
-	let ref mut state = Self {
-		running: true,
-		widget,
-		configure_bounds: zero(),
-		wm_base: None,
-		scale: 3,
-		surface: None,
-		//memfd: rustix::fs::memfd_create("cursor", rustix::fs::MemfdFlags::empty()).unwrap(),
-		cursor_surface: None,
-		cursor_theme: None,
-		xdg_surface: None,
-		unscaled_size: zero(),
-		size: zero(),
-		need_update: true,
-		modifiers_state: ModifiersState::default(),
-		cursor_position: zero(),
-		mouse_buttons: 0
+enum Type { UInt, Array, String }
+fn args<const N: usize>(s: &mut impl std::io::Read, types: [Type; N]) -> [Arg; N] { types.map(|r#type| {
+	//use std::io::Read;
+	let arg = {let mut buf = [0; 4]; s.read(&mut buf).unwrap(); *bytemuck::from_bytes::<u32>(&buf)};
+	use Type::*;
+	match r#type {
+		UInt => Arg::UInt(arg),
+		Array => {
+			let array = {let mut buf = {let mut vec = Vec::new(); vec.resize((arg as usize+3)/4*4, 0); vec}; s.read(&mut buf).unwrap(); buf.truncate(arg as usize); buf};
+			Arg::Array(array.into_boxed_slice())
+		},
+		String => {
+			let string = {let mut buf = {let mut vec = Vec::new(); vec.resize((arg as usize+3)/4*4, 0); vec}; s.read(&mut buf).unwrap(); buf.truncate(arg as usize-1); buf};
+			Arg::String(std::string::String::from_utf8(string).unwrap())
+		}
+	}
+}) }
+
+struct Server {
+	server: std::os::unix::net::UnixStream,
+	last_id: std::sync::atomic::AtomicU32,
+	names: /*std::cell::Cell<*/Vec<String>,//>,
+}
+impl Server {
+	fn new(&mut self, name: &str) -> u32 {
+		self.names.push(name.into());
+		self.last_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+	}
+	fn sendmsg<const N: usize>(&mut self, id: u32, opcode: u16, args: [Arg; N], fd: Option<std::os::unix::io::RawFd>) {
+		println!("{} {opcode} {args:?}", &self.names[id as usize]);
+		let mut request = Vec::new();
+		use std::io::Write;
+		let size = (2+N as u32+args.iter().map(|arg| if let Arg::String(arg) = arg { (arg.as_bytes().len() as u32+1+3)/4 } else { 0 }).sum::<u32>())*4;
+		request.write(bytemuck::bytes_of(&Message{id, size: size as u16, opcode})).unwrap();
+		for arg in args { use Arg::*; match arg {
+			UInt(arg) => { request.write(bytemuck::bytes_of(&arg)).unwrap(); },
+			String(arg) => {
+				request.write(bytemuck::bytes_of::<u32>(&(arg.as_bytes().len() as u32+1))).unwrap();
+				request.write(arg.as_bytes()).unwrap();
+				request.write(&[0]).unwrap();
+				while request.len()%4!=0 { request.write(&[0]).unwrap(); }
+			}
+			_ => unimplemented!("{arg:?}"),
+		}; }
+		assert!(request.len()==size as usize);
+		if let Some(fd) = fd {
+			use {std::os::unix::io::AsRawFd, nix::sys::socket::{sendmsg,ControlMessage,MsgFlags}};
+			sendmsg::<()>(self.server.as_raw_fd(), &[std::io::IoSlice::new(&request)], &[ControlMessage::ScmRights(&[fd])], MsgFlags::empty(), None).unwrap();
+		} else {
+			self.server.write(&request).unwrap();
+		}
+	}
+	fn request<const N: usize>(&mut self, id: u32, opcode: u16, args: [Arg; N]) { self.sendmsg(id, opcode, args, None) }
+}
+impl std::io::Read for Server {
+	fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.server.read(buf) }
+}
+
+#[allow(non_camel_case_types, non_upper_case_globals,dead_code,unreachable_code)] #[throws] pub fn run(widget: &mut dyn Widget/*, idle: &mut dyn FnMut(&mut dyn Widget)->Result<bool>*/) {
+	let server = std::os::unix::net::UnixStream::connect({
+		let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
+		path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
+		path
+	})?;
+
+	let display = 1;
+	let last_id = std::sync::atomic::AtomicU32::new(display+1);
+	let ref mut server = Server{server, last_id, names: ["".into(),"display".into()].into()};
+
+	// display: sync, get_registry(registry); error(id, code, message: string)
+	enum Display { sync, get_registry }
+	const error : u16 = 0;
+
+	use Arg::*;
+
+	let registry = server.new("registry");
+	server.request(display, Display::get_registry as u16, [UInt(registry)]);
+
+	// registry: bind(name, interface: string, version, id); global(name, interface: string, version)
+	enum Registry { bind }
+	const global : u16 = 0;
+
+	fn globals<const N: usize>(server: &mut Server, registry: u32, interfaces: [&str; N]) -> [u32; N] {
+		let mut globals = [0; N];
+		while globals.iter().any(|&item| item==0) {
+			let Message{id, opcode, ..} = message(server);
+			assert!(id == registry && opcode == global);
+			use Arg::*;
+			let args = args(server, {use Type::*; [UInt, String, UInt]});
+			let [UInt(name), String(interface), UInt(version)] = args else { panic!("{args:?}") };
+			if let Some(index) = interfaces.iter().position(|&item| item==interface) {
+				let id = server.new(&interface);
+				server.request(registry, Registry::bind as u16, [UInt(name), String(interface.into()), UInt(version), UInt(id)]);
+				globals[index] = id;
+			}
+		}
+		globals
+	}
+
+	let [ compositor, shm, output, wm_base, seat] = globals(server, registry, ["wl_compositor", "wl_shm", "wl_output", "xdg_wm_base", "wl_seat"]);
+
+	//output: ; geometry(x, y, w_mm, h_mm, subpixel, make: string, model: string, transform), mode(flags, width, height, refresh), done, scale(factor)
+	const geometry : u16 = 0; const mode : u16 = 1; const done : u16 = 2; const scale : u16 = 3;
+
+	let mut scale_factor = 3;
+	let mut size = xy{x: 3840, y: 2400};
+	let file = rustix::fs::memfd_create("buffer", rustix::fs::MemfdFlags::empty()).unwrap();
+	let length = (size.y*size.x*4) as usize;
+	rustix::fs::ftruncate(&file, length as u64).unwrap();
+	enum Shm { create_pool } // shm: create_pool(shm_pool, fd, size); format(uint)
+	const format : u16 = 0;
+	let pool = server.new("pool");
+	use std::os::unix::io::AsRawFd;
+	server.sendmsg(shm, Shm::create_pool as u16, [UInt(pool), UInt(length as u32)], Some(file.as_raw_fd()));
+
+	// buffer: ; release
+	mod buffer { pub const release : u16 = 0; }
+
+	// shm_pool: create_buffer(buffer, offset, width, height, stride, `shm.format)
+	enum ShmPool { create_buffer }
+	enum ShmFormat { argb8888 }
+
+	let buffer = server.new("buffer");
+	server.request(pool, ShmPool::create_buffer as u16, [UInt(buffer), UInt(0), UInt(size.x), UInt(size.y), UInt(size.x*4), UInt(ShmFormat::argb8888 as u32)]);
+
+	// surface: attach(buffer, x, y), set_buffer_scale(factor); enter(output)
+	enum Surface { destroy, attach, damage, frame, set_opaque_region, set_input_region, commit, set_buffer_scale }
+	mod surface { pub const enter : u16 = 0; }
+
+	enum Compositor { create_surface }
+
+	let create_surface = #[track_caller] |server: &mut Server, compositor| {
+		let id = server.new("surface");
+		server.request(compositor, Compositor::create_surface as u16, [UInt(id)]);
+		id
 	};
 
-	while state.wm_base.is_none() || state.surface.is_none() { event_queue.blocking_dispatch(state)?; }
-	let (wm_base, surface) = (state.wm_base.as_ref().unwrap(), state.surface.as_ref().unwrap());
-	let xdg_surface = wm_base.get_xdg_surface(surface, queue, ()).unwrap();
-	let toplevel = xdg_surface.get_toplevel(queue, ()).unwrap();
-	toplevel.set_title("App".into());
-	surface.commit();
-	state.xdg_surface = Some((xdg_surface, toplevel));
+	let surface = create_surface(server, compositor);
+	server.request(surface, Surface::set_buffer_scale as u16, [UInt(scale_factor)]);
+	server.request(surface, Surface::attach as u16, [UInt(buffer),UInt(0),UInt(0)]);
 
-	struct RawWindowHandle(raw_window_handle::RawWindowHandle);
-	unsafe impl raw_window_handle::HasRawWindowHandle for RawWindowHandle { fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle { self.0 } }
-	let (instance, gpu_surface) = piet_gpu_hal::Instance::new(Some(&RawWindowHandle(raw_window_handle::RawWindowHandle::Wayland({
-		let mut s=raw_window_handle::WaylandHandle::empty();
-		s.display = display.id().as_ptr() as *mut _;
-		s.surface = surface.id().as_ptr() as  *mut _;
-		s
-	}))), Default::default())?;
-	let device = unsafe{instance.device(gpu_surface.as_ref())}?;
-	while state.size.is_zero() { event_queue.blocking_dispatch(state)?; }
-	let mut swapchain = unsafe{instance.swapchain(state.size.x as _, state.size.y as _, &device, &gpu_surface.unwrap())}?;
-	let session = piet_gpu_hal::Session::new(device);
-	let present_semaphore = unsafe{session.create_semaphore()}?;
-	/*struct RenderContext {
-		_instance: piet_gpu_hal::Instance,
-		swapchain: piet_gpu_hal::Swapchain,
-		session: piet_gpu_hal::Session,
-		present_semaphore: piet_gpu_hal::Semaphore,
-	}
-	render_context = RenderContext{_instance: instance, session, present_semaphore, swapchain};*/
+	// wm_base: destroy, create_positioner, get_xdg_surface(xdg_surface, surface), pong(serial); ping(serial)
+	enum WmBase { destroy, create_positioner, get_xdg_surface, pong }
+	mod wm_base { pub const ping : u16 = 0; }
 
-	while state.running {
-		let Self{widget, size, need_update, ..} = state;
-		if idle(widget.as_mut())? { *need_update = true; dbg!(); }
-		if *need_update && !size.is_zero() {
-			//let RenderContext{session, swapchain, present_semaphore, ..} = render_context;
-			let mut renderer = unsafe{piet_gpu::Renderer::new(&session, size.x as _, size.y as _, 1)}?;
-			let mut context = piet_gpu::PietGpuRenderContext::new();
-			piet::RenderContext::fill(&mut context, piet::kurbo::Rect::new(0., 0., size.x as _, size.y as _), &piet::Color::WHITE);
-			widget.paint(&mut context, *size, num::zero())?;
-			/*use piet::{Text, TextLayoutBuilder};
-    		let layout = piet::RenderContext::text(&mut context).new_text_layout("Hello World!").default_attribute(piet::TextAttribute::FontSize(size.y as _)).build().unwrap();
-    		piet::RenderContext::draw_text(&mut context, &layout, piet::kurbo::Point{x: 0., y: size.y as _});*/
-			renderer.upload_render_ctx(&mut context, 0)?;
+	let xdg_surface = server.new("xdg_surface");
+	server.request(wm_base, WmBase::get_xdg_surface as u16, [UInt(xdg_surface), UInt(surface)]);
 
-			let (image_idx, acquisition_semaphore) = unsafe{swapchain.next()}?;
-			let image = unsafe{swapchain.image(image_idx)};
-			let ref query_pool = session.create_query_pool(12)?;
-			let mut cmd_buf = session.cmd_buf()?;
-			unsafe{
-				cmd_buf.begin();
-				renderer.record(&mut cmd_buf, &query_pool, 0);
-				use piet_gpu_hal::ImageLayout;
-				cmd_buf.image_barrier(&image, ImageLayout::Undefined, ImageLayout::BlitDst);
-				cmd_buf.blit_image(&renderer.image_dev, &image);
-				cmd_buf.image_barrier(&image, ImageLayout::BlitDst, ImageLayout::Present);
-				cmd_buf.finish();
-				let submitted = session.run_cmd_buf(cmd_buf, &[&acquisition_semaphore], &[&present_semaphore])?;
-				swapchain.present(image_idx, &[&present_semaphore])?;
-				submitted.wait()?;
-			}
-			*need_update = false;
+	// xdg_surface: destroy, get_toplevel(toplevel), get_popup, set_window_geometry, ack_configure(serial); configure(serial)
+	enum XdgSurface { destroy, get_toplevel, get_popup, set_window_geometry, ack_configure }
+	mod xdg_surface { pub const configure : u16 = 0; }
+
+	let toplevel = server.new("toplevel");
+	server.request(xdg_surface, XdgSurface::get_toplevel as u16, [UInt(toplevel)]);
+
+	// toplevel: set_title(title: string); configure(width, height, states: array), close, configure_bounds(width, height), wm_capabilities
+	enum TopLevel { destroy, set_parent, set_title }
+	mod toplevel { pub const configure : u16 = 0; pub const configure_bounds : u16 = 2; }
+
+	server.request(toplevel, TopLevel::set_title as u16, [String("App".into())]);
+
+	let target = unsafe{std::slice::from_raw_parts_mut(
+		rustix::mm::mmap(std::ptr::null_mut(), length, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &file, 0).unwrap() as *mut u8,
+		length)};
+	let mut target = Image::new(size, bytemuck::cast_slice_mut(target));
+	target.fill(bgra{b:0xFF, g:0xFF, r:0xFF, a:0xFF});
+
+	widget.paint(&mut target, size, num::zero())?;
+
+	server.request(surface, Surface::commit as u16, []);
+
+	// seat: get_pointer(pointer), get_keyboard(keyboard); capabilities(capabilities), name(name: string)
+	enum Seat { get_pointer, get_keyboard }
+	mod seat { pub const capabilities : u16 = 0; pub const name : u16 = 1; }
+
+	// keyboard: ; keymap(format, fd, size), enter(serial, surface, keys: array), leave(serial, surface), key(serial, time, key, state), modifiers(serial, depressed, latched, locked, group), repeat_info(rate, delay)
+	mod keyboard { pub const keymap : u16 = 0; pub const enter : u16 = 1; pub const leave : u16 = 2; pub const key : u16 = 3; pub const modifiers : u16 = 4; pub const repeat_info : u16 = 5; }
+
+	let keyboard = server.new("keyboard");
+	server.request(seat, Seat::get_keyboard as u16, [UInt(keyboard)]);
+
+	loop {
+		let Message{id, opcode, ..} = message(server);
+		println!("{} {opcode}", server.names[id as usize]);
+		/**/ if id == display && opcode == error {
+			println!("{:?}", args(server, {use Type::*; [UInt, UInt, String]}));
 		}
-		event_queue.blocking_dispatch(state)?;
-	}
-}}
-
-impl Dispatch<Registry, ()> for State {
-    fn event(Self{wm_base, scale, cursor_theme, surface, cursor_surface, ..}: &mut Self, registry: &Registry, event: registry::Event, _: &(), connection: &Connection, queue: &Queue<Self>) {
-		match event {
-			registry::Event::Global{name, interface, version, ..} => match &interface[..] {
-				"wl_compositor" => {
-					let compositor = registry.bind::<Compositor, _, _>(name, version, queue, ()).unwrap();
-					*surface = Some(compositor.create_surface(queue, ()).unwrap());
-					surface.as_ref().unwrap().set_buffer_scale(*scale as _);
-					*cursor_surface = Some(compositor.create_surface(queue, ()).unwrap());
-				},
-				"wl_seat" => { registry.bind::<Seat, _, _>(name, version, queue, ()).unwrap(); }
-				"wl_output" => { registry.bind::<Output, _, _>(name, version, queue, ()).unwrap(); }
-				"xdg_wm_base" => *wm_base = Some(registry.bind::<WmBase, _, _>(name, version, queue, ()).unwrap()),
-				"wl_shm" => {
-                    let shm = registry.bind::<Shm, _, _>(name, 1, queue, ()).unwrap();
-                    //let pool = shm.create_pool(connection, self.memfd.as_raw_fd(), (256<<10) as i32, queue, ()).unwrap();
-					*cursor_theme = Some(wayland_cursor::CursorTheme::load(connection, shm, 64).unwrap());
-                }
-				_ => {}
-			},
-			_ => {}
-		};
-	}
-}
-
-impl Dispatch<Compositor, ()> for State {
-    fn event(_: &mut Self, _: &Compositor, _: compositor::Event, _: &(), _: &Connection, _: &Queue<Self>) {}
-}
-
-impl Dispatch<Shm, ()> for State {
-    fn event(_: &mut Self, _: &Shm, _: shm::Event, _: &(), _: &Connection, _: &Queue<Self>) {}
-}
-
-impl Dispatch<Output, ()> for State {
-    fn event(Self{scale, surface, ..}: &mut Self, _: &Output, event: output::Event, _: &(), _: &Connection, _: &Queue<Self>) {
-		match event {
-			//output::Event::Mode{width, height,..} => self.configure_bounds = xy{x: width as _, y: height as _},
-			output::Event::Scale{factor} => {
-				*scale = factor as _;
-				surface.as_ref().unwrap().set_buffer_scale(*scale as _);
-			}
-			_ => {}
+		else if id == registry && opcode == global {
+			args(server, {use Type::*; [UInt, String, UInt]});
 		}
+		else if id == shm && opcode == format {
+			args(server, {use Type::*; [UInt]});
+		}
+		else if id == output && opcode == geometry {
+			args(server, {use Type::*; [UInt, UInt, UInt, UInt, UInt, String, String, UInt]});
+		}
+		else if id == output && opcode == mode {
+			let [_, UInt(x), UInt(y), _] = args(server, {use Type::*; [UInt, UInt, UInt, UInt]}) else {panic!()};
+			#[allow(unused_assignments)] size = xy{x,y};
+		}
+		else if id == output && opcode == done {
+		}
+		else if id == output && opcode == scale {
+			let [UInt(factor)] = args(server, {use Type::*; [UInt]}) else {panic!()};
+			#[allow(unused_assignments)] scale_factor = factor;
+		}
+		else if id == seat && opcode == seat::capabilities {
+			args(server, {use Type::*; [UInt]});
+		}
+		else if id == seat && opcode == seat::name {
+			args(server, {use Type::*; [String]});
+		}
+		else if id == toplevel && opcode == toplevel::configure_bounds {
+			args(server, {use Type::*; [UInt,UInt]});
+			//configure_bounds=xy{x:width as u32, y:height as u32};
+		}
+		else if id == toplevel && opcode == toplevel::configure {
+			args(server, {use Type::*; [UInt,UInt,Array]});
+			// unscaled_size=xy{x:width as u32, y:height as u32};
+		}
+		else if id == xdg_surface && opcode == xdg_surface::configure {
+			let [UInt(serial)] = args(server, {use Type::*; [UInt]}) else {panic!()};
+			server.request(xdg_surface, XdgSurface::ack_configure as u16, [UInt(serial)]);
+		}
+		else if id == surface && opcode == surface::enter {
+			let [UInt(_output)] = args(server, {use Type::*; [UInt]}) else {panic!()};
+		}
+		else if id == buffer && opcode == buffer::release {
+		}
+		else if id == keyboard && opcode == keyboard::keymap {
+			args(server, {use Type::*; [UInt,UInt]});
+		}
+		else if id == keyboard && opcode == keyboard::repeat_info {
+			args(server, {use Type::*; [UInt,UInt]});
+		}
+		else if id == keyboard && opcode == keyboard::modifiers {
+			args(server, {use Type::*; [UInt,UInt,UInt,UInt,UInt]});
+		}
+		else if id == keyboard && opcode == keyboard::enter {
+			args(server, {use Type::*; [UInt,UInt,Array]});
+		}
+		else if id == wm_base && opcode == wm_base::ping {
+			let [UInt(serial)] = args(server, {use Type::*; [UInt]}) else {panic!()};
+			server.request(wm_base, WmBase::pong as u16, [UInt(serial)]);
+		}
+		else if id == keyboard && opcode == keyboard::key {
+			break;
+		}
+		/*else if id == toplevel && opcode == toplevel::close {
+			// xdg_surface = None,
+		}*/
+		else { panic!("{:?} {opcode:?}", &server.names[id as usize]); }
 	}
 }
-
-impl Dispatch<Surface, ()> for State {
-    fn event(_: &mut Self, _: &Surface, _: surface::Event, _: &(), _: &Connection, _: &Queue<Self>) {}
-}
-
-impl Dispatch<WmBase, ()> for State {
-    fn event(_: &mut Self, wm_base: &WmBase, event: wm_base::Event, _: &(), _: &Connection, _: &Queue<Self>) {
-		if let wm_base::Event::Ping{serial} = event { wm_base.pong(serial); } else { unreachable!() };
-    }
-}
-
-impl Dispatch<XdgSurface, ()> for State {
-    fn event(Self{ref scale, configure_bounds, widget, unscaled_size, size, need_update, ..}: &mut Self, xdg_surface: &XdgSurface, event: xdg_surface::Event, _: &(), _: &Connection, _: &Queue<Self>) {
-		if let xdg_surface::Event::Configure{serial} = event {
-			if unscaled_size.x == 0 || unscaled_size.y == 0 {
-				let size = widget.size(*configure_bounds);
-				assert!(size <= *configure_bounds);
-				*unscaled_size = vector::div_ceil(size, *scale);
-			}
-			xdg_surface.ack_configure(serial);
-			let new_size = *scale * *unscaled_size;
-			if new_size != *size {
-				*size = new_size;
-				*need_update = true;
-			}
-		} else { unreachable!() }
-    }
-}
-
-impl Dispatch<TopLevel, ()> for State {
-    fn event(Self{configure_bounds, unscaled_size, xdg_surface, ..}: &mut Self, _: &TopLevel, event: toplevel::Event, _: &(), _: &Connection, _: &Queue<Self>) {
-		match event {
-			toplevel::Event::ConfigureBounds{width, height} => { *configure_bounds=xy{x:width as u32, y:height as u32}; }
-			toplevel::Event::Configure{width, height, ..} => { *unscaled_size=xy{x:width as u32, y:height as u32}; }
-        	toplevel::Event::Close => *xdg_surface = None,
-			_ => panic!("{event:? 	}")
-        }
-    }
-}
-
-#[path="input.rs"] pub mod input;
-
-#[throws] pub fn run(widget: Box<dyn Widget+'static>) { State::run(widget, &mut |_| Ok(false))? }

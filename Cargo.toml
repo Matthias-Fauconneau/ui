@@ -1,20 +1,20 @@
-package={name='ui', version='0.0.0', edition='2021'}#, autoexamples=false}#, default-run='text'}
+package={name='ui', version='0.0.0', edition='2021', default-run='text', autoexamples=false}
 #lib={crate-type=['dylib']}
 example=[
  #{name='empty', path='examples/empty.rs'}
- {name='text', path='examples/text.rs', required-features=['text']},
+ #{name='text', path='examples/text.rs', required-features=['text']},
  #{name='compose', path='examples/compose.rs', required-features=['text']},
  #{name='edit', path='examples/edit.rs', required-features=['edit']},
  #{name='plot', path='examples/plot.rs', required-features=['plot']}
 ]
-#bin=[{name='text',path='examples/text.rs',required-features=['text']}]
+bin=[{name='text',path='examples/text.rs',required-features=['text']}]
 
 [features]
 font=['derive-more','memmap','owning-ref','ttf-parser']
-text=['derive-more','text-size','unicode-segmentation','font','piet-gpu/swash']
-edit=['text']
+text=['derive-more','text-size','unicode-segmentation','font']#,'piet-gpu/swash']
+#edit=['text']
 #plot=['text','itertools']
-#default=['text']
+default=['text']
 
 [dependencies]
 fehler='*'
@@ -22,40 +22,25 @@ fehler='*'
 #arrayvec={version='*', optional=true}
 derive-more={version='*', package='derive_more', optional=true}
 owning-ref={version='*', package='owning_ref', optional=true}
+bytemuck='*'
 
 num= {git='https://github.com/Matthias-Fauconneau/num'}
 vector= {git='https://github.com/Matthias-Fauconneau/vector'}
 #itertools={version='*', optional=true}
 trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 
-rustix='*'
+rustix={version='*', features = ['fs','mm']}
 dirs='*'
-memmap={version='*', package='memmap2', optional=true}
+memmap={version='*', package='memmapix', optional=true}
+nix={version='*', default-features = false, features = ['socket','uio']}
 
 image={git='https://github.com/Matthias-Fauconneau/image', features=['arrayvec']}
 text-size={version='*', optional=true}
 unicode-segmentation={version='*', optional=true}
 ttf-parser={version='*', optional=true}
 
-#wayland-client= '0.30.0-alpha'
-#wayland-protocols= {version= '0.30.0-alpha', features=['client']}
-#wayland-backend= {version= '0.1.0-alpha', features=['client_system']}
-#wayland-cursor= '0.30.0-alpha'
-
-wayland-client= {git='https://github.com/smithay/wayland-rs'}
-wayland-protocols= {git='https://github.com/smithay/wayland-rs', features=['client']}
-wayland-backend= {git='https://github.com/smithay/wayland-rs', features=['client_system']}
-wayland-cursor= {git='https://github.com/smithay/wayland-rs'}
-
-raw-window-handle='^0.4'
-piet-gpu-hal={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
-piet-gpu={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
-piet-gpu-types={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
-piet='^0.2'
-
-#[patch.'crates-io']
-#wayland-client= {git='https://github.com/smithay/wayland-rs'}
-#wayland-protocols= {git='https://github.com/smithay/wayland-rs'}
-#wayland-backend= {git='https://github.com/smithay/wayland-rs'}
-#wayland-cursor= {git='https://github.com/smithay/wayland-rs'}
-
+#raw-window-handle='^0.4'
+#piet-gpu-hal={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
+#piet-gpu={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
+#piet-gpu-types={git='https://github.com/Matthias-Fauconneau/piet-gpu'}
+#piet='^0.2'
