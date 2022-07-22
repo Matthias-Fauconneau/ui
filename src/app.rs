@@ -34,7 +34,7 @@ fn args<const N: usize>(s: &mut impl std::io::Read, types: [Type; N]) -> [Arg; N
 struct Server {
 	server: std::os::unix::net::UnixStream,
 	last_id: std::sync::atomic::AtomicU32,
-	names: /*std::cell::Cell<*/Vec<String>,//>,
+	names: Vec<String>,
 }
 impl Server {
 	fn new(&mut self, name: &str) -> u32 {
@@ -42,7 +42,6 @@ impl Server {
 		self.last_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 	}
 	fn sendmsg<const N: usize>(&mut self, id: u32, opcode: u16, args: [Arg; N], fd: Option<std::os::unix::io::RawFd>) {
-		//println!("{} {opcode} {args:?}", &self.names[id as usize]);
 		let mut request = Vec::new();
 		use std::io::Write;
 		let size = (2+N as u32+args.iter().map(|arg| if let Arg::String(arg) = arg { (arg.as_bytes().len() as u32+1+3)/4 } else { 0 }).sum::<u32>())*4;
