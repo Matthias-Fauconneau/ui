@@ -1,8 +1,6 @@
 use super::Result;
 pub use vector::{size, int2, vec2, xy};
-//pub use {wayland_client::protocol::wl_pointer::ButtonState, crate::app::input::Cursor};
 #[derive(Default,Clone,Copy)] pub struct ModifiersState { pub shift: bool, pub ctrl: bool, pub logo: bool, pub alt: bool }
-//pub use piet_gpu::PietGpuRenderContext as Target;
 pub type Target<'t> = image::Image<&'t mut [image::bgra8]>;
 
 pub struct EventContext {//<'t> {
