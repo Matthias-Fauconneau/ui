@@ -151,9 +151,9 @@ impl<D:AsRef<str>> View<'_, D> {
 			.take_while(|&(_, x)| x <= position.x).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
 	}
-	pub fn paint_span(&self, _target: &mut Target, _scale: Ratio, _offset: int2, span: Span, _bgr: crate::color::bgr<bool>) {
+	pub fn paint_span(&self, target: &mut Target, scale: Ratio, offset: int2, span: Span, bgr: crate::color::bgr<bool>) {
 		let [min, max] = [span.min(), span.max()];
-		let /*mut*/ invert = |_r:Rect| {};//image::invert(&mut target.slice_mut_clip(scale*(offset+r))?, bgr);
+		let mut invert = |r:Rect| Some(image::invert(&mut target.slice_mut_clip(scale*(offset+r))?, bgr));
 		if min.line < max.line { invert(self.span(min,LineColumn{line: min.line, column: usize::MAX})); }
 		if min.line == max.line {
 			if min != max { invert(self.span(min,max)); } // selection

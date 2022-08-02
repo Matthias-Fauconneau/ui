@@ -1,4 +1,4 @@
-use {vector::xy, image::{Image, bgra}, crate::{prelude::*, widget::{Widget, EventContext, ModifiersState, Cursor, Event}}};
+use {vector::{xy, int2}, image::bgra, crate::{prelude::*, widget::{Target, Widget, EventContext, ModifiersState, Cursor, Event, ButtonState::*}}};
 
 #[repr(C)] #[derive(Clone, Copy, Debug)] struct Message {
 	id: u32,
@@ -118,8 +118,8 @@ impl std::io::Read for Server {
 
 	let mut scale_factor = 3;
 
-	// surface: attach(buffer, x, y), set_buffer_scale(factor); enter(output), leave(output)
-	enum Surface { destroy, attach, damage, frame, set_opaque_region, set_input_region, commit, set_buffer_transform, set_buffer_scale }
+	// surface: attach(buffer, x, y), set_buffer_scale(factor), damage_buffer(x,y,w,h); enter(output), leave(output)
+	enum Surface { destroy, attach, damage, frame, set_opaque_region, set_input_region, commit, set_buffer_transform, set_buffer_scale, damage_buffer }
 	mod surface { pub const enter : u16 = 0; }
 
 	enum Compositor { create_surface }
@@ -158,6 +158,12 @@ impl std::io::Read for Server {
 	enum Seat { get_pointer, get_keyboard }
 	mod seat { pub const capabilities : u16 = 0; pub const name : u16 = 1; }
 
+	// pointer: ; enter(serial, surface, surface_x, surface_y), leave(serial, surface), motion(time, surface_x, surface_y), button(serial, time, button, state), axis(time, axis, value)
+    mod pointer { pub const enter : u16 = 0; pub const leave : u16 = 1; pub const motion : u16 = 2; pub const button : u16 = 3; pub const axis : u16 = 4; pub const frame : u16 = 5; }
+
+	let pointer = server.new("pointer");
+	server.request(seat, Seat::get_pointer as u16, [UInt(pointer)]);
+
 	// keyboard: ; keymap(format, fd, size), enter(serial, surface, keys: array), leave(serial, surface), key(serial, time, key, state), modifiers(serial, depressed, latched, locked, group), repeat_info(rate, delay)
 	mod keyboard { pub const keymap : u16 = 0; pub const enter : u16 = 1; pub const leave : u16 = 2; pub const key : u16 = 3; pub const modifiers : u16 = 4; pub const repeat_info : u16 = 5; }
 
@@ -191,14 +197,18 @@ impl std::io::Read for Server {
 	let target = unsafe{std::slice::from_raw_parts_mut(
 		rustix::mm::mmap(std::ptr::null_mut(), length, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &file, 0).unwrap() as *mut u8,
 		length)};
-	let mut target = Image::new(size, bytemuck::cast_slice_mut(target));
+	let mut target = Target::new(size, bytemuck::cast_slice_mut(target));
 
 	let mut modifiers_state = ModifiersState::default();
+	let mut pointer_position = int2::default();
 
-	#[throws] fn paint(target: &mut Target, widget: &mut dyn Widget, server: &mut Server) {
+	#[throws] fn paint(target: &mut Target, widget: &mut dyn Widget, server: &mut Server, surface: u32, buffer: u32) {
 		target.fill(bgra{b:0, g:0, r:0, a:0xFF});
 		//target.fill(bgra{b:0xFF, g:0xFF, r:0xFF, a:0xFF});
-		widget.paint(&mut target, target.size, num::zero())?;
+		let size = target.size;
+		widget.paint(target, size, num::zero())?;
+		server.request(surface, Surface::attach as u16, [UInt(buffer),UInt(0),UInt(0)]);
+		server.request(surface, Surface::damage_buffer as u16, [UInt(0),UInt(0),UInt(target.size.x),UInt(target.size.y)]);
 		server.request(surface, Surface::commit as u16, []);
 	}
 
@@ -250,13 +260,35 @@ impl std::io::Read for Server {
 		else if id == xdg_surface && opcode == xdg_surface::configure {
 			let [UInt(serial)] = args(server, {use Type::*; [UInt]}) else {panic!()};
 			server.request(xdg_surface, XdgSurface::ack_configure as u16, [UInt(serial)]);
-			server.request(surface, Surface::attach as u16, [UInt(buffer),UInt(0),UInt(0)]);
-			paint(target, widget, server)?;
+			paint(&mut target, widget, server, surface, buffer)?;
 		}
 		else if id == surface && opcode == surface::enter {
 			let [UInt(_output)] = args(server, {use Type::*; [UInt]}) else {panic!()};
 		}
 		else if id == buffer && opcode == buffer::release {
+		}
+		else if id == pointer && opcode == pointer::enter {
+			args(server, {use Type::*; [UInt,UInt,UInt,UInt]});
+		}
+		else if id == pointer && opcode == pointer::leave {
+			args(server, {use Type::*; [UInt,UInt]});
+		}
+		else if id == pointer && opcode == pointer::motion {
+			let [_,UInt(x),UInt(y)] = args(server, {use Type::*; [UInt,UInt,UInt]}) else {panic!()};
+			pointer_position = xy{x: (x*scale_factor) as i32/256,y: (y*scale_factor) as i32/256};
+		}
+		else if id == pointer && opcode == pointer::button {
+			let [_,_,UInt(button),UInt(state)] = args(server, {use Type::*; [UInt,UInt,UInt,UInt]}) else {panic!()};
+			if widget.event(size, &mut EventContext{modifiers_state, cursor: Cursor}, &Event::Button{position: pointer_position, button: button as u8, state: match state {
+				0=>Released, 1=>Pressed,_=>panic!()}})? {
+				paint(&mut target, widget, server, surface, buffer)?;
+			}
+		}
+		else if id == pointer && opcode == pointer::axis {
+			args(server, {use Type::*; [UInt,UInt,UInt]});
+		}
+		else if id == pointer && opcode == pointer::frame {
+			args(server, []);
 		}
 		else if id == keyboard && opcode == keyboard::keymap {
 			args(server, {use Type::*; [UInt,UInt]});
@@ -265,7 +297,17 @@ impl std::io::Read for Server {
 			args(server, {use Type::*; [UInt,UInt]});
 		}
 		else if id == keyboard && opcode == keyboard::modifiers {
-			args(server, {use Type::*; [UInt,UInt,UInt,UInt,UInt]});
+			let [_,UInt(depressed),_,_,_] = args(server, {use Type::*; [UInt,UInt,UInt,UInt,UInt]}) else {panic!()};
+			const SHIFT : u32 = 0b1;
+			const CTRL : u32 = 0b100;
+			const ALT : u32 = 0b1000;
+			const LOGO : u32 = 0b1000000;
+			modifiers_state = ModifiersState{
+				shift: depressed&SHIFT != 0,
+				ctrl: depressed&CTRL != 0,
+				logo: depressed&LOGO != 0,
+				alt: depressed&ALT != 0,
+			};
 		}
 		else if id == keyboard && opcode == keyboard::enter {
 			args(server, {use Type::*; [UInt,UInt,Array]});
@@ -287,7 +329,7 @@ impl std::io::Read for Server {
 			if state > 0 {
 				if *key == '⎋' { break; }
 				if widget.event(size, &mut EventContext{modifiers_state, cursor: Cursor}, &Event::Key(*key))? { 
-					paint(target, widget, server)?;
+					paint(&mut target, widget, server, surface, buffer)?;
 				}
 			}
 		}

@@ -2,7 +2,7 @@ use super::Result;
 pub use vector::{size, int2, vec2, xy};
 pub type Target<'t> = image::Image<&'t mut [image::bgra8]>;
 #[derive(Default,Clone,Copy)] pub struct ModifiersState { pub shift: bool, pub ctrl: bool, pub logo: bool, pub alt: bool }
-pub enum ButtonState { Pressed, Released }
+pub enum ButtonState { Released, Pressed }
 pub struct Cursor;
 impl Cursor {
 	pub fn set(&mut self, name: &str) { let _ = name; }
@@ -18,8 +18,8 @@ pub type MouseButtons = u32;
 
 pub enum Event {
 	Key (char),
-	Button { position: vec2, button: u8, state: ButtonState },
-	Motion { position: vec2, mouse_buttons: MouseButtons },
+	Button { position: int2, button: u8, state: ButtonState },
+	Motion { position: int2, mouse_buttons: MouseButtons },
 	Scroll (f32)
 }
 
