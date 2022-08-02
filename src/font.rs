@@ -9,10 +9,15 @@ struct Outline<'t> { scale : Ratio /*f32 loses precision*/, x_min: f32, y_max: f
 impl Outline<'_> { fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-self.x_min, y: -(self.scale*y)+self.y_max} } }
 impl ttf_parser::OutlineBuilder for Outline<'_> {
 	fn move_to(&mut self, x: f32, y: f32) {
-		self.first = Some(self.map(x,y));
-		self.p0 = self.first;
+		let p0 = self.map(x,y);
+		self.p0 = Some(p0);
+		self.first = Some(p0);
 	}
-	fn line_to(&mut self, x: f32, y: f32) { let p1 = self.map(x,y); line(self.target, self.p0.unwrap(), p1); self.p0 = Some(p1); }
+	fn line_to(&mut self, x: f32, y: f32) {
+		let p0 = self.p0.unwrap();
+		let p1 = self.map(x,y);
+		line(self.target, p0, p1); self.p0 = Some(p1);
+	}
 	fn quad_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32) {
 		let p0 = self.p0.unwrap();
 		let p1 = self.map(x1, y1);

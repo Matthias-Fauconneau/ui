@@ -53,8 +53,8 @@ impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { from(col
 #[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(||
 	["/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf","/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(std::path::Path::new(p)).unwrap()));
 pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| std::ops::Deref::deref(x)) }
-#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:0.,r:0.,g:0.})];
-//#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
+//#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:0.,r:0.,g:0.})];
+#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
 
 use {std::{sync::Mutex, collections::HashMap}, image::Image};
 pub static CACHE: std::sync::LazyLock<Mutex<HashMap<(Ratio, GlyphId),(Image<Box<[u8]>>,Image<Box<[u8]>>)>>> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -200,14 +200,14 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				let source_offset = vector::component_wise_max(zero(), -offset);
 				let source_size = coverage.0.size.signed() - source_offset;
 				let size = vector::component_wise_min(source_size, target_size);
-					if size.x > 0 && size.y > 0 {
+				if size.x > 0 && size.y > 0 {
 					let size = size.unsigned();
 					//dbg!(target_offset, size, style.map(|x|x.attribute.color).unwrap_or((1.).into()), source_offset);
-					let color = style.map(|x|x.attribute.color).unwrap_or((0./*1.*/).into());
+					let color = style.map(|x|x.attribute.color).unwrap_or((1.).into());
 					if /*(color.b+color.g+color.r)/3. > 1./2.*/color != zero() { // Bright (on black)
 						image::multiply(&mut target.slice_mut(target_offset, size), color, &coverage.0.slice(source_offset.unsigned(), size));
 					} else { // Dark (on white)
-						target.slice_mut(target_offset, size).set_map(&coverage.1, |_,&s| image::bgra{a : 0xFF, b: s as u8, g: s as u8, r: s as u8}); // FIXME: color
+						target.slice_mut(target_offset, size).set_map(&coverage.1.slice(source_offset.unsigned(), size), |_,&s| image::bgra{a : 0xFF, b: s as u8, g: s as u8, r: s as u8}); // FIXME: color
 					}
 				}
 

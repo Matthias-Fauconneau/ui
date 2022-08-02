@@ -1,1 +1,2 @@
-fn main() -> ui::Result { ui::run(Box::new(ui::edit::Edit::new(ui::text::default_font(), ui::edit:: Cow::Owned(ui::edit::Owned{text: String::from_utf8(std::fs::read("examples/edit.rs")?)?, style: Vec::new()})))) }
+use {std::fs::read, ui::{*, text::*, edit::*}};
+fn main() -> Result { run(&mut Edit::new(default_font(), Cow::Owned(Owned{text: String::from_utf8(read("examples/edit.rs")?)?, style: Vec::new()}))) }

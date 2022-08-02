@@ -1,7 +1,6 @@
 use {fehler::throws, super::Error, std::cmp::{min,max}, num::{IsZero, zero, Ratio}, text::iter::Single, vector::{uint2, int2, Rect}};
-use crate::{text::{self, unicode_segmentation::{self, GraphemeIndex, prev_word, next_word},
-														LineColumn, Span, Attribute, Style, line_ranges, Font, View, Buffer, Borrowed},
-									 widget::{Event, EventContext, Widget, size, RenderContext, ModifiersState, ButtonState::Pressed}};
+use crate::text::{self, unicode_segmentation::{self, GraphemeIndex, prev_word, next_word}, LineColumn, Span, Attribute, Style, line_ranges, Font, View, Buffer, Borrowed};
+use crate::widget::{Event, EventContext, Widget, size, Target, ModifiersState, ButtonState::Pressed};
 
 pub type Owned = Buffer<String, Vec<Attribute<Style>>>;
 trait ToOwned { type Owned; fn to_owned(&self) -> Self::Owned; }
@@ -204,7 +203,7 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 				}
 			})(),
 			&Event::Motion{position, mouse_buttons} => {
-				if let Some(cursor) = cursor { let _ = cursor.set("text"); }
+				let _ = cursor.set("text");
 				if mouse_buttons != 0 {
 					let end = view.cursor(size, offset+uint2::from(position));
 					let next = Span{end, ..*selection};
@@ -228,10 +227,10 @@ impl Widget for Edit<'_,'_> {
 		let size = Widget::size(&mut self.view, size);
 		if !size.is_zero() { size } else { (self.view.font[0].height() as u32).into() }
 	}
-	#[throws] fn paint(&mut self, cx: &mut RenderContext, size: size, offset: int2) {
+	#[throws] fn paint(&mut self, target: &mut Target, size: size, offset: int2) {
 		let Self{view, selection, ..} = self;
-		let scale = view.paint_fit(cx, size, offset);
-		view.paint_span(cx, scale, offset, *selection, image::bgr{b: true, g: true, r: true});
+		let scale = view.paint_fit(target, size, offset);
+		view.paint_span(target, scale, offset, *selection, image::bgr{b: true, g: true, r: true});
 	}
 	#[throws] fn event(&mut self, size: size, event_context: &mut EventContext, event: &Event) -> bool { if self.event(size, zero(), event_context, event) != Change::None { true } else { false } }
 }
@@ -239,7 +238,7 @@ impl Widget for Edit<'_,'_> {
 #[derive(derive_more::Deref)] pub struct Scroll<'f,'t> { #[deref] pub edit: Edit<'f, 't>, pub offset: uint2 }
 impl<'f,'t> Scroll<'f,'t> {
 	pub fn new(edit: Edit<'f,'t>) -> Self { Self{edit, offset: zero()} }
-	pub fn paint_fit(&mut self, context : &mut RenderContext, size: size, offset: int2) -> Ratio { self.edit.view.paint_fit(context, size, offset-self.offset.signed()) }
+	pub fn paint_fit(&mut self, target: &mut Target, size: size, offset: int2) -> Ratio { self.edit.view.paint_fit(target, size, offset-self.offset.signed()) }
 	pub fn keep_selection_in_view(&mut self, size: size) {
 		let Self{edit: Edit{view, selection, ..}, offset} = self;
 		let Rect{min,max} = view.span(selection.min(), selection.max());
@@ -264,10 +263,10 @@ impl<'f,'t> Scroll<'f,'t> {
 }
 impl Widget for Scroll<'_,'_> {
 	fn size(&mut self, size : size) -> size { self.edit.size(size) }
-	#[throws] fn paint(&mut self, cx: &mut RenderContext, size: size, offset: int2) {
-		let scale = self.edit.view.paint_fit(cx, size, offset);
+	#[throws] fn paint(&mut self, target: &mut Target, size: size, offset: int2) {
+		let scale = self.edit.view.paint_fit(target, size, offset);
 		let Scroll{edit: Edit{view, selection, ..}, offset} = self;
-		view.paint_span(cx, scale, -offset.signed(), *selection, image::bgr{b: true, g: true, r: true});
+		view.paint_span(target, scale, -offset.signed(), *selection, image::bgr{b: true, g: true, r: true});
 	}
 	#[throws] fn event(&mut self, size: size, event_context: &mut EventContext, event: &Event) -> bool { if self.event(size, event_context, event) != Change::None { true } else { false } }
 }

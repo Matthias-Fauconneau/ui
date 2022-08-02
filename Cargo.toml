@@ -1,16 +1,15 @@
-package={name='ui', version='0.0.0', edition='2021', default-run='glyph', autoexamples=false}
+package={name='ui', version='0.0.0', edition='2021'}
 example=[
  #{name='empty', path='examples/empty.rs'}
  #{name='text', path='examples/text.rs', required-features=['text']},
  #{name='compose', path='examples/compose.rs', required-features=['text']},
- #{name='edit', path='examples/edit.rs', required-features=['edit']},
+ {name='edit', path='examples/edit.rs', required-features=['edit']},
 ]
-bin=[{name='glyph',path='examples/glyph.rs',required-features=['font']}]
 
 [features]
 font=['derive-more','memmap','owning-ref','ttf-parser','kurbo']
 text=['derive-more','text-size','unicode-segmentation','font']
-#edit=['text']
+edit=['text']
 default=['font']
 
 [dependencies]
@@ -26,7 +25,7 @@ trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 
 kurbo={version='*', optional=true}
 
-rustix={version='*', features = ['fs','mm']}
+rustix={version='*', features=['fs','mm']}
 dirs='*'
 memmap={version='*', package='memmapix', optional=true}
 nix={version='*', default-features = false, features = ['socket','uio']}

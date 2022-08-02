@@ -70,18 +70,25 @@ impl widget::Widget for View<'_> {
 				}
 			}
 			for &Glyph{top_left, face, id, scale: glyph_scale} in glyphs {
-				let scale = *scale*glyph_scale;
 				let top_left = top_left - min;
 				if top_left < (size/scale).signed() {
-					let offset = ifloor(scale, top_left + xy{x: -face.glyph_hor_side_bearing(id).unwrap() as _, y: face.glyph_bounding_box(id).unwrap().y_max as _}).into();
-					if offset < target.size {
-						let bbox = face.glyph_bounding_box(id).map(rect).unwrap();
-						use crate::font::Rasterize;
-						let coverage = face.rasterize(self.graphic.scale, id, bbox);
-						let size = vector::component_wise_min(coverage.size, target.size-offset);
-						target.slice_mut(offset, size).zip_map(coverage.slice(zero(), size), |_, &target, &coverage| target - coverage);
+					let bbox = face.glyph_bounding_box(id).map(rect).unwrap();
+					use crate::font::Rasterize;
+					let coverage = face.rasterize(*scale*glyph_scale, id, bbox);
+					let offset = *scale*top_left;
+					let target_size = target.size.signed() - offset;
+					let target_offset = vector::component_wise_max(zero(), offset).unsigned();
+					let source_offset = vector::component_wise_max(zero(), -offset);
+					let source_size = coverage.size.signed() - source_offset;
+					let size = vector::component_wise_min(source_size, target_size);
+					if size.x > 0 && size.y > 0 {
+						let size = size.unsigned();
+						target.slice_mut(target_offset, size).zip_map(coverage.slice(source_offset.unsigned(), size),
+							|_, &target, &coverage| target - coverage
+						);
 					}
-					/*let mut glyph = piet_gpu::encoder::GlyphEncoder::default();
+					/*let offset = *scale*(top_left + glyph_scale*int2{x: -face.glyph_hor_side_bearing(id).unwrap() as _, y: face.glyph_bounding_box(id).unwrap().y_max as _}).unsigned();
+					let mut glyph = piet_gpu::encoder::GlyphEncoder::default();
 					let mut path_encoder = PathEncoder{scale: f32::from(*scale)*glyph_scale, offset, path_encoder: glyph.path_encoder()};
 					if face.outline_glyph(*id, &mut path_encoder).is_some() {
 						let mut path_encoder = path_encoder.path_encoder;

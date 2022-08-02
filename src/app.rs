@@ -1,4 +1,4 @@
-use {vector::xy, image::{Image, bgra}, crate::{prelude::*, widget::Widget}};
+use {vector::xy, image::{Image, bgra}, crate::{prelude::*, widget::{Widget, EventContext, ModifiersState, Cursor, Event}}};
 
 #[repr(C)] #[derive(Clone, Copy, Debug)] struct Message {
 	id: u32,
@@ -41,7 +41,7 @@ impl Server {
 		self.names.push(name.into());
 		self.last_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 	}
-	fn sendmsg<const N: usize>(&mut self, id: u32, opcode: u16, args: [Arg; N], fd: Option<std::os::unix::io::RawFd>) {
+	#[track_caller] fn sendmsg<const N: usize>(&mut self, id: u32, opcode: u16, args: [Arg; N], fd: Option<std::os::unix::io::RawFd>) {
 		let mut request = Vec::new();
 		use std::io::Write;
 		let size = (2+N as u32+args.iter().map(|arg| if let Arg::String(arg) = arg { (arg.as_bytes().len() as u32+1+3)/4 } else { 0 }).sum::<u32>())*4;
@@ -64,7 +64,7 @@ impl Server {
 			self.server.write(&request).unwrap();
 		}
 	}
-	fn request<const N: usize>(&mut self, id: u32, opcode: u16, args: [Arg; N]) { self.sendmsg(id, opcode, args, None) }
+	#[track_caller] fn request<const N: usize>(&mut self, id: u32, opcode: u16, args: [Arg; N]) { self.sendmsg(id, opcode, args, None) }
 }
 impl std::io::Read for Server {
 	fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.server.read(buf) }
@@ -83,7 +83,7 @@ impl std::io::Read for Server {
 
 	// display: sync, get_registry(registry); error(id, code, message: string)
 	enum Display { sync, get_registry }
-	const error : u16 = 0;
+	mod display { pub const error : u16 = 0; }
 
 	use Arg::*;
 
@@ -92,13 +92,13 @@ impl std::io::Read for Server {
 
 	// registry: bind(name, interface: string, version, id); global(name, interface: string, version)
 	enum Registry { bind }
-	const global : u16 = 0;
+	mod registry { pub const global : u16 = 0; }
 
 	fn globals<const N: usize>(server: &mut Server, registry: u32, interfaces: [&str; N]) -> [u32; N] {
 		let mut globals = [0; N];
 		while globals.iter().any(|&item| item==0) {
 			let Message{id, opcode, ..} = message(server);
-			assert!(id == registry && opcode == global);
+			assert!(id == registry && opcode == registry::global);
 			use Arg::*;
 			let args = args(server, {use Type::*; [UInt, String, UInt]});
 			let [UInt(name), String(interface), UInt(version)] = args else { panic!("{args:?}") };
@@ -114,31 +114,11 @@ impl std::io::Read for Server {
 	let [ compositor, shm, output, wm_base, seat] = globals(server, registry, ["wl_compositor", "wl_shm", "wl_output", "xdg_wm_base", "wl_seat"]);
 
 	//output: ; geometry(x, y, w_mm, h_mm, subpixel, make: string, model: string, transform), mode(flags, width, height, refresh), done, scale(factor)
-	const geometry : u16 = 0; const mode : u16 = 1; const done : u16 = 2; const scale : u16 = 3;
+	mod output { pub const geometry : u16 = 0; pub const mode : u16 = 1; pub const done : u16 = 2; pub const scale : u16 = 3; pub const name: u16 = 4; pub const description: u16 = 5; }
 
 	let mut scale_factor = 3;
-	let configure_bounds = xy{x: 3840, y: 2400};
-	let size = widget.size(configure_bounds);
-	let file = rustix::fs::memfd_create("buffer", rustix::fs::MemfdFlags::empty()).unwrap();
-	let length = (size.y*size.x*4) as usize;
-	rustix::fs::ftruncate(&file, length as u64).unwrap();
-	enum Shm { create_pool } // shm: create_pool(shm_pool, fd, size); format(uint)
-	const format : u16 = 0;
-	let pool = server.new("pool");
-	use std::os::unix::io::AsRawFd;
-	server.sendmsg(shm, Shm::create_pool as u16, [UInt(pool), UInt(length as u32)], Some(file.as_raw_fd()));
 
-	// buffer: ; release
-	mod buffer { pub const release : u16 = 0; }
-
-	// shm_pool: create_buffer(buffer, offset, width, height, stride, shm.format)
-	enum ShmPool { create_buffer }
-	enum ShmFormat { argb8888, xrgb8888 }
-
-	let buffer = server.new("buffer");
-	server.request(pool, ShmPool::create_buffer as u16, [UInt(buffer), UInt(0), UInt(size.x), UInt(size.y), UInt(size.x*4), UInt(ShmFormat::xrgb8888 as u32)]);
-
-	// surface: attach(buffer, x, y), set_buffer_scale(factor); enter(output)
+	// surface: attach(buffer, x, y), set_buffer_scale(factor); enter(output), leave(output)
 	enum Surface { destroy, attach, damage, frame, set_opaque_region, set_input_region, commit, set_buffer_transform, set_buffer_scale }
 	mod surface { pub const enter : u16 = 0; }
 
@@ -152,7 +132,6 @@ impl std::io::Read for Server {
 
 	let surface = create_surface(server, compositor);
 	server.request(surface, Surface::set_buffer_scale as u16, [UInt(scale_factor)]);
-	server.request(surface, Surface::attach as u16, [UInt(buffer),UInt(0),UInt(0)]);
 
 	// wm_base: destroy, create_positioner, get_xdg_surface(xdg_surface, surface), pong(serial); ping(serial)
 	enum WmBase { destroy, create_positioner, get_xdg_surface, pong }
@@ -173,15 +152,6 @@ impl std::io::Read for Server {
 	mod toplevel { pub const configure : u16 = 0; pub const configure_bounds : u16 = 2; }
 
 	server.request(toplevel, TopLevel::set_title as u16, [String("App".into())]);
-
-	let target = unsafe{std::slice::from_raw_parts_mut(
-		rustix::mm::mmap(std::ptr::null_mut(), length, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &file, 0).unwrap() as *mut u8,
-		length)};
-	let mut target = Image::new(size, bytemuck::cast_slice_mut(target));
-	target.fill(bgra{b:0xFF, g:0xFF, r:0xFF, a:0xFF});
-
-	widget.paint(&mut target, size, num::zero())?;
-
 	server.request(surface, Surface::commit as u16, []);
 
 	// seat: get_pointer(pointer), get_keyboard(keyboard); capabilities(capabilities), name(name: string)
@@ -194,30 +164,74 @@ impl std::io::Read for Server {
 	let keyboard = server.new("keyboard");
 	server.request(seat, Seat::get_keyboard as u16, [UInt(keyboard)]);
 
+	let configure_bounds = xy{x: 3840, y: 2400};
+	let size = widget.size(configure_bounds);
+	let file = rustix::fs::memfd_create("buffer", rustix::fs::MemfdFlags::empty()).unwrap();
+	let length = (size.y*size.x*4) as usize;
+	rustix::fs::ftruncate(&file, length as u64).unwrap();
+
+	// shm: create_pool(shm_pool, fd, size); format(uint)
+	enum Shm { create_pool }
+	mod shm { pub const format : u16 = 0; }
+
+	let pool = server.new("pool");
+	use std::os::unix::io::AsRawFd;
+	server.sendmsg(shm, Shm::create_pool as u16, [UInt(pool), UInt(length as u32)], Some(file.as_raw_fd()));
+
+	// buffer: ; release
+	mod buffer { pub const release : u16 = 0; }
+
+	// shm_pool: create_buffer(buffer, offset, width, height, stride, shm.format)
+	enum ShmPool { create_buffer }
+	enum ShmFormat { argb8888, xrgb8888 }
+
+	let buffer = server.new("buffer");
+	server.request(pool, ShmPool::create_buffer as u16, [UInt(buffer), UInt(0), UInt(size.x), UInt(size.y), UInt(size.x*4), UInt(ShmFormat::xrgb8888 as u32)]);
+
+	let target = unsafe{std::slice::from_raw_parts_mut(
+		rustix::mm::mmap(std::ptr::null_mut(), length, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &file, 0).unwrap() as *mut u8,
+		length)};
+	let mut target = Image::new(size, bytemuck::cast_slice_mut(target));
+
+	let mut modifiers_state = ModifiersState::default();
+
+	#[throws] fn paint(target: &mut Target, widget: &mut dyn Widget, server: &mut Server) {
+		target.fill(bgra{b:0, g:0, r:0, a:0xFF});
+		//target.fill(bgra{b:0xFF, g:0xFF, r:0xFF, a:0xFF});
+		widget.paint(&mut target, target.size, num::zero())?;
+		server.request(surface, Surface::commit as u16, []);
+	}
+
 	loop {
 		let Message{id, opcode, ..} = message(server);
 		//println!("{} {opcode}", server.names[id as usize]);
-		/**/ if id == display && opcode == error {
+		/**/ if id == display && opcode == display::error {
 			println!("{:?}", args(server, {use Type::*; [UInt, UInt, String]}));
 		}
-		else if id == registry && opcode == global {
+		else if id == registry && opcode == registry::global {
 			args(server, {use Type::*; [UInt, String, UInt]});
 		}
-		else if id == shm && opcode == format {
+		else if id == shm && opcode == shm::format {
 			args(server, {use Type::*; [UInt]});
 		}
-		else if id == output && opcode == geometry {
+		else if id == output && opcode == output::geometry {
 			args(server, {use Type::*; [UInt, UInt, UInt, UInt, UInt, String, String, UInt]});
 		}
-		else if id == output && opcode == mode {
+		else if id == output && opcode == output::mode {
 			let [_, UInt(x), UInt(y), _] = args(server, {use Type::*; [UInt, UInt, UInt, UInt]}) else {panic!()};
 			let _configure_bounds = xy{x,y};
 		}
-		else if id == output && opcode == done {
-		}
-		else if id == output && opcode == scale {
+		else if id == output && opcode == output::scale {
 			let [UInt(factor)] = args(server, {use Type::*; [UInt]}) else {panic!()};
 			#[allow(unused_assignments)] scale_factor = factor;
+		}
+		else if id == output && opcode == output::name {
+			args(server, {use Type::*; [String]});
+		}
+		else if id == output && opcode == output::description {
+			args(server, {use Type::*; [String]});
+		}
+		else if id == output && opcode == output::done {
 		}
 		else if id == seat && opcode == seat::capabilities {
 			args(server, {use Type::*; [UInt]});
@@ -236,6 +250,8 @@ impl std::io::Read for Server {
 		else if id == xdg_surface && opcode == xdg_surface::configure {
 			let [UInt(serial)] = args(server, {use Type::*; [UInt]}) else {panic!()};
 			server.request(xdg_surface, XdgSurface::ack_configure as u16, [UInt(serial)]);
+			server.request(surface, Surface::attach as u16, [UInt(buffer),UInt(0),UInt(0)]);
+			paint(target, widget, server)?;
 		}
 		else if id == surface && opcode == surface::enter {
 			let [UInt(_output)] = args(server, {use Type::*; [UInt]}) else {panic!()};
@@ -262,7 +278,18 @@ impl std::io::Read for Server {
 			server.request(wm_base, WmBase::pong as u16, [UInt(serial)]);
 		}
 		else if id == keyboard && opcode == keyboard::key {
-			break;
+			let [_serial,_time,UInt(key),UInt(state)] = args(server, {use Type::*; [UInt,UInt,UInt,UInt]}) else {panic!()};
+			#[allow(non_upper_case_globals)] static usb_hid_usage_table: std::sync::LazyLock<Vec<char>> = std::sync::LazyLock::new(|| [
+				&['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪'],
+				&(1..=10).map(|i| (0xF700u32+i).try_into().unwrap()).collect::<Vec<_>>()[..], &['\0'; 20], &['\u{F70B}','\u{F70C}'], &['\0'; 8],
+				&['⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘']].concat());
+			let key = usb_hid_usage_table.get(key as usize).unwrap();
+			if state > 0 {
+				if *key == '⎋' { break; }
+				if widget.event(size, &mut EventContext{modifiers_state, cursor: Cursor}, &Event::Key(*key))? { 
+					paint(target, widget, server)?;
+				}
+			}
 		}
 		/*else if id == toplevel && opcode == toplevel::close {
 			// xdg_surface = None,
