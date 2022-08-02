@@ -1,4 +1,4 @@
-use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect}, ttf_parser::{Face,GlyphId}, num::{zero, Ratio}, crate::font::{self, rect}};
+use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect}, /*ttf_parser*/rustybuzz::Face,ttf_parser::GlyphId, num::{zero, Ratio}, crate::font::{self, rect}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 
@@ -15,17 +15,26 @@ pub(crate) fn line_ranges<'t>(text: &'t str) -> impl Iterator<Item=LineRange<'t>
 
 pub type Font<'t> = [&'t Face<'t>; 2];
 pub struct Glyph<'t> {pub index: GraphemeIndex, pub x: u32, pub id: GlyphId, face: &'t Face<'t> }
-pub fn layout<'t>(font: &'t Font<'t>, iter: impl Iterator<Item=(GraphemeIndex, &'t str)>+'t) -> impl 't+Iterator<Item=Glyph<'t>> {
-	iter.scan((None, 0), move |(last_id, x), (index, g)| {
+pub fn layout<'t>(font: &'t Font<'t>, iter: impl Iterator<Item=(GraphemeIndex, &'t str)>+'t) -> impl 't+IntoIterator<Item=Glyph<'t>> {
+	let iter = iter.collect::<Box<[_]>>();
+	let mut buffer = rustybuzz::UnicodeBuffer::new();
+	for (_,grapheme) in &*iter { buffer.push_str(grapheme); }
+	let buffer = rustybuzz::shape(font[0], &[], buffer);
+	buffer.glyph_infos().iter().enumerate().zip(buffer.glyph_positions()).scan(0, |x, ((index,&rustybuzz::GlyphInfo{glyph_id,..}),&rustybuzz::GlyphPosition{x_advance,y_advance:_,x_offset,y_offset:_,..})| {
+		let next = Glyph{index: iter[0].0+index, x: (*x+x_offset) as u32, id: GlyphId(glyph_id as u16), face: font[0]};
+		*x += x_advance;
+		Some(next)
+	}).filter(|&Glyph{id,..}| id.0>0).collect::<Vec<_>>()
+	/*iter.scan((None, 0), move |(last_id, x), (index, g)| {
 		let c = iter::Single::single(g.chars()).unwrap();
 		//let [c] = arrayvec::ArrayVec::from_iter(g.chars()).into_inner().unwrap();
 		let (face, id) = font.iter().find_map(|face| face.glyph_index(if c == '\t' { ' ' } else { c }).map(|id| (face, id))).unwrap_or_else(||panic!("Missing glyph for '{c}' {:x?}", c as u32));
-		//if let Some(last_id) = *last_id { *x += face.tables().kern.unwrap().subtables.into_iter().next().map_or(0, |x| x.glyphs_kerning(last_id, id).unwrap_or(0) as i32); }
+		//if let (Some(kern),Some(last_id)) = (face.tables().kern, *last_id) { *x += kern.subtables.into_iter().next().map_or(0, |x| x.glyphs_kerning(last_id, id).unwrap_or(0) as i32); }
 		*last_id = Some(id);
-		let next = Glyph{index, x: *x, id, face};
-		*x += face.glyph_hor_advance(id)? as u32;
+		let next = Glyph{index, x: *x as u32, id, face};
+		*x += face.glyph_hor_advance(id)? as i32;
 		Some(next)
-	})
+	})*/
 }
 
 pub(crate) fn bbox<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> impl Iterator<Item=(Rect, Glyph<'t>)> {
@@ -80,7 +89,7 @@ impl<D:AsRef<str>> View<'_, D> {
 		let Self{font, data, ref mut size, ..} = self;
 		*size.get_or_insert_with(||{
 			let text = data.as_ref();
-			let (line_count, max_width) = line_ranges(&text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(layout(font, line.graphemes(true).enumerate())).width)));
+			let (line_count, max_width) = line_ranges(&text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(layout(font, line.graphemes(true).enumerate()).into_iter()).width)));
 			xy{x: max_width, y: line_count * (font[0].height() as u32)}
 		})
 	}
@@ -125,7 +134,7 @@ use iter::NthOrLast;
 fn position(font: &Font<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 {
 	if text.is_empty() { assert!(line==0&&column==0); zero() } else {
 	xy{
-		x: layout(font, line_ranges(text).nth(line).unwrap().graphemes(true).enumerate()).nth_or_last(column as usize).map_or_else(
+		x: layout(font, line_ranges(text).nth(line).unwrap().graphemes(true).enumerate()).into_iter().nth_or_last(column as usize).map_or_else(
 			|last| last.map_or(0, |Glyph{x,id,face,..}| x+face.glyph_hor_advance(id).unwrap() as u32),
 			|layout| layout.x
 		) as u32,
@@ -146,7 +155,7 @@ impl<D:AsRef<str>> View<'_, D> {
 		let View{font, ..} = &self;
 		let line = ((position.y/font[0].height() as u32) as usize).min(line_ranges(self.text()).count()-1);
 		LineColumn{line, column:
-			layout(font, line_ranges(self.text()).nth(line).unwrap().graphemes(true).enumerate())
+			layout(font, line_ranges(self.text()).nth(line).unwrap().graphemes(true).enumerate()).into_iter()
 			.map(|Glyph{index, x, id, face}| (index, x+face.glyph_hor_advance(id).unwrap() as u32/2))
 			.take_while(|&(_, x)| x <= position.x).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
@@ -175,7 +184,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
 																						.take_while({let clip = (size.y/scale) as i32 - offset.y; move |&(line_index,_)| (((line_index as u32)*(font[0].height() as u32)) as i32) < clip}) {
-			for (bbox, Glyph{index, x, id, face}) in bbox(layout(font, line.graphemes(true).enumerate().map(|(i,e)| (line.range.start+i, e)))) {
+			for (bbox, Glyph{index, x, id, face}) in bbox(layout(font, line.graphemes(true).enumerate().map(|(i,e)| (line.range.start+i, e))).into_iter()) {
 				style = style.filter(|style:&&Attribute<Style>| style.contains(&index));
 				while let Some(next) = styles.peek() {
 					if next.end <= index { styles.next(); } // skips whitespace style
@@ -191,10 +200,10 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 
 				let position = xy{
 					x: (x as i32+face.glyph_hor_side_bearing(id).unwrap() as i32),
-					y: ((line_index as u32)*(font[0].height() as u32) + (font[0].ascender()-bbox.max.y as i16) as u32) as i32
+					y: (line_index as i32)*(font[0].height() as i32) + font[0].ascender() as i32
 				};
 
-				let offset = vector::ifloor(scale, offset + position);
+				let offset = vector::ifloor(scale, offset + position) - xy{x:0, y: scale.iceil(bbox.max.y)};
 				let target_size = target.size.signed() - offset;
 				let target_offset = vector::component_wise_max(zero(), offset).unsigned();
 				let source_offset = vector::component_wise_max(zero(), -offset);
@@ -202,7 +211,6 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				let size = vector::component_wise_min(source_size, target_size);
 				if size.x > 0 && size.y > 0 {
 					let size = size.unsigned();
-					//dbg!(target_offset, size, style.map(|x|x.attribute.color).unwrap_or((1.).into()), source_offset);
 					let color = style.map(|x|x.attribute.color).unwrap_or((1.).into());
 					if /*(color.b+color.g+color.r)/3. > 1./2.*/color != zero() { // Bright (on black)
 						image::multiply(&mut target.slice_mut(target_offset, size), color, &coverage.0.slice(source_offset.unsigned(), size));

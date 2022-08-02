@@ -44,7 +44,8 @@ pub trait Rasterize {
 	fn glyph_scaled_size(&self, scale: Ratio, id: GlyphId) -> size;
 	fn rasterize(&self, scale: Ratio, id: GlyphId, bbox: Rect) -> Image<Box<[f32]>>;
 }
-impl<'t> Rasterize for ttf_parser::Face<'t> {
+use /*ttf_parser*/rustybuzz::Face;
+impl<'t> Rasterize for Face<'t> {
 	fn glyph_size(&self, id: ttf_parser::GlyphId) -> size {
 		let b = self.glyph_bounding_box(id).unwrap();
 		xy{x: (b.x_max as i32 - b.x_min as i32) as u32, y: (b.y_max as i32 - b.y_min as i32) as u32}
@@ -85,11 +86,11 @@ impl ttf_parser::OutlineBuilder for PathEncoder<'_> {
 }*/
 
 use {fehler::throws, super::Error};
-#[derive(derive_more::Deref)] pub struct Handle<'t>(ttf_parser::Face<'t>);
+#[derive(derive_more::Deref)] pub struct Handle<'t>(Face<'t>);
 pub type File<'t> = owning_ref::OwningHandle<Box<memmap::Mmap>, Handle<'t>>;
 #[throws] pub fn open<'t>(path: &std::path::Path) -> File<'t> {
 	owning_ref::OwningHandle::new_with_fn(
 		Box::new(unsafe{memmap::Mmap::map(&std::fs::File::open(path)?)}?),
-		unsafe { |map| Handle(ttf_parser::Face::from_slice(&*map, 0).unwrap()) }
+		unsafe { |map| Handle(Face::from_slice(&*map, 0).unwrap()) }
 	)
 }

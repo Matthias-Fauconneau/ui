@@ -154,9 +154,7 @@ pub fn fill(edges : &Image<&[f32]>) -> Image<Box<[f32]>> {
 		let mut coverage = 0.;
 		for (target, &edge) in target.iter_mut().zip(edges.iter().skip(1)) {
 			coverage += edge;
-			//coverage -= edge;
-			*target = coverage.clamp(0., 1.);
-            //*target = edge.abs().clamp(0.,1.);
+			*target = coverage.abs().clamp(0., 1.);
 		}
 	}
     target

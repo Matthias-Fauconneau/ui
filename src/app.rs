@@ -158,8 +158,17 @@ impl std::io::Read for Server {
 	enum Seat { get_pointer, get_keyboard }
 	mod seat { pub const capabilities : u16 = 0; pub const name : u16 = 1; }
 
-	// pointer: ; enter(serial, surface, surface_x, surface_y), leave(serial, surface), motion(time, surface_x, surface_y), button(serial, time, button, state), axis(time, axis, value)
-    mod pointer { pub const enter : u16 = 0; pub const leave : u16 = 1; pub const motion : u16 = 2; pub const button : u16 = 3; pub const axis : u16 = 4; pub const frame : u16 = 5; }
+	// pointer: ; enter(serial, surface, surface_x, surface_y), leave(serial, surface), motion(time, surface_x, surface_y), button(serial, time, button, state), axis(time, axis, value), frame, axis_source(_), axis_stop(time, axis)
+    mod pointer {
+		pub const enter : u16 = 0;
+		pub const leave : u16 = 1;
+		pub const motion : u16 = 2;
+		pub const button : u16 = 3;
+		pub const axis : u16 = 4;
+		pub const frame : u16 = 5;
+		pub const axis_source : u16 = 6;
+		pub const axis_stop : u16 = 7;
+	}
 
 	let pointer = server.new("pointer");
 	server.request(seat, Seat::get_pointer as u16, [UInt(pointer)]);
@@ -289,6 +298,12 @@ impl std::io::Read for Server {
 		}
 		else if id == pointer && opcode == pointer::frame {
 			args(server, []);
+		}
+		else if id == pointer && opcode == pointer::axis_source {
+			args(server, {use Type::*; [UInt]});
+		}
+		else if id == pointer && opcode == pointer::axis_stop {
+			args(server, {use Type::*; [UInt,UInt]});
 		}
 		else if id == keyboard && opcode == keyboard::keymap {
 			args(server, {use Type::*; [UInt,UInt]});

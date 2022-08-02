@@ -12,7 +12,7 @@ impl Glyph<'_> {
 	pub fn translate(&mut self, offset: int2) { self.top_left += offset; }
 }
 
-pub use {num::Ratio, vector::Rect, ttf_parser::Face};
+pub use {num::Ratio, vector::Rect, /*ttf_parser*/rustybuzz::Face};
 
 pub fn horizontal(y: i32, dy: u32, x0: i32, x1: i32) -> Rect { Rect{ min: xy{ y: y-(dy/2) as i32, x: x0 }, max: xy{ y: y+(dy/2) as i32, x: x1 } } }
 pub fn vertical   (x: i32, dx: u32, y0: i32, y1: i32) -> Rect { Rect{ min: xy{ x: x-(dx/2) as i32, y: y0 }, max: xy{ x: x+(dx/2) as i32, y: y1 } } }
@@ -49,14 +49,14 @@ impl widget::Widget for View<'_> {
 
 		use {num::zero, image::{Image, bgra, sRGB::sRGB8}};
 		let buffer = {
-			let mut target = Image::fill(target.size, 1.);
+			let mut target = Image::fill(target.size, 0./*1.*/);
 
 			for &Rect{min: top_left, max: bottom_right} in rects {
 				let top_left = top_left - min;
 				if top_left < (size/scale).signed() {
 					let top_left = ifloor(*scale, top_left);
 					let bottom_right : int2 = int2::enumerate().map(|i| if bottom_right[i] == i32::MAX { size[i] as _ } else { scale.ifloor(bottom_right[i]-min[i]) }).into();
-					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, target.size.signed())-top_left).unsigned()).set(|_| 0.);
+					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, target.size.signed())-top_left).unsigned()).set(|_| /*0.*/1.);
 					//context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
 				}
 			}
@@ -65,7 +65,7 @@ impl widget::Widget for View<'_> {
 				if top_left < (size/scale).signed() {
 					let top_left = ifloor(*scale, top_left);
 					let bottom_right : int2 = int2::enumerate().map(|i| if bottom_right[i] == i32::MAX as _ { size[i] as _ } else { scale.ifloor(bottom_right[i] as i32 - min[i]) }).into();
-					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, target.size.signed())-top_left).unsigned()).set(|_| 0.);
+					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, target.size.signed())-top_left).unsigned()).set(|_| /*0.*/1.);
 					//context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
 				}
 			}
@@ -84,7 +84,7 @@ impl widget::Widget for View<'_> {
 					if size.x > 0 && size.y > 0 {
 						let size = size.unsigned();
 						target.slice_mut(target_offset, size).zip_map(coverage.slice(source_offset.unsigned(), size),
-							|_, &target, &coverage| target - coverage
+							|_, &target, &coverage| target +/*-*/ coverage
 						);
 					}
 					/*let offset = *scale*(top_left + glyph_scale*int2{x: -face.glyph_hor_side_bearing(id).unwrap() as _, y: face.glyph_bounding_box(id).unwrap().y_max as _}).unsigned();
