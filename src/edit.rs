@@ -250,10 +250,11 @@ impl<'f,'t> Scroll<'f,'t> {
 		let Self{edit, offset} = self;
 		let (scroll_size, scale) = edit.view.size_scale(size);
 		if let &Event::Scroll(value) = event {
-			if scroll_size.y > size.y/scale {
-				offset.y = min(max(0, offset.y as i32+(value*16./scale) as i32) as u32, scroll_size.y - size.y/scale);
-				Change::Scroll
-			} else { Change::None }
+			if scroll_size.y <= size.y/scale { return Change::None; }
+			let y = min(max(0, offset.y as i32+(value*16/scale) as i32) as u32, scroll_size.y - size.y/scale);
+			if y == offset.y { return Change::None; }
+			offset.y = y;
+			Change::Scroll
 		} else {
 			let change = edit.event(size, scale**offset, event_context, event);
 			if change != Change::None { self.keep_selection_in_view(size); }

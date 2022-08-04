@@ -20,7 +20,7 @@ pub enum Event {
 	Key (char),
 	Button { position: int2, button: u8, state: ButtonState },
 	Motion { position: int2, mouse_buttons: MouseButtons },
-	Scroll (f32)
+	Scroll (i32)
 }
 
 pub trait Widget {
