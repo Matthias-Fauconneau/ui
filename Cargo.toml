@@ -9,7 +9,7 @@ example=[
 [features]
 font=['derive-more','memmap','owning-ref','ttf-parser','kurbo']
 text=['derive-more','text-size','unicode-segmentation','font','rustybuzz']
-edit=['text']
+edit=['text','xcursor']
 
 [dependencies]
 fehler='*'
@@ -34,3 +34,4 @@ text-size={version='*', optional=true}
 unicode-segmentation={version='*', optional=true}
 ttf-parser={version='*', optional=true}
 rustybuzz={version='*', optional=true}
+xcursor={version='*', optional=true}

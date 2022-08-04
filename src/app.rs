@@ -1,95 +1,28 @@
-use {num::{zero,IsZero}, vector::{xy, size, int2}, image::bgra, crate::{prelude::*, widget::{Target, Widget, EventContext, ModifiersState, Event}}};
+#[path="wayland.rs"] mod wayland;
+use {num::{zero,IsZero}, vector::{xy, size, int2}, image::bgra, crate::{prelude::*, widget::{Target, Widget, EventContext, ModifiersState, Event}}, wayland::*};
 
-#[repr(C)] #[derive(Clone, Copy, Debug)] struct Message {
-	id: u32,
-	opcode: u16,
-	size: u16
-}
-unsafe impl bytemuck::Zeroable for Message {}
-unsafe impl bytemuck::Pod for Message {}
-#[derive(Debug)] enum Arg { UInt(u32), Int(i32), Array(Box<[u8]>), String(String) }
-
-fn message(s: &mut impl std::io::Read) -> Message {
-	let mut buf = [0; std::mem::size_of::<Message>()]; std::io::Read::read(s, &mut buf).unwrap(); *bytemuck::from_bytes(&buf)
-}
-
-enum Type { UInt, Int, Array, String }
-fn args<const N: usize>(s: &mut impl std::io::Read, types: [Type; N]) -> [Arg; N] { types.map(|r#type| {
-	//use std::io::Read;
-	let arg = {let mut buf = [0; 4]; s.read(&mut buf).unwrap(); *bytemuck::from_bytes::<u32>(&buf)};
-	use Type::*;
-	match r#type {
-		UInt => Arg::UInt(arg),
-		Int => Arg::Int(arg as i32),
-		Array => {
-			let array = {let mut buf = {let mut vec = Vec::new(); vec.resize((arg as usize+3)/4*4, 0); vec}; s.read(&mut buf).unwrap(); buf.truncate(arg as usize); buf};
-			Arg::Array(array.into_boxed_slice())
-		},
-		String => {
-			let string = {let mut buf = {let mut vec = Vec::new(); vec.resize((arg as usize+3)/4*4, 0); vec}; s.read(&mut buf).unwrap(); buf.truncate(arg as usize-1); buf};
-			Arg::String(std::string::String::from_utf8(string).unwrap())
-		}
-	}
-}) }
-
-struct Server {
-	server: std::os::unix::net::UnixStream,
-	last_id: std::sync::atomic::AtomicU32,
-	names: Vec<String>,
-}
-impl Server {
-	fn new(&mut self, name: &str) -> u32 {
-		self.names.push(name.into());
-		self.last_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-	}
-	#[track_caller] fn sendmsg<const N: usize>(&mut self, id: u32, opcode: u16, args: [Arg; N], fd: Option<std::os::unix::io::RawFd>) {
-		let mut request = Vec::new();
-		use std::io::Write;
-		let size = (2+N as u32+args.iter().map(|arg| if let Arg::String(arg) = arg { (arg.as_bytes().len() as u32+1+3)/4 } else { 0 }).sum::<u32>())*4;
-		request.write(bytemuck::bytes_of(&Message{id, size: size as u16, opcode})).unwrap();
-		for arg in args { use Arg::*; match arg {
-			UInt(arg) => { request.write(bytemuck::bytes_of(&arg)).unwrap(); },
-			String(arg) => {
-				request.write(bytemuck::bytes_of::<u32>(&(arg.as_bytes().len() as u32+1))).unwrap();
-				request.write(arg.as_bytes()).unwrap();
-				request.write(&[0]).unwrap();
-				while request.len()%4!=0 { request.write(&[0]).unwrap(); }
-			}
-			_ => unimplemented!("{arg:?}"),
-		}; }
-		assert!(request.len()==size as usize);
-		if let Some(fd) = fd {
-			use {std::os::unix::io::AsRawFd, nix::sys::socket::{sendmsg,ControlMessage,MsgFlags}};
-			sendmsg::<()>(self.server.as_raw_fd(), &[std::io::IoSlice::new(&request)], &[ControlMessage::ScmRights(&[fd])], MsgFlags::empty(), None).unwrap();
-		} else {
-			self.server.write(&request).unwrap();
-		}
-	}
-	#[track_caller] fn request<const N: usize>(&mut self, id: u32, opcode: u16, args: [Arg; N]) {
-		//dbg!(&self.names[id as usize], opcode, &args);
-		self.sendmsg(id, opcode, args, None)
-	}
-}
-impl std::io::Read for Server {
-	fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.server.read(buf) }
-}
-
-#[derive(Clone,Copy)] pub struct Cursor {
+pub struct Cursor<'t> {
 	pointer: u32,
-	//surface: u32,
-	//theme: &'t mut wayland_cursor::CursorTheme,
+	surface: u32,
+	buffer: u32,
+	target: Target<'t>,
+	serial: u32,
 }
-impl Cursor {
-	pub fn set(&mut self, name: &str) {
-		/*let ref cursor = self.theme.get_cursor(name).unwrap()[0];
-		self.surface.attach(Some(&cursor), 0, 0);
-        self.surface.commit();
-		let (x,y) = cursor.hotspot();
-		self.pointer.set_cursor(0, Some(self.surface), x as i32, y as i32); */
+impl Cursor<'_> {
+	pub fn set(&mut self, server: &mut Server, name: &str) {
+		let image = xcursor::parser::parse_xcursor(&std::fs::read(xcursor::CursorTheme::load("default").load_icon(name).unwrap()).unwrap()).unwrap()[0];
+		let hot = xy{x: image.xhot, y: image.yhot};
+		let image = image::Image::cast_slice(&image.pixels_argb, xy{x: image.width, y: image.height});
+	    assert!(self.target.size == image.size);
+		self.target.data.copy_from_slice(&image);
+
+		server.request(self.surface, Surface::attach as u16, [UInt(self.buffer),UInt(0),UInt(0)]);
+        server.request(self.surface, Surface::commit as u16, []);
+		server.request(self.pointer, Pointer::set_cursor as u16, [UInt(self.serial),UInt(self.surface),UInt(hot.x),UInt(hot.y)]);
 	}
 }
 
-#[allow(non_camel_case_types, non_upper_case_globals,dead_code,unreachable_code)] #[throws] pub fn run(widget: &mut dyn Widget/*, idle: &mut dyn FnMut(&mut dyn Widget)->Result<bool>*/) {
+#[throws] pub fn run(widget: &mut dyn Widget/*, idle: &mut dyn FnMut(&mut dyn Widget)->Result<bool>*/) {
 	let server = std::os::unix::net::UnixStream::connect({
 		let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
 		path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
@@ -100,18 +33,10 @@ impl Cursor {
 	let last_id = std::sync::atomic::AtomicU32::new(display+1);
 	let ref mut server = Server{server, last_id, names: ["".into(),"display".into()].into()};
 
-	// display: sync, get_registry(registry); error(id, code, message: string)
-	enum Display { sync, get_registry }
-	mod display { pub const error: u16 = 0; pub const delete_id: u16 = 1; }
-
 	use Arg::*;
 
 	let registry = server.new("registry");
 	server.request(display, Display::get_registry as u16, [UInt(registry)]);
-
-	// registry: bind(name, interface: string, version, id); global(name, interface: string, version)
-	enum Registry { bind }
-	mod registry { pub const global: u16 = 0; }
 
 	fn globals<const N: usize>(server: &mut Server, registry: u32, interfaces: [&str; N]) -> [u32; N] {
 		let mut globals = [0; N];
@@ -130,27 +55,49 @@ impl Cursor {
 		globals
 	}
 
-	let [ compositor, shm, output, wm_base, seat] = globals(server, registry, ["wl_compositor", "wl_shm", "wl_output", "xdg_wm_base", "wl_seat"]);
+	let [compositor, shm, output, wm_base, seat] = globals(server, registry, ["wl_compositor", "wl_shm", "wl_output", "xdg_wm_base", "wl_seat"]);
 
-	//output: ; geometry(x, y, w_mm, h_mm, subpixel, make: string, model: string, transform), mode(flags, width, height, refresh), done, scale(factor)
-	mod output { pub const geometry: u16 = 0; pub const mode: u16 = 1; pub const done: u16 = 2; pub const scale: u16 = 3; pub const name: u16 = 4; pub const description: u16 = 5; }
 
-	let mut scale_factor = 3;
+	let pointer = server.new("pointer");
+	server.request(seat, Seat::get_pointer as u16, [UInt(pointer)]);
 
-	// surface: attach(buffer, x, y), set_buffer_scale(factor), damage_buffer(x,y,w,h); enter(output), leave(output)
-	enum Surface { destroy, attach, damage, frame, set_opaque_region, set_input_region, commit, set_buffer_transform, set_buffer_scale, damage_buffer }
-	mod surface { pub const enter: u16 = 0; }
+	// keyboard: ; keymap(format, fd, size), enter(serial, surface, keys: array), leave(serial, surface), key(serial, time, key, state), modifiers(serial, depressed, latched, locked, group), repeat_info(rate, delay)
+	mod keyboard { pub const keymap: u16 = 0; pub const enter: u16 = 1; pub const leave: u16 = 2; pub const key: u16 = 3; pub const modifiers: u16 = 4; pub const repeat_info: u16 = 5; }
 
-	enum Compositor { create_surface }
+	let keyboard = server.new("keyboard");
+	server.request(seat, Seat::get_keyboard as u16, [UInt(keyboard)]);
 
-	let create_surface = #[track_caller] |server: &mut Server, compositor| {
-		let id = server.new("surface");
-		server.request(compositor, Compositor::create_surface as u16, [UInt(id)]);
-		id
-	};
+	let file = rustix::fs::memfd_create("target", rustix::fs::MemfdFlags::empty()).unwrap();
 
-	let surface = create_surface(server, compositor);
-	server.request(surface, Surface::set_buffer_scale as u16, [UInt(scale_factor)]);
+	// shm: create_pool(shm_pool, fd, size); format(uint)
+	enum Shm { create_pool }
+	mod shm { pub const format: u16 = 0; }
+
+	// shm_pool: create_buffer(buffer, offset, width, height, stride, shm.format), resize(size)
+	enum ShmPool { create_buffer, destroy, resize }
+	enum ShmFormat { argb8888, xrgb8888 }
+
+	// buffer: destroy; release
+	enum Buffer { destroy }
+	mod buffer { pub const release: u16 = 0; }
+
+	let pool = server.new("pool");
+	use std::os::unix::io::AsRawFd;
+	rustix::fs::ftruncate(&file, 1).unwrap();
+	server.sendmsg(shm, Shm::create_pool as u16, [UInt(pool), UInt(1)], Some(file.as_raw_fd()));
+
+	let buffer = server.new("buffer");
+
+	struct Pool<'t> {
+		file: rustix::io::OwnedFd,
+		id: u32,
+		buffer: u32,
+		target: Target<'t>,
+	}
+	let ref mut pool = Pool{file, id: pool, buffer, target: Target::new(zero(), &mut [])};
+
+	let surface = server.new("surface");
+	server.request(compositor, Compositor::create_surface as u16, [UInt(surface)]);
 
 	// wm_base: destroy, create_positioner, get_xdg_surface(xdg_surface, surface), pong(serial); ping(serial)
 	enum WmBase { destroy, create_positioner, get_xdg_surface, pong }
@@ -173,64 +120,26 @@ impl Cursor {
 	server.request(toplevel, TopLevel::set_title as u16, [String("App".into())]);
 	server.request(surface, Surface::commit as u16, []);
 
-	// seat: get_pointer(pointer), get_keyboard(keyboard); capabilities(capabilities), name(name: string)
-	enum Seat { get_pointer, get_keyboard }
-	mod seat { pub const capabilities: u16 = 0; pub const name: u16 = 1; }
+	let mut scale_factor = 3;
 
-	// pointer: ; enter(serial, surface, surface_x, surface_y), leave(serial, surface), motion(time, surface_x, surface_y), button(serial, time, button, state), axis(time, axis, value), frame, axis_source(_), axis_stop(time, axis)
-    mod pointer {
-		pub const enter: u16 = 0;
-		pub const leave: u16 = 1;
-		pub const motion: u16 = 2;
-		pub const button: u16 = 3;
-		pub const axis: u16 = 4;
-		pub const frame: u16 = 5;
-		pub const axis_source: u16 = 6;
-		pub const axis_stop: u16 = 7;
-	}
+	let ref mut cursor = {
+		let surface = server.new("surface");
+		server.request(compositor, Compositor::create_surface as u16, [UInt(surface)]);
+		let file = rustix::fs::memfd_create("cursor", rustix::fs::MemfdFlags::empty()).unwrap();
+		let size = xy{x: 24*scale_factor, y: 24*scale_factor};
+		let length = (size.y*size.x*4) as usize;
+		rustix::fs::ftruncate(&file, length as u64).unwrap();
+		let pool = server.new("pool");
+		server.sendmsg(shm, Shm::create_pool as u16, [UInt(pool), UInt(length as u32)], Some(file.as_raw_fd()));
+		let buffer = server.new("buffer");
+		server.request(pool, ShmPool::create_buffer as u16, [UInt(buffer), UInt(0), UInt(size.x), UInt(size.y), UInt(size.x*4), UInt(ShmFormat::argb8888 as u32)]);
+		let mmap = unsafe{std::slice::from_raw_parts_mut(
+					rustix::mm::mmap(std::ptr::null_mut(), length, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &file, 0).unwrap() as *mut u8,
+					length)};
+		let target = Target::new(size, bytemuck::cast_slice_mut(mmap));
+		Cursor{pointer, surface, buffer, target, serial: 0}
+	};
 
-	let pointer = server.new("pointer");
-	server.request(seat, Seat::get_pointer as u16, [UInt(pointer)]);
-
-	// keyboard: ; keymap(format, fd, size), enter(serial, surface, keys: array), leave(serial, surface), key(serial, time, key, state), modifiers(serial, depressed, latched, locked, group), repeat_info(rate, delay)
-	mod keyboard { pub const keymap: u16 = 0; pub const enter: u16 = 1; pub const leave: u16 = 2; pub const key: u16 = 3; pub const modifiers: u16 = 4; pub const repeat_info: u16 = 5; }
-
-	let keyboard = server.new("keyboard");
-	server.request(seat, Seat::get_keyboard as u16, [UInt(keyboard)]);
-
-	let file = rustix::fs::memfd_create("target", rustix::fs::MemfdFlags::empty()).unwrap();
-
-	// shm: create_pool(shm_pool, fd, size); format(uint)
-	enum Shm { create_pool }
-	mod shm { pub const format: u16 = 0; }
-
-	let pool = server.new("pool");
-	use std::os::unix::io::AsRawFd;
-	rustix::fs::ftruncate(&file, 1).unwrap();
-	server.sendmsg(shm, Shm::create_pool as u16, [UInt(pool), UInt(1)], Some(file.as_raw_fd()));
-
-	// shm_pool: create_buffer(buffer, offset, width, height, stride, shm.format), resize(size)
-	enum ShmPool { create_buffer, destroy, resize }
-	enum ShmFormat { argb8888, xrgb8888 }
-
-	// buffer: destroy; release
-	enum Buffer { destroy }
-	mod buffer { pub const release: u16 = 0; }
-
-	let buffer = server.new("buffer");
-
-	struct Pool<'t> {
-		file: rustix::io::OwnedFd,
-		id: u32,
-		buffer: u32,
-		target: Target<'t>,
-	}
-	let ref mut pool = Pool{file, id: pool, buffer, target: Target::new(zero(), &mut [])};
-
-	let mut size = zero();
-	let mut modifiers_state = ModifiersState::default();
-	let mut pointer_position = int2::default();
-	let cursor = Cursor{pointer};
 
 	#[throws] fn paint(pool: &mut Pool, size: size, widget: &mut dyn Widget, server: &mut Server, surface: u32) {
 		if pool.target.size != size {
@@ -254,6 +163,10 @@ impl Cursor {
 		server.request(surface, Surface::damage_buffer as u16, [UInt(0),UInt(0),UInt(pool.target.size.x),UInt(pool.target.size.y)]);
 		server.request(surface, Surface::commit as u16, []);
 	}
+
+	let mut size = zero();
+	let mut modifiers_state = ModifiersState::default();
+	let mut pointer_position = int2::default();
 
 	loop {
 		let Message{id, opcode, ..} = message(server);
@@ -280,7 +193,8 @@ impl Cursor {
 		}
 		else if id == output && opcode == output::scale {
 			let [UInt(factor)] = args(server, {use Type::*; [UInt]}) else {panic!()};
-			#[allow(unused_assignments)] scale_factor = factor;
+			scale_factor = factor;
+			server.request(surface, Surface::set_buffer_scale as u16, [UInt(scale_factor)]);
 		}
 		else if id == output && opcode == output::name {
 			args(server, {use Type::*; [String]});
@@ -319,7 +233,8 @@ impl Cursor {
 		else if id == buffer && opcode == buffer::release {
 		}
 		else if id == pointer && opcode == pointer::enter {
-			args(server, {use Type::*; [UInt,UInt,UInt,UInt]});
+			let [UInt(serial),_,_,_] = args(server, {use Type::*; [UInt,UInt,UInt,UInt]}) else {panic!()};
+			cursor.serial = serial;
 		}
 		else if id == pointer && opcode == pointer::leave {
 			args(server, {use Type::*; [UInt,UInt]});
@@ -333,14 +248,14 @@ impl Cursor {
 			#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
 			let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
 			//if state>0 { *mouse_buttons |= 1<<button; } else { *mouse_buttons &= !(1<<button); }
-			if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
+			if widget.event(size, &mut EventContext{modifiers_state, server, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
 					paint(pool, size, widget, server, surface)?;
 			}
 		}
 		else if id == pointer && opcode == pointer::axis {
 			let [_,UInt(axis),Int(value)] = args(server, {use Type::*; [UInt,UInt,Int]}) else {panic!()};
 			if axis != 0 { continue; }
-			if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Scroll(value*scale_factor as i32/256))? {
+			if widget.event(size, &mut EventContext{modifiers_state, server, cursor}, &Event::Scroll(value*scale_factor as i32/256))? {
 				paint(pool, size, widget, server, surface)?;
 			}
 		}
@@ -391,7 +306,7 @@ impl Cursor {
 			let key = usb_hid_usage_table.get(key as usize).unwrap();
 			if state > 0 {
 				if *key == '⎋' { break; }
-				if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Key(*key))? {
+				if widget.event(size, &mut EventContext{modifiers_state, server, cursor}, &Event::Key(*key))? {
 					paint(pool, size, widget, server, surface)?;
 				}
 				/*repeat = {
