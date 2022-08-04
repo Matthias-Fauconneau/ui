@@ -27,7 +27,7 @@ pub trait NthOrLast : Iterator {
 	fn nth_or_last(&mut self, n: usize) -> Result<Self::Item, Option<Self::Item>> {
 		let mut last = None;
 		for _ in 0..n { last = Some(self.next().ok_or(last)?); }
-		Err(last)
+		self.next().ok_or(last)
 	}
 }
 impl<I:Iterator> NthOrLast for I {}

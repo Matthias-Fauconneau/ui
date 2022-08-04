@@ -14,21 +14,33 @@ pub(crate) fn line_ranges<'t>(text: &'t str) -> impl Iterator<Item=LineRange<'t>
 }
 
 pub type Font<'t> = [&'t Face<'t>; 2];
-pub struct Glyph<'t> {pub index: GraphemeIndex, pub x: u32, pub id: GlyphId, face: &'t Face<'t> }
+#[derive(Clone,Copy)] pub struct Glyph<'t> {pub index: GraphemeIndex, pub x: u32, pub id: GlyphId, face: &'t Face<'t> }
 pub fn layout<'t>(font: &'t Font<'t>, str: &'t str) -> impl 't+IntoIterator<Item=Glyph<'t>> {
 	let mut buffer = rustybuzz::UnicodeBuffer::new();
+	buffer.set_cluster_level(rustybuzz::BufferClusterLevel::Characters);
 	buffer.set_direction(rustybuzz::Direction::LeftToRight);
 	buffer.push_str(str);
 	let buffer = rustybuzz::shape(font[0], &[], buffer);
-	buffer.glyph_infos().iter().zip(buffer.glyph_positions()).scan(0, |x, (&rustybuzz::GlyphInfo{glyph_id,cluster,..},&rustybuzz::GlyphPosition{x_advance,y_advance:_,x_offset,y_offset:_,..})| {
-		let next = Glyph{index: cluster as usize, x: (*x+x_offset) as u32, id: GlyphId(glyph_id as u16), face: font[0]};
+	let mut clusters = buffer.glyph_infos().into_iter().zip(buffer.glyph_positions()).scan(0, |x, (&rustybuzz::GlyphInfo{glyph_id,cluster,..},&rustybuzz::GlyphPosition{x_advance,y_advance:_,x_offset,y_offset:_,..})| {
+		let id = if glyph_id>0 { GlyphId(glyph_id as u16) } else { font[0].glyph_index(' ').unwrap() };
+		let next = Glyph{index: cluster as usize, x: (*x+x_offset) as u32, id, face: font[0]};
 		*x += x_advance;
-		Some(next)
-	}).filter(|&Glyph{id,..}| id.0>0).collect::<Vec<_>>()
+		Some((next, x_advance))
+	}).peekable();
+	let layout = str.graphemes(true).enumerate().scan((Glyph{index:0, x:0, id:GlyphId(0), face:font[0]},0), move |(cluster,advance), (index,_)| {
+		Some(if let Some((next,_)) = clusters.peek() && next.index == index {
+			(*cluster,*advance) = clusters.next().unwrap();
+			*cluster
+		} else { // Divide cluster horizontally
+			let next_index = clusters.peek().map_or(str.graphemes(true).count(), |(cluster,_)| cluster.index);
+			Glyph{index, x: cluster.x+(index-cluster.index)as u32* (*advance as u32)/(next_index-cluster.index) as u32, id: font[0].glyph_index(' ').unwrap(), face: font[0]}
+		})
+	}).collect::<Vec<_>>();
+	layout
 }
 
 pub(crate) fn bbox<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> impl Iterator<Item=(Rect, Glyph<'t>)> {
-	iter.filter_map(move |g| Some((g.face.glyph_bounding_box(g.id).map(rect)?, g)))
+	iter.filter_map(move |g| Some((rect(g.face.glyph_bounding_box(g.id)?), g)))
 }
 
 struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
@@ -138,9 +150,7 @@ impl<D:AsRef<str>> View<'_, D> {
 	pub fn span(&self, min: LineColumn, max: LineColumn) -> Rect {
 		Rect{min: self.position(min).signed(), max: (self.position(max)+xy{x:0, y: self.font[0].height() as u32}).signed()}
 	}
-	/*#[throws(as Option)]*/ pub fn cursor(&mut self, size: size, position: uint2) -> LineColumn {
-		//fn ensure(s: bool) -> Option<()> { s.then(||()) }
-		//ensure(!self.text().is_empty())?;
+	pub fn cursor(&mut self, size: size, position: uint2) -> LineColumn {
 		let position = position / self.scale(size);
 		let View{font, ..} = &self;
 		let line = ((position.y/font[0].height() as u32) as usize).min(line_ranges(self.text()).count()-1);
@@ -158,7 +168,7 @@ impl<D:AsRef<str>> View<'_, D> {
 			if min != max { invert(self.span(min,max)); } // selection
 			else { // cursor
 				fn widen(l: Rect, dx: u32) -> Rect { Rect{min: l.min-xy{x:dx/2,y:0}.signed(), max:l.max+xy{x:dx/2,y:0}.signed()} }
-				invert(widen(self.span(span.end,span.end), self.font[0].height() as u32/16));
+				invert(widen(self.span(min,max), self.font[0].height() as u32/16));
 			}
 		}
 		else { for line in min.line+1..max.line {
@@ -209,17 +219,6 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 						target.slice_mut(target_offset, size).set_map(&coverage.1.slice(source_offset.unsigned(), size), |_,&s| image::bgra{a : 0xFF, b: s as u8, g: s as u8, r: s as u8}); // FIXME: color
 					}
 				}
-
-				/*let mut glyph = piet_gpu::encoder::GlyphEncoder::default();
-				let mut path_encoder = PathEncoder{scale: scale.into(), offset: f32::from(scale)*vec2::from(offset + position.signed()), path_encoder: glyph.path_encoder()};
-				if face.outline_glyph(id, &mut path_encoder).is_some() {
-					let mut path_encoder = path_encoder.path_encoder;
-					path_encoder.path();
-					let n_pathseg = path_encoder.n_pathseg();
-    				glyph.finish_path(n_pathseg);
-					context.encode_glyph(&glyph);
-					context.fill_glyph(piet::Color::BLACK.as_rgba_u32());
-				}*/
 			}
 		}
 	}

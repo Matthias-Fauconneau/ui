@@ -17,7 +17,7 @@ impl Cow<'_> {
 }
 impl AsRef<str> for Cow<'_> { fn as_ref(&self) -> &str { match self { Cow::Borrowed(b) => b.as_ref(), Cow::Owned(o) => o.as_ref()} } }
 impl AsRef<[Attribute<Style>]> for Cow<'_> { fn as_ref(&self) -> &[Attribute<Style>] { match self { Cow::Borrowed(b) => b.as_ref(), Cow::Owned(o) => o.as_ref()} } }
-//impl<'t> Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed{text, style: &default_style}) } }
+impl<'t> Cow<'t> { pub fn new(text: &'t str) -> Self { Cow::Borrowed(Borrowed{text, style: &[]}) } }
 
 struct State {
 	text: String, // fixme: diff
@@ -36,7 +36,7 @@ pub struct Edit<'f, 't> {
 }
 
 const fn empty() -> String { String::new() }
-const fn nothing() -> String { String::new() }
+const fn nothing() -> String { empty() }
 pub static CLIPBOARD : std::sync::LazyLock<std::sync::Mutex<String>> = std::sync::LazyLock::new(|| std::sync::Mutex::new(empty()));
 
 pub static KEYMAP: std::sync::LazyLock<Vec<(char, (char,char))>> = std::sync::LazyLock::new(|| {

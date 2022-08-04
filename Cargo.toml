@@ -5,12 +5,11 @@ example=[
  #{name='compose', path='examples/compose.rs', required-features=['text']},
  {name='edit', path='examples/edit.rs', required-features=['edit']},
 ]
-bin=[{name='text',path='examples/text.rs',required-features=['text']}]
+
 [features]
 font=['derive-more','memmap','owning-ref','ttf-parser','kurbo']
 text=['derive-more','text-size','unicode-segmentation','font','rustybuzz']
 edit=['text']
-default=['text']
 
 [dependencies]
 fehler='*'
