@@ -1,4 +1,4 @@
-use {num::{zero,IsZero}, vector::{xy, size, int2}, image::bgra, crate::{prelude::*, widget::{Target, Widget, EventContext, ModifiersState, Cursor, Event, ButtonState::*}}};
+use {num::{zero,IsZero}, vector::{xy, size, int2}, image::bgra, crate::{prelude::*, widget::{Target, Widget, EventContext, ModifiersState, Event}}};
 
 #[repr(C)] #[derive(Clone, Copy, Debug)] struct Message {
 	id: u32,
@@ -72,6 +72,21 @@ impl Server {
 }
 impl std::io::Read for Server {
 	fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.server.read(buf) }
+}
+
+#[derive(Clone,Copy)] pub struct Cursor {
+	pointer: u32,
+	//surface: u32,
+	//theme: &'t mut wayland_cursor::CursorTheme,
+}
+impl Cursor {
+	pub fn set(&mut self, name: &str) {
+		/*let ref cursor = self.theme.get_cursor(name).unwrap()[0];
+		self.surface.attach(Some(&cursor), 0, 0);
+        self.surface.commit();
+		let (x,y) = cursor.hotspot();
+		self.pointer.set_cursor(0, Some(self.surface), x as i32, y as i32); */
+	}
 }
 
 #[allow(non_camel_case_types, non_upper_case_globals,dead_code,unreachable_code)] #[throws] pub fn run(widget: &mut dyn Widget/*, idle: &mut dyn FnMut(&mut dyn Widget)->Result<bool>*/) {
@@ -215,6 +230,7 @@ impl std::io::Read for Server {
 	let mut size = zero();
 	let mut modifiers_state = ModifiersState::default();
 	let mut pointer_position = int2::default();
+	let cursor = Cursor{pointer};
 
 	#[throws] fn paint(pool: &mut Pool, size: size, widget: &mut dyn Widget, server: &mut Server, surface: u32) {
 		if pool.target.size != size {
@@ -314,15 +330,17 @@ impl std::io::Read for Server {
 		}
 		else if id == pointer && opcode == pointer::button {
 			let [_,_,UInt(button),UInt(state)] = args(server, {use Type::*; [UInt,UInt,UInt,UInt]}) else {panic!()};
-			if widget.event(size, &mut EventContext{modifiers_state, cursor: Cursor}, &Event::Button{position: pointer_position, button: button as u8, state: match state {
-				0=>Released, 1=>Pressed,_=>panic!()}})? {
+			#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
+			let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
+			//if state>0 { *mouse_buttons |= 1<<button; } else { *mouse_buttons &= !(1<<button); }
+			if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
 					paint(pool, size, widget, server, surface)?;
 			}
 		}
 		else if id == pointer && opcode == pointer::axis {
 			let [_,UInt(axis),Int(value)] = args(server, {use Type::*; [UInt,UInt,Int]}) else {panic!()};
 			if axis != 0 { continue; }
-			if widget.event(size, &mut EventContext{modifiers_state, cursor: Cursor}, &Event::Scroll(value*scale_factor as i32/256))? {
+			if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Scroll(value*scale_factor as i32/256))? {
 				paint(pool, size, widget, server, surface)?;
 			}
 		}
@@ -373,10 +391,29 @@ impl std::io::Read for Server {
 			let key = usb_hid_usage_table.get(key as usize).unwrap();
 			if state > 0 {
 				if *key == '⎋' { break; }
-				if widget.event(size, &mut EventContext{modifiers_state, cursor: Cursor}, &Event::Key(*key))? {
+				if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Key(*key))? {
 					paint(pool, size, widget, server, surface)?;
 				}
-			}
+				/*repeat = {
+					let repeat = std::rc::Rc::new(std::cell::Cell::new(key));
+					let from_monotonic_millis = |t| {
+						let now = {let rustix::time::Timespec{tv_sec, tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic); tv_sec * 1000 + tv_nsec / 1000_000};
+						std::time::Instant::now() - std::time::Duration::from_millis((now - t as i64) as u64)
+					};
+					use futures_lite::StreamExt;
+					state.streams.push(
+						async_io::Timer::interval_at(from_monotonic_millis(time)+std::time::Duration::from_millis(150), std::time::Duration::from_millis(33))
+						.filter_map({
+							let repeat = std::rc::Rc::downgrade(&repeat);
+							// stops and autodrops from streams when weak link fails to upgrade (repeat cell dropped)
+							move |_| { repeat.upgrade().map(|x| {let key = x.get(); (box move |w| { w.key(key)?; w.draw() }) as Box::<dyn FnOnce(&mut App<'t,W>)->Result<()>>}) }
+						})
+						.fuse()
+						.boxed_local()
+					);
+					Some(repeat)
+				};*/
+			} //else if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None }
 		}
 		else if id == toplevel && opcode == toplevel::close {
 			break;

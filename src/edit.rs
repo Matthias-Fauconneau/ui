@@ -1,6 +1,6 @@
 use {fehler::throws, super::Error, std::cmp::{min,max}, num::{IsZero, zero, Ratio}, text::iter::Single, vector::{uint2, int2, Rect}};
 use crate::text::{self, unicode_segmentation::{self, GraphemeIndex, prev_word, next_word}, LineColumn, Span, Attribute, Style, line_ranges, Font, View, Buffer, Borrowed};
-use crate::widget::{Event, EventContext, Widget, size, Target, ModifiersState, ButtonState::Pressed};
+use crate::widget::{Event, EventContext, Widget, size, Target, ModifiersState};
 
 pub type Owned = Buffer<String, Vec<Attribute<Style>>>;
 trait ToOwned { type Owned; fn to_owned(&self) -> Self::Owned; }
@@ -210,7 +210,7 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 					if next == *selection { Change::None } else { *selection = next; Change::Cursor }
 				} else { Change::None }
 			},
-			&Event::Button{button: 0, position, state: Pressed} => {
+			&Event::Button{button: 0, position, state: 1} => {
 				let end = view.cursor(size, offset+uint2::from(position));
 				let next = Span{start: if shift { selection.start } else { end }, end};
 				if next == *selection { Change::None } else { *selection = next; Change::Cursor }
