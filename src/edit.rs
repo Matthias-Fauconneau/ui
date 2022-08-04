@@ -57,7 +57,7 @@ impl<'f, 't> Edit<'f, 't> {
 pub fn new(font: Font<'f>, data: Cow<'t>) -> Self {
 	Self{view: View{font, data, size: None}, selection: Span::new(LineColumn{line: 0, column: 0}), history: Vec::new(), history_index: 0, last_change: Change::Other, compose: None}
 }
-pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state, server, cursor}: &mut EventContext, event: &Event) -> Change {
+pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state, cursor}: &mut EventContext, event: &Event) -> Change {
 	let ModifiersState{ctrl,shift,alt,..} = *modifiers_state;
 	let Self{ref mut view, selection, history, history_index, last_change, compose, ..} = self;
 	let change = match event {
@@ -203,7 +203,7 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 				}
 			})(),
 			&Event::Motion{position, mouse_buttons} => {
-				cursor.set(server, "text");
+				cursor.set("text");
 				if mouse_buttons != 0 {
 					let end = view.cursor(size, offset+uint2::from(position));
 					let next = Span{end, ..*selection};

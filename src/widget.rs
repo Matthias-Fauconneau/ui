@@ -3,10 +3,9 @@ pub use vector::{size, int2, vec2, xy};
 pub type Target<'t> = image::Image<&'t mut [image::bgra8]>;
 #[derive(Default,Clone,Copy)] pub struct ModifiersState { pub shift: bool, pub ctrl: bool, pub logo: bool, pub alt: bool }
 
-pub struct EventContext<'t> {
+pub struct EventContext<'e, 't> {
 	pub modifiers_state: ModifiersState,
-	pub server: &'t mut crate::app::Server,
-	pub cursor: &'t mut crate::app::Cursor,
+	pub cursor: &'e mut crate::app::Cursor<'t>,
 }
 
 pub type MouseButtons = u32;
