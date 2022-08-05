@@ -127,8 +127,29 @@ impl Cursor<'_> {
 	let mut pointer_position = int2::default();
 	let mut mouse_buttons = 0;
 	let ref mut cursor = Cursor{name: "", pointer, serial: 0, shm, pool: None, compositor, surface: None};
+	let mut repeat : Option<(u64, char)> = None;
+	let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
 
 	loop {
+		if {
+			let fd = server.server.borrow();
+			let ref mut fds = vec![rustix::io::PollFd::new(&*fd, rustix::io::PollFlags::IN)];
+			if let Some((msec, _)) = repeat {
+				rustix::time::timerfd_settime(&timerfd, rustix::time::TimerfdTimerFlags::ABSTIME,
+					&rustix::time::Itimerspec{it_interval:linux_raw_sys::general::__kernel_timespec{tv_sec:0,tv_nsec:0},it_value: linux_raw_sys::general::__kernel_timespec{tv_sec:(msec/1000) as i64,tv_nsec:((msec%1000)*1000000) as i64}}
+				)?;
+				fds.push(rustix::io::PollFd::new(&timerfd, rustix::io::PollFlags::IN));
+			}
+			rustix::io::poll(fds, -1)?;
+			fds.len() > 1 && fds[1].revents().contains(rustix::io::PollFlags::IN)
+		} {
+			let Some((msec, key)) = repeat else {panic!()};
+			if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Key(key))? {
+				paint(pool, size, widget, surface)?;
+			}
+			repeat = Some((msec+33, key));
+			continue;
+		}
 		let Message{id, opcode, ..} = message(&mut*server.server.borrow_mut());
 		use Arg::*;
 		/**/ if id == display.id && opcode == display::error {
@@ -259,37 +280,22 @@ impl Cursor<'_> {
 			wm_base.pong(serial);
 		}
 		else if id == keyboard.id && opcode == keyboard::key {
-			let [_serial,_time,UInt(key),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {panic!()};
+			let [_serial,UInt(key_time),UInt(key),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {panic!()};
 			#[allow(non_upper_case_globals)] static usb_hid_usage_table: std::sync::LazyLock<Vec<char>> = std::sync::LazyLock::new(|| [
 				&['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪'],
 				&(1..=10).map(|i| (0xF700u32+i).try_into().unwrap()).collect::<Vec<_>>()[..], &['\0'; 20], &['\u{F70B}','\u{F70C}'], &['\0'; 8],
 				&['⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘']].concat());
-			let key = usb_hid_usage_table.get(key as usize).unwrap();
+			let key = usb_hid_usage_table[key as usize];
 			if state > 0 {
-				if *key == '⎋' { break; }
-				if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Key(*key))? {
+				if key == '⎋' { break; }
+				if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Key(key))? {
 					paint(pool, size, widget, surface)?;
 				}
-				/*repeat = {
-					let repeat = std::rc::Rc::new(std::cell::Cell::new(key));
-					let from_monotonic_millis = |t| {
-						let now = {let rustix::time::Timespec{tv_sec, tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic); tv_sec * 1000 + tv_nsec / 1000_000};
-						std::time::Instant::now() - std::time::Duration::from_millis((now - t as i64) as u64)
-					};
-					use futures_lite::StreamExt;
-					state.streams.push(
-						async_io::Timer::interval_at(from_monotonic_millis(time)+std::time::Duration::from_millis(150), std::time::Duration::from_millis(33))
-						.filter_map({
-							let repeat = std::rc::Rc::downgrade(&repeat);
-							// stops and autodrops from streams when weak link fails to upgrade (repeat cell dropped)
-							move |_| { repeat.upgrade().map(|x| {let key = x.get(); (box move |w| { w.key(key)?; w.draw() }) as Box::<dyn FnOnce(&mut App<'t,W>)->Result<()>>}) }
-						})
-						.fuse()
-						.boxed_local()
-					);
-					Some(repeat)
-				};*/
-			} //else if repeat.as_ref().filter(|r| r.get()==key ).is_some() { repeat = None }
+				let linux_raw_sys::general::__kernel_timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
+				let base = tv_sec as u64*1000+tv_nsec as u64/1000000;
+				//let time = base&0xFFFFFFFF_00000000 + key_time as u64;
+				repeat = Some((base+150, key));
+			} else { repeat = None; }
 		}
 		else if let Some(pool) = &cursor.pool && id == pool.buffer.id && opcode == buffer::release {
 		}

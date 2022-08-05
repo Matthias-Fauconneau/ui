@@ -24,7 +24,8 @@ trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 
 kurbo={version='*', optional=true}
 
-rustix={version='*', features=['fs','mm']}
+linux-raw-sys='*'
+rustix={version='*', features=['fs','mm','time']}
 dirs='*'
 memmap={version='*', package='memmapix', optional=true}
 nix={version='*', default-features = false, features = ['socket','uio']}
