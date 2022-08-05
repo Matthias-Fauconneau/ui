@@ -15,7 +15,7 @@ pub(crate) fn message(s: &mut impl std::io::Read) -> Message {
 }
 
 pub(crate) enum Type { UInt, Int, Array, String }
-fn args<const N: usize>(s: &mut impl std::io::Read, types: [Type; N]) -> [Arg; N] { types.map(|r#type| {
+#[track_caller] fn args<const N: usize>(s: &mut impl std::io::Read, types: [Type; N]) -> [Arg; N] { types.map(|r#type| {
 	let arg = {let mut buf = [0; 4]; s.read(&mut buf).unwrap(); *bytemuck::from_bytes::<u32>(&buf)};
 	use Type::*;
 	match r#type {
@@ -38,11 +38,10 @@ pub struct Server {
 }
 impl Server {
 	pub(crate) fn from(server: std::os::unix::net::UnixStream) -> Self { Self{server: std::cell::RefCell::new(server), last_id: std::sync::atomic::AtomicU32::new(2)} }
-	pub(crate) fn next_id(&self) -> u32 { self.last_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed) }
+	pub(crate) fn next_id(&self) -> u32 { self.last_id.fetch_add(1, std::sync::atomic::Ordering::/*Relaxed*/SeqCst) }
 	pub fn new<'s: 't, 't, T: From<(&'t Self, u32)>>(&'s self) -> T { (self, self.next_id()).into() }
 	#[track_caller] fn sendmsg<const N: usize>(&self, id: u32, opcode: u16, args: [Arg; N], fd: Option<std::os::unix::io::RawFd>) {
 		assert!(opcode < 10);
-		dbg!(id, opcode, &args);
 		let mut request = Vec::new();
 		use std::io::Write;
 		let size = (2+N as u32+args.iter().map(|arg| if let Arg::String(arg) = arg { (arg.as_bytes().len() as u32+1+3)/4 } else { 0 }).sum::<u32>())*4;
@@ -60,9 +59,7 @@ impl Server {
 		assert!(request.len()==size as usize);
 		if let Some(fd) = fd {
 			use {std::os::unix::io::AsRawFd, nix::sys::socket::{sendmsg,ControlMessage,MsgFlags}};
-			sendmsg::<()>(self.server.borrow_mut().as_raw_fd(), &[std::io::IoSlice::new(&request)], &[ControlMessage::ScmRights(&[fd])], //MsgFlags::empty()
-			MsgFlags::MSG_DONTWAIT|MsgFlags::MSG_NOSIGNAL
-			, None).unwrap();
+			sendmsg::<()>(self.server.borrow_mut().as_raw_fd(), &[std::io::IoSlice::new(&request)], &[ControlMessage::ScmRights(&[fd])], MsgFlags::empty(), None).unwrap();
 		} else {
 			self.server.borrow_mut().write(&request).unwrap();
 		}
@@ -142,9 +139,9 @@ pub(crate) mod output {
 }
 pub use output::Output;
 
-// surface: attach(buffer, x, y), commit, set_buffer_scale(factor), damage_buffer(x,y,w,h); enter(output), leave(output)
+// surface: enter(output); attach(buffer, x, y), commit, set_buffer_scale(factor), damage_buffer(x,y,w,h); enter(output), leave(output)
 pub(crate) mod surface {
-	pub const enter: u16 = 0;
+	pub const enter: u16 = 0; pub const leave: u16 = 1;
 	enum Requests { destroy, attach, damage, frame, set_opaque_region, set_input_region, commit, set_buffer_transform, set_buffer_scale, damage_buffer }
 	use super::{Server, Arg::*, *};
 	pub struct Surface<'t>{server: &'t Server, pub(crate) id: u32}
@@ -212,8 +209,8 @@ pub(crate) mod shm {
 	impl<'t> From<(&'t Server, u32)> for Shm<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	use super::{Arg::*, *};
 	impl Shm<'_> {
-		pub fn create_pool(&self, shm_pool: &ShmPool, fd: std::os::unix::io::RawFd, size: u32) {
-			self.server.sendmsg(self.id, Requests::create_pool as u16, [UInt(shm_pool.id),UInt(size)], Some(fd));
+		pub fn create_pool(&self, shm_pool: &ShmPool, fd: &impl std::os::unix::io::AsRawFd, size: u32) {
+			self.server.sendmsg(self.id, Requests::create_pool as u16, [UInt(shm_pool.id),UInt(size)], Some(fd.as_raw_fd()));
 		}
 	}
 }
@@ -222,7 +219,7 @@ pub use shm::Shm;
 // shm_pool: create_buffer(buffer, offset, width, height, stride, shm.format), resize(size)
 pub mod shm_pool {
 	enum Requests { create_buffer, destroy, resize }
-	pub struct ShmPool<'t>{server: &'t Server, pub(crate) id: u32}
+	pub struct ShmPool<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for ShmPool<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	use super::{Arg::*, *};
 	impl ShmPool<'_> {
