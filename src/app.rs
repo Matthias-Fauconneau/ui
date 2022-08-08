@@ -61,6 +61,7 @@ impl Cursor<'_> {
 }
 
 #[throws] pub fn run(widget: &mut dyn Widget/*, idle: &mut dyn FnMut(&mut dyn Widget)->Result<bool>*/) {
+	let run_start_time = std::time::Instant::now();
 	let server = std::os::unix::net::UnixStream::connect({
 		let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
 		path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
@@ -100,7 +101,7 @@ impl Cursor<'_> {
 	shm.create_pool(&shm_pool, &file, 4096);
 	let ref mut pool = Pool{file, shm_pool, buffer: server.new(), target: Target::new(zero(), &mut [])};
 
-	#[throws] fn paint(pool: &mut Pool, size: size, widget: &mut dyn Widget, surface: &Surface) {
+	#[track_caller] #[throws] fn paint(pool: &mut Pool, size: size, widget: &mut dyn Widget, surface: &Surface) {
 		if pool.target.size != size {
 			let length = (size.y*size.x*4) as usize;
 			rustix::fs::ftruncate(&pool.file, length as u64).unwrap();
@@ -205,6 +206,7 @@ impl Cursor<'_> {
 			let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {panic!()};
 			xdg_surface.ack_configure(serial);
 			paint(pool, size, widget, surface)?;
+			eprintln!("paint {:?}", (std::time::Instant::now()-run_start_time));
 		}
 		else if id == surface.id && opcode == surface::enter {
 			let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {panic!()};
@@ -280,7 +282,7 @@ impl Cursor<'_> {
 			wm_base.pong(serial);
 		}
 		else if id == keyboard.id && opcode == keyboard::key {
-			let [_serial,UInt(key_time),UInt(key),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {panic!()};
+			let [_serial,UInt(_key_time),UInt(key),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {panic!()};
 			#[allow(non_upper_case_globals)] static usb_hid_usage_table: std::sync::LazyLock<Vec<char>> = std::sync::LazyLock::new(|| [
 				&['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪'],
 				&(1..=10).map(|i| (0xF700u32+i).try_into().unwrap()).collect::<Vec<_>>()[..], &['\0'; 20], &['\u{F70B}','\u{F70C}'], &['\0'; 8],
@@ -306,6 +308,7 @@ impl Cursor<'_> {
 			let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {panic!()};
 		}
 		else if id == toplevel.id && opcode == toplevel::close {
+			println!("close");
 			break;
 		}
 		else { panic!("{:?} {opcode:?}", id); }

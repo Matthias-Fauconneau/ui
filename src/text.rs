@@ -1,20 +1,20 @@
 use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect}, /*ttf_parser*/rustybuzz::Face,ttf_parser::GlyphId, num::{zero, Ratio}, crate::font::{self, rect}};
 pub mod unicode_segmentation;
-use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
-
-#[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, pub(crate) range: Range<GraphemeIndex> }
+//use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
+type TextIndex = usize;//GraphemeIndex
+#[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, pub(crate) range: Range<TextIndex> }
 
 pub(crate) fn line_ranges<'t>(text: &'t str) -> impl Iterator<Item=LineRange<'t>> {
-	let mut iter = text.grapheme_indices(true).enumerate().peekable();
+	let mut iter = text./*grapheme_indices(true)*/bytes().enumerate().map(|(i,c)|(i,(i,c))).peekable();
 	std::iter::from_fn(move || {
 		let &(start, (byte_start,_)) = iter.peek()?;
-		let (end, byte_end) = iter.find(|&(_,(_,c))| c=="\n").map_or((text.len(),text.len()/*fixme*/), |(end,(byte_end,_))| (end, byte_end));
+		let (end, byte_end) = iter.find(|&(_,(_,c))| c==/*"\n"*/'\n' as u8).map_or((text.len(),text.len()/*fixme*/), |(end,(byte_end,_))| (end, byte_end));
 		Some(LineRange{line: &text[byte_start..byte_end], range: start..end})
 	})
 }
 
 pub type Font<'t> = [&'t Face<'t>; 2];
-#[derive(Clone,Copy)] pub struct Glyph<'t> {pub index: GraphemeIndex, pub x: u32, pub id: GlyphId, face: &'t Face<'t> }
+#[derive(Clone,Copy)] pub struct Glyph<'t> {pub index: /*GraphemeIndex*/usize, pub x: u32, pub id: GlyphId, face: &'t Face<'t> }
 pub fn layout<'t>(font: &'t Font<'t>, str: &'t str) -> impl 't+IntoIterator<Item=Glyph<'t>> {
 	let mut buffer = rustybuzz::UnicodeBuffer::new();
 	buffer.set_cluster_level(rustybuzz::BufferClusterLevel::Characters);
@@ -27,12 +27,12 @@ pub fn layout<'t>(font: &'t Font<'t>, str: &'t str) -> impl 't+IntoIterator<Item
 		*x += x_advance;
 		Some((next, x_advance))
 	}).peekable();
-	let layout = str.graphemes(true).enumerate().scan((Glyph{index:0, x:0, id:GlyphId(0), face:font[0]},0), move |(cluster,advance), (index,_)| {
+	let layout = str./*graphemes(true).*/bytes().enumerate().scan((Glyph{index:0, x:0, id:GlyphId(0), face:font[0]},0), move |(cluster,advance), (index,_)| {
 		Some(if let Some((next,_)) = clusters.peek() && next.index == index {
 			(*cluster,*advance) = clusters.next().unwrap();
 			*cluster
 		} else { // Divide cluster horizontally
-			let next_index = clusters.peek().map_or(str.graphemes(true).count(), |(cluster,_)| cluster.index);
+			let next_index = clusters.peek().map_or(str./*graphemes(true).count()*/len(), |(cluster,_)| cluster.index);
 			Glyph{index, x: cluster.x+(index-cluster.index)as u32* (*advance as u32)/(next_index-cluster.index) as u32, id: font[0].glyph_index(' ').unwrap(), face: font[0]}
 		})
 	}).collect::<Vec<_>>();
@@ -56,9 +56,9 @@ pub type Color = crate::color::bgrf;
 pub use crate::color::bgr;
 #[derive(Clone,Copy,Default,Debug)] pub enum FontStyle { #[default] Normal, Bold, /*Italic, BoldItalic*/ }
 #[derive(Clone,Copy,Default,Debug)] pub struct Style { pub color: Color, pub style: FontStyle }
-pub type TextRange = std::ops::Range<GraphemeIndex>;
+pub type TextRange = std::ops::Range<usize>;
 #[derive(Clone,derive_more::Deref,Debug)] pub struct Attribute<T> { #[deref] pub range: TextRange, pub attribute: T }
-const fn from(color: Color) -> Attribute<Style> { Attribute{range: 0..GraphemeIndex::MAX, attribute: Style{color, style: FontStyle::Normal}} }
+const fn from(color: Color) -> Attribute<Style> { Attribute{range: 0../*GraphemeIndex*/usize::MAX, attribute: Style{color, style: FontStyle::Normal}} }
 impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { from(color) } }
 
 #[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(||
@@ -105,17 +105,17 @@ impl<D:AsRef<str>> View<'_, D> {
 
 #[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Copy,Debug)] pub struct LineColumn {
 	pub line: usize,
-	pub column: GraphemeIndex // May be on the right of the corresponding line (preserves horizontal affinity during line up/down movement)
+	pub column: TextIndex, //GraphemeIndex // May be on the right of the corresponding line (preserves horizontal affinity during line up/down movement)
 }
 
-pub fn index(text: &str, LineColumn{line, column}: LineColumn) -> GraphemeIndex {
+pub fn index(text: &str, LineColumn{line, column}: LineColumn) -> /*GraphemeIndex*/TextIndex {
 	let Range{start, end} = line_ranges(text).nth(line).unwrap().range;
 	assert!(start+column <= end);
 	start+column
 }
 
 impl LineColumn {
-	#[throws(as Option)] pub fn from_text_index(text: &str, index: GraphemeIndex) -> Self {
+	#[throws(as Option)] pub fn from_text_index(text: &str, index: TextIndex/*GraphemeIndex*/) -> Self {
 		let (line, LineRange{range: Range{start,..}, ..}) = line_ranges(text).enumerate().find(|&(_,LineRange{range: Range{start,end},..})| start <= index && index <=/*\n*/ end)?;
 		Self{line, column: index-start}
 	}
@@ -243,5 +243,5 @@ pub struct Buffer<T, S> {
 	pub style: S,
 }
 impl<T:AsRef<str>,S> AsRef<str> for Buffer<T,S> { fn as_ref(&self) -> &str { self.text.as_ref() } }
-impl<T,S:AsRef<[Attribute<Style>]>> AsRef<[Attribute<Style>]> for Buffer<T,S> {  fn as_ref(&self) -> &[Attribute<Style>] { self.style.as_ref() } }
+impl<T,S:AsRef<[Attribute<Style>]>> AsRef<[Attribute<Style>]> for Buffer<T,S> { fn as_ref(&self) -> &[Attribute<Style>] { self.style.as_ref() } }
 pub type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
