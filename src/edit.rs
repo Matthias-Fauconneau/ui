@@ -35,9 +35,8 @@ pub struct Edit<'f, 't> {
 	compose: Option<Vec<char>>,
 }
 
-const fn empty() -> String { String::new() }
-const fn nothing() -> String { empty() }
-pub static CLIPBOARD : std::sync::LazyLock<std::sync::Mutex<String>> = std::sync::LazyLock::new(|| std::sync::Mutex::new(empty()));
+use std::sync::Mutex;
+pub static CLIPBOARD : Mutex<String> = Mutex::new(String::new());
 
 pub static KEYMAP: std::sync::LazyLock<Vec<(char, (char,char))>> = std::sync::LazyLock::new(|| {
 	std::str::from_utf8(&std::fs::read(dirs::config_dir().unwrap().join("keymap")).unwrap()).unwrap().lines().map(|line| {
@@ -134,14 +133,14 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 						change = Change::Remove;
 						let mut selection = *selection;
 						if selection.start == selection.end { selection.end = prev(); }
-						replace_range = Some(ReplaceRange{range: index(&selection), replace_with: nothing()});
+						replace_range = Some(ReplaceRange{range: index(&selection), replace_with: String::new()});
 						selection.min()
 					}
 					'⌦' => {
 						change = Change::Remove;
 						let mut selection = *selection;
 						if selection.start == selection.end { selection.end = next(); }
-						replace_range = Some(ReplaceRange{range: index(&selection), replace_with: nothing()});
+						replace_range = Some(ReplaceRange{range: index(&selection), replace_with: String::new()});
 						selection.min() // after deletion
 					}
 					'c' if ctrl && selection.start != selection.end => {
@@ -151,7 +150,7 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 					'x' if ctrl && selection.start != selection.end => {
 						change = Change::Remove;
 						*CLIPBOARD.lock().unwrap() = text[index(selection)].to_owned();
-						replace_range = Some(ReplaceRange{range: index(selection), replace_with: nothing()});
+						replace_range = Some(ReplaceRange{range: index(selection), replace_with: String::new()});
 						selection.min()
 					}
 					'v' if ctrl => {
