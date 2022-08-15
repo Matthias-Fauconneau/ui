@@ -13,7 +13,6 @@ edit=['text','xcursor']
 
 [dependencies]
 fehler='*'
-#arrayvec={version='*', optional=true}
 derive-more={version='*', package='derive_more', optional=true}
 owning-ref={version='*', package='owning_ref', optional=true}
 bytemuck='*'
@@ -30,9 +29,12 @@ dirs='*'
 memmap={version='*', package='memmapix', optional=true}
 nix={version='*', default-features = false, features = ['socket','uio']}
 
-image={git='https://github.com/Matthias-Fauconneau/image', features=['arrayvec']}
+image={git='https://github.com/Matthias-Fauconneau/image'}
 text-size={version='*', optional=true}
 unicode-segmentation={version='*', optional=true}
 ttf-parser={version='*', optional=true}
 rustybuzz={version='*', optional=true}
 xcursor={version='*', optional=true}
+
+[patch.'https://github.com/Matthias-Fauconneau/image']
+image={path='../image'}

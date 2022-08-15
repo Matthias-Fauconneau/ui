@@ -21,6 +21,7 @@ pub struct Cursor<'t> {
 impl Cursor<'_> {
 	pub fn set(&mut self, name: &'static str) {
 		if self.name == name { return; }
+		#[cfg(feature="xcursor")] {
 		let pool = self.pool.get_or_insert_with(|| {
 			let size = xy{x: 64, y: 64};
 			let length = (size.y*size.x*4) as usize;
@@ -45,7 +46,7 @@ impl Cursor<'_> {
 		let image = images.iter().min_by_key(|image| (pool.target.size.x as i32 - image.size as i32).abs()).unwrap();
 		let hot = xy{x: image.xhot, y: image.yhot};
 		let image = image::Image::cast_slice(&image.pixels_argb, xy{x: image.width, y: image.height});
-	    assert_eq!(pool.target.size, image.size);
+		assert_eq!(pool.target.size, image.size);
 		pool.target.data.copy_from_slice(&image);
 		let scale_factor = 3;
 		let ref surface = self.surface.get_or_insert_with(|| {
@@ -57,6 +58,8 @@ impl Cursor<'_> {
 		surface.attach(&pool.buffer,0,0);
         surface.commit();
 		self.pointer.set_cursor(self.serial, surface, hot.x/scale_factor, hot.y/scale_factor);
+	}
+	#[cfg(not(feature="xcursor"))] unreachable!()
 	}
 }
 

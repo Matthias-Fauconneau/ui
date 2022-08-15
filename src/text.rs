@@ -68,7 +68,7 @@ pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| s
 #[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
 
 use {std::{sync::Mutex, collections::HashMap}, image::Image};
-pub static CACHE: std::sync::LazyLock<Mutex<HashMap<(Ratio, GlyphId),(Image<Box<[u8]>>,Image<Box<[u8]>>)>>> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+pub static CACHE: Mutex<HashMap<(Ratio, GlyphId),(Image<Box<[u8]>>,Image<Box<[u8]>>)>> = Mutex::new(HashMap::new());
 
 pub struct View<'t, D> {
     pub font : Font<'t>,
