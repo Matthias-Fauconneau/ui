@@ -64,7 +64,7 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 				let View{data, ..} = view;
 				match key {
 					'⎋' => { *compose = None; if selection.start != selection.end && !shift { *selection=Span::new(selection.end); return Change::Cursor; } else { return Change::None; } }
-					'⇧'|'⇪'|'⌃'|'⌘'|'⎇'|'⎀'|'⎙' => return Change::None,
+					'⇧'|'⇪'|'⌃'|'◆'|'⌘'|'⎇'|'⎀'|'⎙' => return Change::None,
 					'←'| '→' if alt => return Change::None,
 					'z' if ctrl => {
 						if !shift && *history_index > 0 {

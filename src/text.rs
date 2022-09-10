@@ -14,28 +14,34 @@ pub(crate) fn line_ranges<'t>(text: &'t str) -> impl Iterator<Item=LineRange<'t>
 }
 
 pub type Font<'t> = [&'t Face<'t>; 2];
-#[derive(Clone,Copy)] pub struct Glyph<'t> {pub index: /*GraphemeIndex*/usize, pub x: u32, pub id: GlyphId, face: &'t Face<'t> }
+#[derive(Clone,Copy)] pub struct Glyph<'t> {pub byte_index: usize, pub x: u32, face: &'t Face<'t>, pub id: GlyphId }
 pub fn layout<'t>(font: &'t Font<'t>, str: &'t str) -> impl 't+IntoIterator<Item=Glyph<'t>> {
 	let mut buffer = rustybuzz::UnicodeBuffer::new();
 	buffer.set_cluster_level(rustybuzz::BufferClusterLevel::Characters);
 	buffer.set_direction(rustybuzz::Direction::LeftToRight);
 	buffer.push_str(str);
 	let buffer = rustybuzz::shape(font[0], &[], buffer);
-	let mut clusters = buffer.glyph_infos().into_iter().zip(buffer.glyph_positions()).scan(0, |x, (&rustybuzz::GlyphInfo{glyph_id,cluster,..},&rustybuzz::GlyphPosition{x_advance,y_advance:_,x_offset,y_offset:_,..})| {
-		let id = if glyph_id>0 { GlyphId(glyph_id as u16) } else { font[0].glyph_index(' ').unwrap() };
-		let next = Glyph{index: cluster as usize, x: (*x+x_offset) as u32, id, face: font[0]};
+	let mut clusters = buffer.glyph_infos().into_iter().zip(buffer.glyph_positions()).scan(0,
+			|x, (&rustybuzz::GlyphInfo{glyph_id,cluster:byte_index,..},&rustybuzz::GlyphPosition{x_offset,x_advance,..})| {
+		let (face, id, x_offset, x_advance) = if glyph_id>0 { (&font[0], GlyphId(glyph_id as u16), x_offset, x_advance) } else {
+			let c = str[byte_index as usize..].chars().next().unwrap();
+			let (face, id) = font.iter().find_map(|face| face.glyph_index(if c == '\t' { ' ' } else { c }).map(|id| (face, id))).unwrap_or_else(||panic!("Missing glyph for '{c}' {:x?}", c as u32));
+			(face, id, face.glyph_hor_side_bearing(id).unwrap() as i32, face.glyph_hor_advance(id)? as i32)
+		};
+		let next = Glyph{byte_index: byte_index as usize, x: (*x+x_offset) as u32, face, id};
 		*x += x_advance;
 		Some((next, x_advance))
 	}).peekable();
-	let layout = str./*graphemes(true).*/bytes().enumerate().scan((Glyph{index:0, x:0, id:GlyphId(0), face:font[0]},0), move |(cluster,advance), (index,_)| {
-		Some(if let Some((next,_)) = clusters.peek() && next.index == index {
+	let layout = str./*graphemes(true).*/bytes().enumerate().scan((Glyph{byte_index:0, x:0, id:GlyphId(0), face:font[0]},0), move |(cluster,advance), (byte_index,_)| {
+		Some(if let Some((next,_)) = clusters.peek() && next.byte_index == byte_index {
 			(*cluster,*advance) = clusters.next().unwrap();
 			*cluster
 		} else { // Divide cluster horizontally
-			let next_index = clusters.peek().map_or(str./*graphemes(true).count()*/len(), |(cluster,_)| cluster.index);
-			Glyph{index, x: cluster.x+(index-cluster.index)as u32* (*advance as u32)/(next_index-cluster.index) as u32, id: font[0].glyph_index(' ').unwrap(), face: font[0]}
+			let next_index = clusters.peek().map_or(str./*graphemes(true).count()*/len(), |(cluster,_)| cluster.byte_index);
+			Glyph{byte_index, x: cluster.x+(byte_index-cluster.byte_index)as u32* (*advance as u32)/(next_index-cluster.byte_index) as u32, id: font[0].glyph_index(' ').unwrap(), face: font[0]}
 		})
 	}).collect::<Vec<_>>();
+	//assert!(!layout.is_empty());
 	layout
 }
 
@@ -82,8 +88,8 @@ impl<'t, D> View<'t, D> {
 }
 
 use num::{IsZero, div_ceil};
-pub fn fit_width(width: u32, from : size) -> size { if from.is_zero() { return zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
-pub fn fit_height(height: u32, from : size) -> size { if from.is_zero() { return zero(); } xy{x: div_ceil(height * from.x, from.y), y: height} }
+pub fn fit_width(width: u32, from : size) -> size { if from.x == 0 { return zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
+pub fn fit_height(height: u32, from : size) -> size { if from.y == 0 { return zero(); } xy{x: div_ceil(height * from.x, from.y), y: height} }
 pub fn fit(size: size, from: size) -> size { if size.x*from.y < size.y*from.x { fit_width(size.x, from) } else { fit_height(size.y, from) } }
 
 impl<D:AsRef<str>> View<'_, D> {
@@ -92,6 +98,7 @@ impl<D:AsRef<str>> View<'_, D> {
 		*size.get_or_insert_with(||{
 			let text = data.as_ref();
 			let (line_count, max_width) = line_ranges(&text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(layout(font, &line).into_iter()).width)));
+			assert!(max_width > 0);
 			xy{x: max_width, y: line_count * (font[0].height() as u32)}
 		})
 	}
@@ -156,7 +163,7 @@ impl<D:AsRef<str>> View<'_, D> {
 		let line = ((position.y/font[0].height() as u32) as usize).min(line_ranges(self.text()).count()-1);
 		LineColumn{line, column:
 			layout(font, &line_ranges(self.text()).nth(line).unwrap()).into_iter()
-			.map(|Glyph{index, x, id, face}| (index, x+face.glyph_hor_advance(id).unwrap() as u32/2))
+			.map(|Glyph{byte_index, x, id, face}| (byte_index, x+face.glyph_hor_advance(id).unwrap() as u32/2))
 			.take_while(|&(_, x)| x <= position.x).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
 	}
@@ -184,12 +191,12 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
 																						.take_while({let clip = (size.y/scale) as i32 - offset.y; move |&(line_index,_)| (((line_index as u32)*(font[0].height() as u32)) as i32) < clip}) {
-			for (bbox, Glyph{index, x, id, face}) in bbox(layout(font, &line).into_iter()) {
-				let index = line.range.start+index;
-				style = style.filter(|style:&&Attribute<Style>| style.contains(&index));
+			for (bbox, Glyph{byte_index, x, id, face}) in bbox(layout(font, &line).into_iter()) {
+				let byte_index = line.range.start+byte_index;
+				style = style.filter(|style:&&Attribute<Style>| style.contains(&byte_index));
 				while let Some(next) = styles.peek() {
-					if next.end <= index { styles.next(); } // skips whitespace style
-					else if next.contains(&index) { style = styles.next(); }
+					if next.end <= byte_index { styles.next(); } // skips whitespace style
+					else if next.contains(&byte_index) { style = styles.next(); }
 					else { break; }
 				}
 
@@ -230,7 +237,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 }
 use crate::widget::{Widget, Target};
 impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
-	fn size(&mut self, size: size) -> size { fit_width(size.x, Self::size(self)) }
+	fn size(&mut self, size: size) -> size { fit(size/*fit_width(size.x*/, Self::size(self)) }
 	#[throws] fn paint(&mut self, target: &mut Target, size: size, offset: int2) { self.paint_fit(target, size, offset); }
 }
 

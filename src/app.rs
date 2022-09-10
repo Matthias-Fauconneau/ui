@@ -104,13 +104,18 @@ impl Cursor<'_> {
 	shm.create_pool(&shm_pool, &file, 4096);
 	let ref mut pool = Pool{file, shm_pool, buffer: server.new(), target: Target::new(zero(), &mut [])};
 
-	#[track_caller] #[throws] fn paint(pool: &mut Pool, size: size, widget: &mut dyn Widget, surface: &Surface) {
+	#[throws] fn paint(pool: &mut Pool, size: size, widget: &mut dyn Widget, surface: &Surface) {
+		assert!(size.x > 0 && size.y > 0);
 		if pool.target.size != size {
+			let old_length = (pool.target.size.y*pool.target.size.x*4) as usize;
 			let length = (size.y*size.x*4) as usize;
-			rustix::fs::ftruncate(&pool.file, length as u64).unwrap();
-			pool.shm_pool.resize(length as u32);
+			if length > old_length {
+				rustix::fs::ftruncate(&pool.file, length as u64).unwrap(); // It is the client's responsibility to ensure that the file is at least as big as the new pool size
+				pool.shm_pool.resize(length as u32); //  This request can only be used to make the pool bigger
+			}
 			if !pool.target.size.is_zero() { pool.buffer.destroy(); }
 			pool.shm_pool.create_buffer(&pool.buffer, 0, size.x, size.y, size.x*4, shm_pool::Format::xrgb8888);
+			println!("create_buffer {size:?}");
 
 			let mmap = unsafe{std::slice::from_raw_parts_mut(
 				rustix::mm::mmap(std::ptr::null_mut(), length, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &pool.file, 0).unwrap() as *mut u8,
@@ -126,6 +131,7 @@ impl Cursor<'_> {
 		surface.commit();
 	}
 
+	let mut configure_bounds = zero();
 	let mut size = zero();
 	let mut modifiers_state = ModifiersState::default();
 	let mut pointer_position = int2::default();
@@ -172,7 +178,7 @@ impl Cursor<'_> {
 			}
 			else if id == output.id && opcode == output::mode {
 				let [_, UInt(x), UInt(y), _] = server.args({use Type::*; [UInt, UInt, UInt, UInt]}) else {panic!()};
-				let _configure_bounds = xy{x,y};
+				configure_bounds = xy{x,y};
 			}
 			else if id == output.id && opcode == output::scale {
 				let [UInt(factor)] = server.args({use Type::*; [UInt]}) else {panic!()};
@@ -189,13 +195,16 @@ impl Cursor<'_> {
 			}
 
 			else if id == toplevel.id && opcode == toplevel::configure_bounds {
-				server.args({use Type::*; [UInt,UInt]});
-				//configure_bounds=xy{x:width as u32, y:height as u32};
+				let [UInt(_width),UInt(_height)] = server.args({use Type::*; [UInt,UInt]}) else {panic!()};
+				//configure_bounds = xy{x:width as u32*scale_factor, y:height as u32*scale_factor};
+				//panic!("{configure_bounds:?}");
 			}
 			else if id == toplevel.id && opcode == toplevel::configure {
 				let [UInt(x),UInt(y),_] = server.args({use Type::*; [UInt,UInt,Array]}) else {panic!()};
 				size = xy{x: x*scale_factor, y: y*scale_factor};
-				if size.is_zero() { size = widget.size(size); }
+				println!("configure {size:?}");
+				if size.is_zero() { assert!(configure_bounds.x > 0 && configure_bounds.y > 0); size = widget.size(configure_bounds); }
+				assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
 				//vector::component_wise_min(size, widget.size(size));
 				// unscaled_size=xy{x:width as u32, y:height as u32};
 			}
@@ -280,7 +289,6 @@ impl Cursor<'_> {
 			}
 			else if id == keyboard.id && opcode == keyboard::key {
 				let [_serial,UInt(_key_time),UInt(key),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {panic!()};
-				println!("{key}");
 				let key = [
 					'\0','⎋','1','2','3','4','5','6','7','8',
 					'9','0','-','=','⌫','\t','q','w','e','r',
@@ -291,11 +299,10 @@ impl Cursor<'_> {
 					'\u{F701}','\u{F702}','\u{F703}','\u{F704}','\u{F705}','\u{F706}','\u{F707}','\u{F708}','\u{F709}','\u{F70A}',
 					'�','⇳','7','8','9','-','4','5','6','+',
 					'1','2','3','0','.','�','�','≷','\u{F70B}','\u{F70C}','\u{F70D}',
-					'�','�','�','�','�',',','\n','⌘'/*⎈⌃*/,'/','⎙',
+					'�','�','�','�','�',',','\n','⌃'/*\x1B⎈*/,'/','⎙',
 					'⎇','\n','⇤','↑','⇞','←','→','⇥','↓','⇟',
 					'⎀','⌦','�','🔇','🕩','🕪','⏻','=','±','⏯',
-					'�',',','�','�','�','¥','⌘','⌘','⎄'][key as usize];
-				println!("{:x} {key}", key as usize);
+					'�',',','�','�','¥','◆','◆','⎄'][key as usize];
 				if state > 0 {
 					if key == '⎋' { break; }
 					if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Key(key))? {
