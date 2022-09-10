@@ -10,13 +10,13 @@ pub fn index(s: &str, grapheme_index: GraphemeIndex) -> usize/*TextSize*/ {
 }
 #[track_caller] pub fn find(s: &str, byte_index: TextSize) -> GraphemeIndex {
 	let byte_index = byte_index.into();
-	assert!(byte_index<=s.len());
+	//assert!(byte_index<=s.len());
 	let mut grapheme_index = 0;
 	for (grapheme_byte_index,_) in s.grapheme_indices(true) {
 		if grapheme_byte_index == byte_index { return grapheme_index; }
 		grapheme_index += 1;
 	}
-	assert_eq!(byte_index, s.len());
+	//assert_eq!(byte_index, s.len()); // byte_index>s.len() returns last grapheme index
 	grapheme_index
 }
 

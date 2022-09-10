@@ -1,4 +1,4 @@
-#![feature(async_closure,let_else,box_syntax,once_cell,type_alias_impl_trait,array_methods,unix_socket_ancillary_data,stmt_expr_attributes,closure_track_caller)]
+#![feature(async_closure,let_else,box_syntax,once_cell,type_alias_impl_trait,array_methods,unix_socket_ancillary_data,stmt_expr_attributes,closure_track_caller,let_chains,const_btree_new)]
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T=(),E=Error> = std::result::Result<T, E>;
 pub(crate) mod prelude { pub use {fehler::throws, super::{Error, Result}}; }
@@ -9,7 +9,7 @@ pub mod widget; pub use widget::{Widget, Target, size, int2};
 mod app; pub use app::run;
 #[cfg(feature="font")] pub mod font;
 #[cfg(feature="text")] pub mod text; //cfg_if! { if #[cfg(fecd ature="text")] { pub mod text; pub use text::{Text, default_font, default_style}; }}
-#[cfg(feature="text")] pub mod graphic; #[cfg(feature="text")] pub use graphic::Graphic;
+#[cfg(feature="graphic")] pub mod graphic; #[cfg(feature="graphic")] pub use graphic::Graphic;
 #[cfg(feature="edit")] pub mod edit; //cfg_if! { if #[cfg(feature="text")] { pub mod edit; pub use edit::TextEdit; }}
 #[cfg(feature="plot")] pub mod plot; //cfg_if! { if #[cfg(feature="graphic")] { pub mod graphic; pub use graphic::{Glyph, Graphic}; }}
 

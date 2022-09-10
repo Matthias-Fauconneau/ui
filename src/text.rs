@@ -67,8 +67,8 @@ pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| s
 //#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:0.,r:0.,g:0.})];
 #[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
 
-use {std::{sync::Mutex, collections::HashMap}, image::Image};
-pub static CACHE: Mutex<HashMap<(Ratio, GlyphId),(Image<Box<[u8]>>,Image<Box<[u8]>>)>> = Mutex::new(HashMap::new());
+use {std::{sync::Mutex, collections::BTreeMap}, image::Image};
+pub static CACHE: Mutex<BTreeMap<(Ratio, GlyphId),(Image<Box<[u8]>>,Image<Box<[u8]>>)>> = Mutex::new(BTreeMap::new());
 
 pub struct View<'t, D> {
     pub font : Font<'t>,
@@ -196,7 +196,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				let mut cache = CACHE.lock().unwrap();
 				let coverage = cache.entry((scale, id)).or_insert_with(|| {
 					let linear = font::Rasterize::rasterize(face, scale, id, bbox);
-					(image::sRGB::from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::sRGB::sRGB8(1.-v))))
+					(image::from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::sRGB8(1.-v))))
 				});
 
 				let position = xy{
