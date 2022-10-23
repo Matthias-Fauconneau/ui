@@ -35,6 +35,3 @@ unicode-segmentation={version='*', optional=true}
 ttf-parser={version='*', optional=true}
 rustybuzz={version='*', optional=true}
 xcursor={version='*', optional=true}
-
-[patch.'https://github.com/Matthias-Fauconneau/image']
-image={path='../image'}

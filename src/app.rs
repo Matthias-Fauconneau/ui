@@ -115,7 +115,7 @@ impl Cursor<'_> {
 			}
 			if !pool.target.size.is_zero() { pool.buffer.destroy(); }
 			pool.shm_pool.create_buffer(&pool.buffer, 0, size.x, size.y, size.x*4, shm_pool::Format::xrgb8888);
-			println!("create_buffer {size:?}");
+			//println!("create_buffer {size:?}");
 
 			let mmap = unsafe{std::slice::from_raw_parts_mut(
 				rustix::mm::mmap(std::ptr::null_mut(), length, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &pool.file, 0).unwrap() as *mut u8,
@@ -202,7 +202,7 @@ impl Cursor<'_> {
 			else if id == toplevel.id && opcode == toplevel::configure {
 				let [UInt(x),UInt(y),_] = server.args({use Type::*; [UInt,UInt,Array]}) else {panic!()};
 				size = xy{x: x*scale_factor, y: y*scale_factor};
-				println!("configure {size:?}");
+				//println!("configure {size:?}");
 				if size.is_zero() { assert!(configure_bounds.x > 0 && configure_bounds.y > 0); size = widget.size(configure_bounds); }
 				assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
 				//vector::component_wise_min(size, widget.size(size));
@@ -212,7 +212,7 @@ impl Cursor<'_> {
 				let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {panic!()};
 				xdg_surface.ack_configure(serial);
 				paint(pool, size, widget, surface)?;
-				eprintln!("paint {:?}", (std::time::Instant::now()-run_start_time));
+				//eprintln!("paint {:?}", (std::time::Instant::now()-run_start_time));
 			}
 			else if id == surface.id && opcode == surface::enter {
 				let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {panic!()};
@@ -323,7 +323,7 @@ impl Cursor<'_> {
 				let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {panic!()};
 			}
 			else if id == toplevel.id && opcode == toplevel::close {
-				println!("close");
+				//println!("close");
 				break;
 			}
 			else { panic!("{:?} {opcode:?}", id); }
