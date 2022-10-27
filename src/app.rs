@@ -1,5 +1,5 @@
 #[path="wayland.rs"] mod wayland;
-use {num::{zero,IsZero}, vector::{xy, size, int2}, image::bgra, crate::{prelude::*, widget::{Target, Widget, EventContext, ModifiersState, Event}}, wayland::*};
+use {num::{zero,IsZero}, vector::{xy, int2}, image::bgra, crate::{prelude::*, widget::{Target, Widget, EventContext, ModifiersState, Event}}, wayland::*};
 
 struct Pool<'t> {
 	file: rustix::io::OwnedFd,
@@ -10,10 +10,10 @@ struct Pool<'t> {
 
 pub struct Cursor<'t> {
 	name: &'static str,
-	pointer: &'t Pointer<'t>,
-	shm: &'t Shm<'t>,
+	#[allow(dead_code)] pointer: &'t Pointer<'t>,
+	#[allow(dead_code)] shm: &'t Shm<'t>,
 	pool: Option<Pool<'t>>,
-	compositor: &'t Compositor<'t>,
+	#[allow(dead_code)] compositor: &'t Compositor<'t>,
 	surface: Option<Surface<'t>>,
 	serial: u32,
 }
@@ -63,8 +63,7 @@ impl Cursor<'_> {
 	}
 }
 
-#[throws] pub fn run(widget: &mut dyn Widget/*, idle: &mut dyn FnMut(&mut dyn Widget)->Result<bool>*/) {
-	let run_start_time = std::time::Instant::now();
+#[throws] pub fn run(widget: &mut dyn Widget, idle: &mut dyn FnMut(&mut dyn Widget)->Result<bool>) {
 	let server = std::os::unix::net::UnixStream::connect({
 		let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
 		path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
@@ -104,35 +103,9 @@ impl Cursor<'_> {
 	shm.create_pool(&shm_pool, &file, 4096);
 	let ref mut pool = Pool{file, shm_pool, buffer: server.new(), target: Target::new(zero(), &mut [])};
 
-	#[throws] fn paint(pool: &mut Pool, size: size, widget: &mut dyn Widget, surface: &Surface) {
-		assert!(size.x > 0 && size.y > 0);
-		if pool.target.size != size {
-			let old_length = (pool.target.size.y*pool.target.size.x*4) as usize;
-			let length = (size.y*size.x*4) as usize;
-			if length > old_length {
-				rustix::fs::ftruncate(&pool.file, length as u64).unwrap(); // It is the client's responsibility to ensure that the file is at least as big as the new pool size
-				pool.shm_pool.resize(length as u32); //  This request can only be used to make the pool bigger
-			}
-			if !pool.target.size.is_zero() { pool.buffer.destroy(); }
-			pool.shm_pool.create_buffer(&pool.buffer, 0, size.x, size.y, size.x*4, shm_pool::Format::xrgb8888);
-			//println!("create_buffer {size:?}");
-
-			let mmap = unsafe{std::slice::from_raw_parts_mut(
-				rustix::mm::mmap(std::ptr::null_mut(), length, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &pool.file, 0).unwrap() as *mut u8,
-				length)};
-			pool.target = Target::new(size, bytemuck::cast_slice_mut(mmap));
-		}
-		pool.target.fill(bgra{b:0, g:0, r:0, a:0xFF});
-		//target.fill(bgra{b:0xFF, g:0xFF, r:0xFF, a:0xFF});
-		let size = pool.target.size;
-		widget.paint(&mut pool.target, size, zero())?;
-		surface.attach(&pool.buffer,0,0);
-		surface.damage_buffer(0, 0, pool.target.size.x, pool.target.size.y);
-		surface.commit();
-	}
-
 	let mut configure_bounds = zero();
 	let mut size = zero();
+	let mut can_paint = false;
 	let mut modifiers_state = ModifiersState::default();
 	let mut pointer_position = int2::default();
 	let mut mouse_buttons = 0;
@@ -141,6 +114,7 @@ impl Cursor<'_> {
 	let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
 
 	loop {
+		let mut paint = idle(widget).unwrap();
 		let events = {
 			let fd = server.server.borrow();
 			let ref mut fds = vec![rustix::io::PollFd::new(&*fd, rustix::io::PollFlags::IN)];
@@ -150,7 +124,7 @@ impl Cursor<'_> {
 				)?;
 				fds.push(rustix::io::PollFd::new(&timerfd, rustix::io::PollFlags::IN));
 			}
-			rustix::io::poll(fds, -1)?;
+			rustix::io::poll(fds, if paint {0} else {-1})?;
 			fds.iter().map(|fd| fd.revents().contains(rustix::io::PollFlags::IN)).collect::<Box<_>>()
 		};
 		if events[0] {
@@ -196,23 +170,18 @@ impl Cursor<'_> {
 
 			else if id == toplevel.id && opcode == toplevel::configure_bounds {
 				let [UInt(_width),UInt(_height)] = server.args({use Type::*; [UInt,UInt]}) else {panic!()};
-				//configure_bounds = xy{x:width as u32*scale_factor, y:height as u32*scale_factor};
-				//panic!("{configure_bounds:?}");
 			}
 			else if id == toplevel.id && opcode == toplevel::configure {
 				let [UInt(x),UInt(y),_] = server.args({use Type::*; [UInt,UInt,Array]}) else {panic!()};
 				size = xy{x: x*scale_factor, y: y*scale_factor};
-				//println!("configure {size:?}");
 				if size.is_zero() { assert!(configure_bounds.x > 0 && configure_bounds.y > 0); size = widget.size(configure_bounds); }
 				assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
-				//vector::component_wise_min(size, widget.size(size));
-				// unscaled_size=xy{x:width as u32, y:height as u32};
 			}
 			else if id == xdg_surface.id && opcode == xdg_surface::configure {
 				let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {panic!()};
 				xdg_surface.ack_configure(serial);
-				paint(pool, size, widget, surface)?;
-				//eprintln!("paint {:?}", (std::time::Instant::now()-run_start_time));
+				can_paint = true;
+				paint = true;
 			}
 			else if id == surface.id && opcode == surface::enter {
 				let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {panic!()};
@@ -229,25 +198,19 @@ impl Cursor<'_> {
 			else if id == pointer.id && opcode == pointer::motion {
 				let [_,Int(x),Int(y)] = server.args({use Type::*; [UInt,Int,Int]}) else {panic!()};
 				pointer_position = xy{x: x*scale_factor as i32/256,y: y*scale_factor as i32/256};
-				if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Motion{position: pointer_position, mouse_buttons})? {
-					paint(pool, size, widget, surface)?;
-				}
+				if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Motion{position: pointer_position, mouse_buttons})? { paint=true }
 			}
 			else if id == pointer.id && opcode == pointer::button {
 				let [_,_,UInt(button),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {panic!()};
 				#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
 				let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
 				if state>0 { mouse_buttons |= 1<<button; } else { mouse_buttons &= !(1<<button); }
-				if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
-						paint(pool, size, widget, surface)?;
-				}
+				if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? { paint=true; }
 			}
 			else if id == pointer.id && opcode == pointer::axis {
 				let [_,UInt(axis),Int(value)] = server.args({use Type::*; [UInt,UInt,Int]}) else {panic!()};
 				if axis != 0 { continue; }
-				if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Scroll(value*scale_factor as i32/256))? {
-					paint(pool, size, widget, surface)?;
-				}
+				if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Scroll(value*scale_factor as i32/256))? { paint=true; }
 			}
 			else if id == pointer.id && opcode == pointer::frame {
 				server.args([]);
@@ -305,9 +268,7 @@ impl Cursor<'_> {
 					'�',',','�','�','¥','◆','◆','⎄'][key as usize];
 				if state > 0 {
 					if key == '⎋' { break; }
-					if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Key(key))? {
-						paint(pool, size, widget, surface)?;
-					}
+					if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Key(key))? { paint=true; }
 					let linux_raw_sys::general::__kernel_timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
 					let base = tv_sec as u64*1000+tv_nsec as u64/1000000;
 					//let time = base&0xFFFFFFFF_00000000 + key_time as u64;
@@ -329,10 +290,34 @@ impl Cursor<'_> {
 			else { panic!("{:?} {opcode:?}", id); }
 		}
 		if events.len() > 1 && events[1] && let Some((msec, key)) = repeat {
-			if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Key(key))? {
-				paint(pool, size, widget, surface)?;
-			}
+			if widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Key(key))? { paint=true; }
 			repeat = Some((msec+33, key));
+		}
+		if paint && can_paint {
+			assert!(size.x > 0 && size.y > 0);
+			if pool.target.size != size {
+				let old_length = (pool.target.size.y*pool.target.size.x*4) as usize;
+				let length = (size.y*size.x*4) as usize;
+				if length > old_length {
+					rustix::fs::ftruncate(&pool.file, length as u64).unwrap(); // It is the client's responsibility to ensure that the file is at least as big as the new pool size
+					pool.shm_pool.resize(length as u32); //  This request can only be used to make the pool bigger
+				}
+				if !pool.target.size.is_zero() { pool.buffer.destroy(); }
+				pool.shm_pool.create_buffer(&pool.buffer, 0, size.x, size.y, size.x*4, shm_pool::Format::xrgb8888);
+				//println!("create_buffer {size:?}");
+
+				let mmap = unsafe{std::slice::from_raw_parts_mut(
+					rustix::mm::mmap(std::ptr::null_mut(), length, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &pool.file, 0).unwrap() as *mut u8,
+					length)};
+				pool.target = Target::new(size, bytemuck::cast_slice_mut(mmap));
+			}
+			//pool.target.fill(bgra{b:0, g:0, r:0, a:0xFF});
+			//target.fill(bgra{b:0xFF, g:0xFF, r:0xFF, a:0xFF});
+			let size = pool.target.size;
+			widget.paint(&mut pool.target, size, zero())?;
+			surface.attach(&pool.buffer,0,0);
+			surface.damage_buffer(0, 0, pool.target.size.x, pool.target.size.y);
+			surface.commit();
 		}
 	}
 }
