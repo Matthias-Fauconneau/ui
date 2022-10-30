@@ -6,7 +6,7 @@ pub(crate) mod prelude { pub use {fehler::throws, super::{Error, Result}}; }
 pub mod color;
 pub use num::Ratio;
 pub mod widget; pub use widget::{Widget, Target, size, int2};
-mod app; pub use app::run;
+mod app; pub use app::{Device, run};
 #[cfg(feature="font")] pub mod font;
 #[cfg(feature="text")] pub mod text; //cfg_if! { if #[cfg(fecd ature="text")] { pub mod text; pub use text::{Text, default_font, default_style}; }}
 #[cfg(feature="graphic")] pub mod graphic; #[cfg(feature="graphic")] pub use graphic::Graphic;

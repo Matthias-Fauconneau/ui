@@ -1,6 +1,7 @@
 use super::Result;
 pub use vector::{size, int2, vec2, xy};
-pub type Target<'t> = image::Image<&'t mut [image::bgra8]>;
+pub struct DMABuf {pub format: u32, pub fd: std::os::fd::OwnedFd, pub modifiers: u64}
+pub type Target = Option<DMABuf>;
 #[derive(Default,Clone,Copy)] pub struct ModifiersState { pub shift: bool, pub ctrl: bool, pub logo: bool, pub alt: bool }
 
 pub struct EventContext<'e, 't> {

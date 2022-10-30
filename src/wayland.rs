@@ -45,7 +45,7 @@ impl Server {
 		let mut request = Vec::new();
 		use std::io::Write;
 		let size = (2+N as u32+args.iter().map(|arg| if let Arg::String(arg) = arg { (arg.as_bytes().len() as u32+1+3)/4 } else { 0 }).sum::<u32>())*4;
-		request.write(bytemuck::bytes_of(&Message{id, size: size as u16, opcode})).unwrap();
+		request.write(bytemuck::bytes_of(&Message{id, opcode, size: size as u16})).unwrap();
 		for arg in args { use Arg::*; match arg {
 			UInt(arg) => { request.write(bytemuck::bytes_of(&arg)).unwrap(); },
 			String(arg) => {
@@ -61,7 +61,17 @@ impl Server {
 			use {std::os::unix::io::AsRawFd, nix::sys::socket::{sendmsg,ControlMessage,MsgFlags}};
 			sendmsg::<()>(self.server.borrow_mut().as_raw_fd(), &[std::io::IoSlice::new(&request)], &[ControlMessage::ScmRights(&[fd])], MsgFlags::empty(), None).unwrap();
 		} else {
-			self.server.borrow_mut().write(&request).unwrap();
+			if let Err(e) = {let mut server = self.server.borrow_mut(); let r = server.write(&request); drop(server); r} {
+				println!("{e}");
+				loop {
+					let Message{id, opcode, ..} = message(&mut *self.server.borrow_mut());
+					/**/ if id == 1 && opcode == display::error {
+						use Arg::*;
+						let [UInt(id), UInt(code), String(message)] = self.args({use Type::*; [UInt, UInt, String]}) else {unreachable!()};
+						panic!("{id} {code} {message}");
+					} else { println!("{id} {opcode}"); }
+				}
+			}
 		}
 	}
 	#[track_caller] fn request<const N: usize>(&self, id: u32, opcode: u16, args: [Arg; N]) { self.sendmsg(id, opcode, args, None) }
@@ -83,9 +93,6 @@ impl Server {
 		globals
 	}
 }
-/*impl std::io::Read for Server {
-	fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.server.read(buf) }
-}*/
 
 // display: sync, get_registry(registry); error(id, code, message: string)
 pub(crate) mod display {
@@ -115,6 +122,47 @@ pub(crate) mod registry {
 }
 pub use registry::Registry;
 
+// buffer: destroy; release
+pub(crate) mod buffer {
+	pub const release: u16 = 0;
+	enum Requests { destroy }
+	use super::{Server};
+	pub struct Buffer<'t>{server: &'t Server, pub(crate) id: u32}
+	impl<'t> From<(&'t Server, u32)> for Buffer<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
+	impl Buffer<'_> {
+		pub fn destroy(&self) { self.server.request(self.id, Requests::destroy as u16, []); }
+	}
+}
+pub use buffer::Buffer;
+
+// dmabuf: create_params(params); format, modifier
+pub(crate) mod dmabuf {
+	pub const format: u16 = 0;
+	pub const modifier: u16 = 1;
+	enum Requests { _destroy, create_params }
+	use super::{Server, Arg::*, *};
+	pub struct DMABuf<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
+	// params: destroy, add(fd, plane_index, offset, stride, modifier_hi, modifier_lo), create(width, height, format, flags); created, failed
+	pub(crate) mod params {
+		pub const created: u16 = 0;
+		pub const failed: u16 = 1;
+		enum Requests { destroy, add, _create, create_immed }
+		use super::{Server, *};
+		pub struct Params<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
+		impl<'t> From<(&'t Server, u32)> for Params<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
+		impl Params<'_> {
+			pub fn destroy(&self) { self.server.request(self.id, Requests::destroy as u16, []) }
+			pub fn add(&self, fd: &impl std::os::unix::io::AsRawFd, plane_index: u32, offset: u32, stride: u32, modifier_hi: u32, modifier_lo: u32) { self.server.sendmsg(self.id, Requests::add as u16, [UInt(plane_index),UInt(offset),UInt(stride),UInt(modifier_hi),UInt(modifier_lo)], Some(fd.as_raw_fd())) }
+			pub fn create_immed(&self, buffer: &Buffer, width: u32, height: u32, format_: u32, flags: u32) { self.server.request(self.id, Requests::create_immed as u16, [UInt(buffer.id), UInt(width),UInt(height),UInt(format_),UInt(flags)]) }
+		}
+	}
+	pub use params::Params;
+	impl DMABuf<'_> {
+		#[track_caller] pub fn create_params(&self, params: &Params) { self.server.request(self.id, Requests::create_params as u16, [UInt(params.id)]) }
+	}
+}
+pub use self::dmabuf::DMABuf;
+
 // compositor: create_surface(surface)
 pub(crate) mod compositor {
 	enum Requests { create_surface }
@@ -134,8 +182,7 @@ pub(crate) mod output {
 	use super::{Server};
 	pub struct Output<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Output<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
-	impl Output<'_> {
-	}
+	impl Output<'_> {}
 }
 pub use output::Output;
 
@@ -196,54 +243,9 @@ pub(crate) mod keyboard {
 	use super::{Server};
 	pub struct Keyboard<'t>{server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Keyboard<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
-	impl Keyboard<'_> {
-	}
+	impl Keyboard<'_> {}
 }
 pub use keyboard::Keyboard;
-
-// shm: create_pool(shm_pool, fd, size); format(uint)
-pub(crate) mod shm {
-	pub const format: u16 = 0;
-	enum Requests { create_pool }
-	pub struct Shm<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
-	impl<'t> From<(&'t Server, u32)> for Shm<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
-	use super::{Arg::*, *};
-	impl Shm<'_> {
-		pub fn create_pool(&self, shm_pool: &ShmPool, fd: &impl std::os::unix::io::AsRawFd, size: u32) {
-			self.server.sendmsg(self.id, Requests::create_pool as u16, [UInt(shm_pool.id),UInt(size)], Some(fd.as_raw_fd()));
-		}
-	}
-}
-pub use shm::Shm;
-
-// shm_pool: create_buffer(buffer, offset, width, height, stride, shm.format), resize(size)
-pub mod shm_pool {
-	enum Requests { create_buffer, destroy, resize }
-	pub struct ShmPool<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
-	impl<'t> From<(&'t Server, u32)> for ShmPool<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
-	use super::{Arg::*, *};
-	impl ShmPool<'_> {
-		pub fn create_buffer(&self, buffer: &Buffer, offset: u32, width: u32, height: u32, stride: u32, format: Format) {
-			self.server.request(self.id, Requests::create_buffer as u16, [UInt(buffer.id),UInt(offset),UInt(width),UInt(height),UInt(stride),UInt(format as u32)]);
-		}
-		pub fn resize(&self, size: u32) { self.server.request(self.id, Requests::resize as u16, [UInt(size)]); }
-	}
-	pub enum Format { argb8888, xrgb8888 }
-}
-pub use shm_pool::ShmPool;
-
-// buffer: destroy; release
-pub(crate) mod buffer {
-	pub const release: u16 = 0;
-	enum Requests { destroy }
-	use super::{Server};
-	pub struct Buffer<'t>{server: &'t Server, pub(crate) id: u32}
-	impl<'t> From<(&'t Server, u32)> for Buffer<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
-	impl Buffer<'_> {
-		pub fn destroy(&self) { self.server.request(self.id, Requests::destroy as u16, []); }
-	}
-}
-pub use buffer::Buffer;
 
 // wm_base: destroy, create_positioner, get_xdg_surface(xdg_surface, surface), pong(serial); ping(serial)
 pub(crate) mod wm_base {

@@ -28,6 +28,7 @@ rustix={version='*', features=['fs','mm','time']}
 dirs='*'
 memmap={version='*', package='memmapix', optional=true}
 nix={version='*', default-features = false, features = ['socket','uio']}
+drm='*'
 
 image={git='https://github.com/Matthias-Fauconneau/image'}
 text-size={version='*', optional=true}
