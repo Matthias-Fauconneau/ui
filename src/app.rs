@@ -6,6 +6,7 @@ impl Device { pub fn new(path: &str) -> Self { Self(std::fs::OpenOptions::new().
 impl std::os::fd::AsFd for Device { fn as_fd(&self) -> std::os::fd::BorrowedFd { self.0.as_fd() } }
 impl std::os::fd::AsRawFd for Device { fn as_raw_fd(&self) -> std::os::fd::RawFd { self.0.as_raw_fd() } }
 impl ::drm::Device for Device {}
+impl ::drm::control::Device for Device {}
 
 pub struct Cursor<'t> {
 	name: &'static str,
@@ -61,7 +62,7 @@ impl Cursor<'_> {
 	}
 }
 
-pub fn run(widget: &mut dyn Widget, idle: &mut dyn FnMut(&mut dyn Widget)->Result<bool>) -> Result<()> {
+pub fn run<T:Widget>(widget: &mut T, idle: &mut dyn FnMut(&mut T)->Result<bool>) -> Result<()> {
 	let server = std::os::unix::net::UnixStream::connect({
 		let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
 		path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
@@ -80,6 +81,11 @@ pub fn run(widget: &mut dyn Widget, idle: &mut dyn FnMut(&mut dyn Widget)->Resul
 	let ref seat = Seat{server, id: seat};
 	let ref output = Output{server, id: output};
 
+	let ref pointer = server.new();
+	seat.get_pointer(pointer);
+	let ref keyboard = server.new();
+	seat.get_keyboard(keyboard);
+
 	let ref surface = server.new();
 	compositor.create_surface(surface);
 	let ref xdg_surface = server.new();
@@ -88,15 +94,13 @@ pub fn run(widget: &mut dyn Widget, idle: &mut dyn FnMut(&mut dyn Widget)->Resul
 	xdg_surface.get_toplevel(toplevel);
 	toplevel.set_title("App");
 	surface.commit();
-	let mut scale_factor = 0;
 
-	let ref pointer = server.new();
-	seat.get_pointer(pointer);
-	let ref keyboard = server.new();
-	seat.get_keyboard(keyboard);
+	let device = Device::new("/dev/dri/card0");
 
+	let mut buffer = None;
 	let ref params : dmabuf::Params = server.new();
-	let ref buffer : Buffer = server.new();
+	let ref buffer_ref : Buffer = server.new();
+	let mut scale_factor = 0;
 	let mut configure_bounds = zero();
 	let mut size = zero();
 	let mut can_paint = false;
@@ -130,7 +134,7 @@ pub fn run(widget: &mut dyn Widget, idle: &mut dyn FnMut(&mut dyn Widget)->Resul
 				}
 				else if id == display.id && opcode == display::delete_id {
 					let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-					assert!(id == params.id || id == buffer.id); // Reused immediately
+					assert!(id == params.id || id == buffer_ref.id); // Reused immediately
 				}
 				else if id == dmabuf.id && opcode == dmabuf::format {
 					let [UInt(format)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
@@ -184,7 +188,7 @@ pub fn run(widget: &mut dyn Widget, idle: &mut dyn FnMut(&mut dyn Widget)->Resul
 				else if id == surface.id && opcode == surface::enter {
 					let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 				}
-				else if id == buffer.id && opcode == buffer::release {
+				else if id == buffer_ref.id && opcode == buffer::release {
 				}
 				else if id == pointer.id && opcode == pointer::enter {
 					let [UInt(serial),_,_,_] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
@@ -296,16 +300,23 @@ pub fn run(widget: &mut dyn Widget, idle: &mut dyn FnMut(&mut dyn Widget)->Resul
 		}
 		if paint && can_paint {
 			assert!(size.x > 0 && size.y > 0);
-			let mut target = None;
-			widget.paint(&mut target, size, zero())?;
-			let Some(target) = target.take() else {unreachable!()};
+			use drm::{control::Device as _, buffer::Buffer as _};
+			let mut buffer = buffer.get_or_insert_with(|| device.create_dumb_buffer(size.into(), drm::buffer::DrmFourcc::Xrgb2101010, 32).unwrap() );
+			{
+				let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
+				let mut map = device.map_dumb_buffer(&mut buffer)?;
+				widget.paint(&mut image::Image::cast_slice_mut(map.as_mut(), size, stride), size, zero())?;
+			}
 			dmabuf.create_params(params);
-			params.add(&target.fd, 0, 0, target.size.x*4, (target.modifiers>>32) as u32, target.modifiers as u32);
-			params.create_immed(buffer, target.size.x, target.size.y, target.format, 0);
+			use std::os::fd::FromRawFd;
+			let fd = unsafe{std::os::fd::OwnedFd::from_raw_fd(device.buffer_to_prime_fd(buffer.handle(), 0)?)};
+			let modifiers = 0u64;
+			params.add(&fd, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
+			params.create_immed(buffer_ref, buffer.size().0, buffer.size().1, buffer.format() as u32, 0);
 			params.destroy();
-			surface.attach(&buffer,0,0);
-			buffer.destroy();
-			surface.damage_buffer(0, 0, target.size.x, target.size.y);
+			surface.attach(&buffer_ref,0,0);
+			buffer_ref.destroy();
+			surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
 			surface.commit();
 		}
 	}

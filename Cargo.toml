@@ -23,7 +23,7 @@ trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 
 kurbo={version='*', optional=true}
 
-linux-raw-sys='0.0'
+linux-raw-sys='0.1'
 rustix={version='*', features=['fs','mm','time']}
 dirs='*'
 memmap={version='*', package='memmapix', optional=true}
