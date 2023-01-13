@@ -10,10 +10,12 @@ example=[
 font=['derive-more','memmap','owning-ref','ttf-parser','kurbo']
 text=['derive-more','text-size','unicode-segmentation','font','rustybuzz']
 edit=['text','xcursor']
+plot=['text','itertools']
 
 [dependencies]
 fehler='*'
 derive-more={version='*', package='derive_more', optional=true}
+itertools={version='*', optional=true}
 owning-ref={version='*', package='owning_ref', optional=true}
 bytemuck='*'
 
@@ -33,6 +35,6 @@ drm='*'
 image={git='https://github.com/Matthias-Fauconneau/image'}
 text-size={version='*', optional=true}
 unicode-segmentation={version='*', optional=true}
-ttf-parser={version='*', optional=true}
+ttf-parser={version='0.17', optional=true}
 rustybuzz={version='*', optional=true}
 xcursor={version='*', optional=true}

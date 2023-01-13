@@ -68,13 +68,13 @@ const fn from(color: Color) -> Attribute<Style> { Attribute{range: 0../*Grapheme
 impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { from(color) } }
 
 #[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(||
-	["/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf","/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(std::path::Path::new(p)).unwrap()));
+	["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(std::path::Path::new(p)).unwrap()));
 pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| std::ops::Deref::deref(x)) }
-//#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:0.,r:0.,g:0.})];
-#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
+#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:0.,r:0.,g:0.})];
+//#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
 
 use {std::{sync::Mutex, collections::BTreeMap}, image::Image};
-pub static CACHE: Mutex<BTreeMap<(Ratio, GlyphId),(Image<Box<[u8]>>,Image<Box<[u8]>>)>> = Mutex::new(BTreeMap::new());
+pub static CACHE: Mutex<BTreeMap<(Ratio, GlyphId),(Image<Box<[u16]>>,Image<Box<[u16]>>,Image<Box<[f32]>>)>> = Mutex::new(BTreeMap::new());
 
 pub struct View<'t, D> {
     pub font : Font<'t>,
@@ -98,7 +98,7 @@ impl<D:AsRef<str>> View<'_, D> {
 		*size.get_or_insert_with(||{
 			let text = data.as_ref();
 			let (line_count, max_width) = line_ranges(&text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(layout(font, &line).into_iter()).width)));
-			assert!(max_width > 0);
+			//assert!(max_width > 0);
 			xy{x: max_width, y: line_count * (font[0].height() as u32)}
 		})
 	}
@@ -109,6 +109,8 @@ impl<D:AsRef<str>> View<'_, D> {
 	}
 	pub fn scale(&mut self, fit: size) -> Ratio { self.size_scale(fit).1 }
 }
+
+impl<D:AsRef<str>> std::fmt::Debug for View<'_, D> { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.data.as_ref().fmt(f) } }
 
 #[derive(PartialEq,Eq,PartialOrd,Ord,Clone,Copy,Debug)] pub struct LineColumn {
 	pub line: usize,
@@ -201,9 +203,9 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				}
 
 				let mut cache = CACHE.lock().unwrap();
-				let coverage = cache.entry((scale, id)).or_insert_with(|| {
+				let (coverage_pq10, one_minus_coverage_pq10, coverage) = cache.entry((scale, id)).or_insert_with(|| {
 					let linear = font::Rasterize::rasterize(face, scale, id, bbox);
-					(image::from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::sRGB8(1.-v))))
+					(image::from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::PQ10(1.-v))), linear)
 				});
 
 				let position = xy{
@@ -215,15 +217,22 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				let target_size = target.size.signed() - offset;
 				let target_offset = vector::component_wise_max(zero(), offset).unsigned();
 				let source_offset = vector::component_wise_max(zero(), -offset);
-				let source_size = coverage.0.size.signed() - source_offset;
+				let source_size = coverage.size.signed() - source_offset;
 				let size = vector::component_wise_min(source_size, target_size);
 				if size.x > 0 && size.y > 0 {
 					let size = size.unsigned();
-					let color = style.map(|x|x.attribute.color).unwrap_or((1.).into());
-					if /*(color.b+color.g+color.r)/3. > 1./2.*/color != zero() { // Bright (on black)
-						image::multiply(&mut target.slice_mut(target_offset, size), color, &coverage.0.slice(source_offset.unsigned(), size));
-					} else { // Dark (on white)
-						target.slice_mut(target_offset, size).set_map(&coverage.1.slice(source_offset.unsigned(), size), |_,&s| image::bgra{a : 0xFF, b: s as u8, g: s as u8, r: s as u8}); // FIXME: color
+					let color = style.map(|x|x.attribute.color).unwrap_or((0.).into());
+					if (color.b+color.g+color.r)/3. > 1./2./*color != zero()*/ { // Bright (on black)
+						image::multiply(&mut target.slice_mut(target_offset, size), color, &coverage_pq10.slice(source_offset.unsigned(), size));
+					} else if color == zero() { // Dark (on white)
+						target.slice_mut(target_offset, size).set_map(&one_minus_coverage_pq10.slice(source_offset.unsigned(), size), |_,&s| {
+							let s = s as u32;
+							(s<<20) | (s<<10) | s
+						});
+					} else { // Color on white
+						target.slice_mut(target_offset, size).set_map(&coverage.slice(source_offset.unsigned(), size), |_,&s| {
+							(s*color + (1.-s)*bgr::from(1.)/*white background*/).into() // PQ10
+						});
 					}
 				}
 			}

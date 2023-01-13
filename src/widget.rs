@@ -24,3 +24,6 @@ pub trait Widget {
     fn paint(&mut self, context: &mut Target, size: size, offset: int2) -> Result;
     fn event(&mut self, _size: size, _event_context: &mut EventContext, _event: &Event) -> Result<bool> { Ok(false) }
 }
+
+pub struct Dyn<T>(pub T);
+impl<F:Fn(&mut Target, size, int2)->Result> Widget for Dyn<F> { fn paint(&mut self, target: &mut Target, size: size, offset: int2) -> Result { (self.0)(target,size,offset) } }
