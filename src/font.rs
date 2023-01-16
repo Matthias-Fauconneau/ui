@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use vector::{xy, vec2, Rect};
 
 pub fn rect(r: ttf_parser::Rect) -> Rect { Rect{min: xy{ x: r.x_min as i32, y: r.y_min as i32}, max: xy{ x: r.x_max as i32, y: r.y_max as i32} } }
@@ -87,10 +89,22 @@ impl ttf_parser::OutlineBuilder for PathEncoder<'_> {
 
 use {fehler::throws, super::Error};
 #[derive(derive_more::Deref)] pub struct Handle<'t>(Face<'t>);
-pub type File<'t> = owning_ref::OwningHandle<Box<memmap::Mmap>, Handle<'t>>;
+pub struct MemoryMap{ ptr: *mut core::ffi::c_void, len: usize }
+impl MemoryMap {
+	fn map<Fd: std::os::fd::AsFd>(fd: Fd) -> rustix::io::Result<Self> { unsafe {
+		use rustix::{fs, mm};
+		let len = fs::fstat(&fd)?.st_size as usize;
+		Ok(Self{ptr: mm::mmap(std::ptr::null_mut(), len, mm::ProtFlags::READ, mm::MapFlags::SHARED, fd, 0)?, len})
+	}}
+}
+impl Deref for MemoryMap { type Target = [u8]; fn deref(&self) -> &Self::Target { unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) } } }
+impl Drop for MemoryMap { fn drop(&mut self) { unsafe { rustix::mm::munmap(self.ptr, self.len).unwrap() } } }
+unsafe impl Sync for MemoryMap {}
+unsafe impl Send for MemoryMap {}
+pub type File<'t> = owning_ref::OwningHandle<Box<MemoryMap>, Handle<'t>>;
 #[throws] pub fn open<'t>(path: &std::path::Path) -> File<'t> {
 	owning_ref::OwningHandle::new_with_fn(
-		Box::new(unsafe{memmap::Mmap::map(&std::fs::File::open(path)?)}?),
+		Box::new(MemoryMap::map(&std::fs::File::open(path)?)?),
 		unsafe { |map| Handle(Face::from_slice(&*map, 0).unwrap()) }
 	)
 }

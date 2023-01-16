@@ -7,7 +7,7 @@ example=[
 ]
 
 [features]
-font=['derive-more','memmap','owning-ref','ttf-parser','kurbo']
+font=['derive-more','owning-ref','ttf-parser','kurbo']
 text=['derive-more','text-size','unicode-segmentation','font','rustybuzz']
 edit=['text','xcursor']
 plot=['text','itertools']
@@ -28,7 +28,6 @@ kurbo={version='*', optional=true}
 linux-raw-sys='0.1'
 rustix={version='*', features=['fs','mm','time']}
 dirs='*'
-memmap={version='*', package='memmapix', optional=true}
 nix={version='*', default-features = false, features = ['socket','uio']}
 drm='*'
 
