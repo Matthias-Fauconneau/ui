@@ -266,3 +266,4 @@ impl<T,S:AsRef<[Attribute<Style>]>> AsRef<[Attribute<Style>]> for Buffer<T,S> { 
 pub type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
 pub fn text<'t>(text: &'t str, style: &'t [Attribute<Style>]) -> View<'static, Borrowed<'t>> { View::new(crate::text::Borrowed{text, style}) }
 pub fn with_color<'t>(color: Color, text: &'t str, style: &'t [Attribute<Style>]) -> View<'static, Borrowed<'t>> { View::with_color(color, crate::text::Borrowed{text, style}) }
+pub type Text = View<'static, Borrowed<'static>>;

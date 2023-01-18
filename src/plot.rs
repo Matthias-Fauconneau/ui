@@ -80,7 +80,7 @@ impl crate::Widget for Plot<'_> {
 
 	let colors =
 		if sets.len() == 1 { [fg].into() }
-		else { map(0..sets.len(), |i| bgrf::from(crate::color::LCh{L: if fg>bg { 100. } else { 75./*53.*/ }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(sets.len() as f32)})) };
+		else { map(0..sets.len(), |i| bgrf::from(crate::color::LCh{L: if fg>bg { 100. } else { 66.6/*75.*//*53.*/ }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(sets.len() as f32)})) };
 
 	let ticks = |Range{end,..}| {
 		if end == 0. { return (zero(), [(0.,"0".to_string())].into(), ""); }
