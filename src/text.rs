@@ -225,9 +225,9 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				if size.x > 0 && size.y > 0 {
 					let size = size.unsigned();
 					let color = style.map(|x|x.attribute.color).unwrap_or(self.color);
-					if color != zero() /*(color.b+color.g+color.r)/3. > 1./3.*/ { // Bright (on black)
+					/*if color != zero() /*(color.b+color.g+color.r)/3. > 1./3.*/ { // Bright (on black)
 						image::multiply(&mut target.slice_mut(target_offset, size), color, &coverage_pq10.slice(source_offset.unsigned(), size));
-					} else if color == zero() { // Dark (on white)
+					} else*/ if color == zero() { // Dark (on white)
 						target.slice_mut(target_offset, size).set_map(&one_minus_coverage_pq10.slice(source_offset.unsigned(), size), |_,&s| {
 							let s = s as u32;
 							(s<<20) | (s<<10) | s

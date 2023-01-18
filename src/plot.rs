@@ -64,7 +64,7 @@ impl<'t> Plot<'t> {
 impl crate::Widget for Plot<'_> {
 #[fehler::throws(crate::Error)] fn paint(&mut self, mut target: &mut crate::Target, _: crate::size, _: crate::int2) {
 	let [black, white] : [bgrf; 2]  = [0., 1.].map(Into::into);
-	#[allow(non_upper_case_globals)] const dark : bool = true;
+	#[allow(non_upper_case_globals)] const dark : bool = false;
 	let [bg, fg] = if dark { [black, white] } else { [white, black] };
 
 	/*let (keys, values) = {
@@ -95,9 +95,15 @@ impl crate::Widget for Plot<'_> {
 		let log10 = f64::log10(end);
 		let floor1000 = f64::floor(log10/3.); // submultiple
 		let part1000 = num::exp10(log10 - floor1000*3.); // remaining magnitude part within the submultiple: x / 1000^⌊log1000(x)⌋
-		let labels = map(0..=tick_count, |i| { let fract = (i as f64)/(tick_count as f64); (fract*end, (fract*part1000).to_string()) });
-		for [a,b] in labels.array_windows() { assert!(a.1 != b.1, "{a:?} {b:?} {:?}", (end, log10)); }
+		let labels = map(0..=tick_count, |i| {
+			let fract = (i as f64)/(tick_count as f64);
+			let label = fract*part1000;
+			let label = if part1000/(tick_count as f64) < 1. { format!("{:.1}",label) } else { (f64::round(label) as u32).to_string() };
+			(fract*end, label)
+		});
+		for [a,b] in labels.array_windows() { assert!(a.1 != b.1, "{a:?} {b:?} {:?}", (end, part1000/(tick_count as f64))); }
 		let submultiple = ["n","µ","m","","k","M","G"][(3+(floor1000 as i8)) as usize];
+		for (_, label) in &*labels { assert!(label.len() <= 4, "{label}"); }
 		((0.)..end, labels, submultiple)
 	};
 
@@ -138,8 +144,7 @@ impl crate::Widget for Plot<'_> {
 		let x_label_scale = num::Ratio{num: size.x/(ticks.x.len() as u32*2).max(5)-1, div: label_size.x.x-1};
 		let y_label_scale = num::Ratio{num: size.y/4/(ticks.y.len() as u32)-1, div: label_size.y.y-1};
 		let scale = std::cmp::min(x_label_scale, y_label_scale);
-		//let set_count = keys.iter().map(|set| set.len()).sum::<usize>();
-		let [x_label_scale, y_label_scale, key_label_scale] = [scale; 3]; //(set_count>0).then(|| num::Ratio{num: size.x/(set_count as u32*2).max(5)-1, div: y_label_size.x-1});
+		let [x_label_scale, y_label_scale, key_label_scale] = [scale; 3];
 
 		let axis_label_y = self.axis_label.y.replace("$", axis.y.submultiple);
 		let mut axis_label_y = text(&axis_label_y, bold);
