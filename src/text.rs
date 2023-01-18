@@ -64,27 +64,30 @@ pub use crate::color::bgr;
 #[derive(Clone,Copy,Default,Debug)] pub struct Style { pub color: Color, pub style: FontStyle }
 pub type TextRange = std::ops::Range<usize>;
 #[derive(Clone,derive_more::Deref,Debug)] pub struct Attribute<T> { #[deref] pub range: TextRange, pub attribute: T }
-const fn from(color: Color) -> Attribute<Style> { Attribute{range: 0../*GraphemeIndex*/usize::MAX, attribute: Style{color, style: FontStyle::Normal}} }
-impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { from(color) } }
+impl const From<Style> for Attribute<Style> { fn from(attribute: Style) -> Self { Attribute{range: 0../*GraphemeIndex*/usize::MAX, attribute} } }
+impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { Style{color, style: FontStyle::Normal}.into() } }
 
 #[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(||
 	["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(std::path::Path::new(p)).unwrap()));
 pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| std::ops::Deref::deref(x)) }
-#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:0.,r:0.,g:0.})];
-//#[allow(non_upper_case_globals)] pub const default_style: [Attribute::<Style>; 1] = [from(Color{b:1.,r:1.,g:1.})];
+#[allow(non_upper_case_globals)] pub const default_color: Color = Color{b:0.,r:0.,g:0.};
+//#[allow(non_upper_case_globals)] pub const default_color: Color = Color{b:1.,r:1.,g:1.};
+#[allow(non_upper_case_globals)] pub const bold: [Attribute::<Style>; 1] = [Style{color: default_color, style: FontStyle::Bold}.into()];
 
 use {std::{sync::Mutex, collections::BTreeMap}, image::Image};
 pub static CACHE: Mutex<BTreeMap<(Ratio, GlyphId),(Image<Box<[u16]>>,Image<Box<[u16]>>,Image<Box<[f32]>>)>> = Mutex::new(BTreeMap::new());
 
 pub struct View<'t, D> {
     pub font : Font<'t>,
+	pub color: Color,
 	pub data: D,
     pub size : Option<size>
 }
 
 impl<'t, D> View<'t, D> {
-	pub fn new(data: D) -> Self { Self{font: default_font(), data, size: None} }
-	pub fn new_with_face(face : &'t Face<'t>, data: D) -> Self { Self{font: [&face, &face], data, size: None} }
+	pub fn new(data: D) -> Self { Self{font: default_font(), color: default_color, data, size: None} }
+	pub fn with_color(color: Color, data: D) -> Self { Self{font: default_font(), color, data, size: None} }
+	pub fn with_face(face : &'t Face<'t>, data: D) -> Self { Self{font: [&face, &face], color: default_color,data, size: None} }
 }
 
 use num::{IsZero, div_ceil};
@@ -221,8 +224,8 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				let size = vector::component_wise_min(source_size, target_size);
 				if size.x > 0 && size.y > 0 {
 					let size = size.unsigned();
-					let color = style.map(|x|x.attribute.color).unwrap_or((0.).into());
-					if (color.b+color.g+color.r)/3. > 1./2./*color != zero()*/ { // Bright (on black)
+					let color = style.map(|x|x.attribute.color).unwrap_or(self.color);
+					if color != zero() /*(color.b+color.g+color.r)/3. > 1./3.*/ { // Bright (on black)
 						image::multiply(&mut target.slice_mut(target_offset, size), color, &coverage_pq10.slice(source_offset.unsigned(), size));
 					} else if color == zero() { // Dark (on white)
 						target.slice_mut(target_offset, size).set_map(&one_minus_coverage_pq10.slice(source_offset.unsigned(), size), |_,&s| {
@@ -261,3 +264,5 @@ pub struct Buffer<T, S> {
 impl<T:AsRef<str>,S> AsRef<str> for Buffer<T,S> { fn as_ref(&self) -> &str { self.text.as_ref() } }
 impl<T,S:AsRef<[Attribute<Style>]>> AsRef<[Attribute<Style>]> for Buffer<T,S> { fn as_ref(&self) -> &[Attribute<Style>] { self.style.as_ref() } }
 pub type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
+pub fn text<'t>(text: &'t str, style: &'t [Attribute<Style>]) -> View<'static, Borrowed<'t>> { View::new(crate::text::Borrowed{text, style}) }
+pub fn with_color<'t>(color: Color, text: &'t str, style: &'t [Attribute<Style>]) -> View<'static, Borrowed<'t>> { View::with_color(color, crate::text::Borrowed{text, style}) }

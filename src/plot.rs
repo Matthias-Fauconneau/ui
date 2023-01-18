@@ -44,6 +44,8 @@ fn line(target: &mut Image<&mut[u32]>, p0: vec2, p1: vec2, color: bgrf) {
 use vector::MinMax;
 type Frame = (f64, Box<[Box<[f64]>]>);
 pub struct Plot<'t> {
+	title: String,
+	axis_label: xy<String>,
 	keys: &'t [&'t [&'t str]],
 	pub values: &'t [Frame],
 	x_minmax: MinMax<f64>,
@@ -53,9 +55,9 @@ pub struct Plot<'t> {
 }
 
 impl<'t> Plot<'t> {
-	pub fn new(keys: &'t [&'t [&'t str]], values: &'t [Frame]) -> Self {
+	pub fn new(title: String, axis_label: xy<String>, keys: &'t [&'t [&'t str]], values: &'t [Frame]) -> Self {
 		for (_, value) in values { for (keys, set) in keys.iter().zip(value.iter()) { assert_eq!(keys.len(), set.len(), "{keys:?} {set:?}"); } }
-		use num::zero; Self{keys, values, x_minmax: MinMax{min: zero(), max: zero()}, sets_minmax: [].into(), top: 0, bottom: 0, left: 0, right: 0, last: 0}
+		use num::zero; Self{title, axis_label, keys, values, x_minmax: MinMax{min: zero(), max: zero()}, sets_minmax: [].into(), top: 0, bottom: 0, left: 0, right: 0, last: 0}
 	}
 }
 
@@ -69,12 +71,14 @@ impl crate::Widget for Plot<'_> {
 		let values = map(self.values, |(x,sets)| (x, map(sets.iter().zip(filter.iter()), |(set,filter)| map(set.iter().zip(filter.iter()).filter(|(_,&filter)| filter), |(&set,_)| set))));
 		(keys, values)
 	};
-	let set_count = keys.iter().map(|set| set.len()).sum::<usize>();
+
+	let [black, white] : [bgrf; 2]  = [0., 1.].map(Into::into);
+	#[allow(non_upper_case_globals)] const dark : bool = true;
+	let [bg, fg] = if dark { [black, white] } else { [white, black] };
 
 	let sets_colors = map(&*keys, |set|
-		if set.len() == 1 { [bgrf{b:0., g:0., r:0.}].into() }
-		//if set.len() == 1 { [bgrf{b:1., g:1., r:1.}].into() }
-		else { map(0..set.len(), |i| bgrf::from(crate::color::LCh{L:53., C:179., h: 2.*std::f32::consts::PI*(i as f32)/(set.len() as f32)})) }
+		if set.len() == 1 { [fg].into() }
+		else { map(0..set.len(), |i| bgrf::from(crate::color::LCh{L: if fg>bg { 100. } else { 100. /*53.*/ }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(set.len() as f32)})) }
 	);
 
 	let ticks = |MinMax{max,..}| {
@@ -102,51 +106,78 @@ impl crate::Widget for Plot<'_> {
 	fn map_y(size: size, top: u32, bottom: u32, minmax: MinMax<f64>, v: f64) -> Option<f32> { Some((size.y-bottom-1) as f32-linear_step(minmax, v)?*(size.y-top-bottom-1) as f32) }
 
 	if (x_minmax, &sets_minmax) != (self.x_minmax, &self.sets_minmax) {
-		image::fill(&mut target, (0x3FF << 20) | (0x3FF << 10) |0x3FF);
+		image::fill(&mut target, bg.into());
 
-		let mut x_ticks = map(&*x_labels, |(_,label)| crate::text::View::new(crate::text::Borrowed{text: label,style:&[]}));
+		let ref bold = [crate::text::Style{color: fg, style: crate::text::FontStyle::Bold}.into()];
+		let text = |text, style| crate::text::with_color(fg, text, style);
+		let mut x_ticks = map(&*x_labels, |(_,label)| text(label, &[]));
 		let x_label_size = vector::max(x_ticks.iter_mut().map(|tick| tick.size())).unwrap();
 
 		let sets_tick_labels = map(&*sets_data_minmax, |&minmax| ticks(minmax).1);
-		let mut sets_ticks = map(&*sets_tick_labels, |set| map(&**set, |(_,label)| crate::text::View::new(crate::text::Borrowed{text: label,style:&[]})));
+		let mut sets_ticks = map(&*sets_tick_labels, |set| map(&**set, |(_,label)| text(label, &[])));
 		let sets_tick_label_size = map(&mut *sets_ticks, |set_ticks| { vector::max(set_ticks.iter_mut().map(|tick| tick.size())).unwrap() });
 
 		let sets_styles = map(&*sets_colors, |set| map(&**set, |&color| (Box::from([color.into()]))));
 		let mut sets_labels = map(keys.iter().zip(sets_styles.iter()),
-			|(keys, styles)| map(keys.iter().zip(styles.iter()), |(key,style)| crate::text::View::new(crate::text::Borrowed{text: key, style}))
+			|(keys, styles)| map(keys.iter().zip(styles.iter()), |(key,style)| text(key, style))
 		);
 		let sets_label_size = vector::max( sets_labels.iter_mut().map(|set| { vector::max(set.iter_mut().map(|label| label.size())).unwrap() }) ).unwrap();
-		//assert!(sets_label_size.y < 1145, "{} {}", format!("{:?}", sets_labels), sets_labels.iter_mut().map(|set| { vector::max(set.iter_mut().map(|label| label.size())).unwrap() }).format(" "));
 
 		let x_label_scale = num::Ratio{num: size.x/(x_labels.len() as u32*2).max(5)-1, div: x_label_size.x-1};
 		let y_label_scale = sets_tick_labels.iter().zip(sets_tick_label_size.iter()).map(|(labels, label_size)| num::Ratio{num: size.y/4/(labels.len() as u32)-1, div: label_size.y-1}).min().unwrap();
 		let scale = std::cmp::min(x_label_scale, y_label_scale);
+		//let set_count = keys.iter().map(|set| set.len()).sum::<usize>();
 		let [x_label_scale, y_label_scale, sets_label_scale] = [scale; 3]; //(set_count>0).then(|| num::Ratio{num: size.x/(set_count as u32*2).max(5)-1, div: sets_label_size.x-1});
 
-		self.top = (y_label_scale*sets_label_size.y).max(((sets_tick_label_size.iter().map(|&label_size| y_label_scale.ceil(label_size.y)).max().unwrap() + 1) / 2).min(size.y/4));
-		//assert!(self.top < 1829, "{:?}", (self.top, y_label_scale, sets_label_size.y, size.y/4));
-		self.bottom = (x_label_scale * x_label_size.y).min(size.y/4);
+		let mut axis_label_y = text(&self.axis_label.y, bold);
+		let top = (scale*axis_label_y.size().y).max(((sets_tick_label_size.iter().map(|&label_size| y_label_scale.ceil(label_size.y)).max().unwrap() + 1) / 2).min(size.y/4));
 		let [left, right] = [0,1].map(|i|
 			(if let Some(&label_size) = sets_tick_label_size.get(i) { y_label_scale.ceil(label_size.x) } else { 0 })
 				.max((x_label_scale.ceil(x_label_size.x)+1)/2).min(size.x/4)
 		);
-		self.left = left;
-		self.right = right;
+		let mut axis_label_x = text(&self.axis_label.x, bold);
+		let axis_label_x_inline = scale*axis_label_x.size().x < right;
+		let bottom = (x_label_scale * x_label_size.y + if axis_label_x_inline { 0 } else { scale * axis_label_x.size().y }).min(size.y/4);
 
+		(self.left, self.right, self.top, self.bottom) = (left,right,top,bottom);
+
+		// Title
+		let mut title = text(&self.title, bold);
+		let p = xy{x: (size.x/scale-title.size().x)/2, y: 0};
+		title.paint(&mut target, size, scale, p.signed());
+
+		// Key
 		for (i, label) in sets_labels.iter_mut().map(|set| set.iter_mut()).flatten().enumerate() {
-			label.paint(&mut target, size, sets_label_scale, (xy{x: left+(i as u32)*(size.x-right-left)/(set_count as u32), y: 0}/sets_label_scale).signed());
+			let y = (i as u32)*(sets_label_scale*sets_label_size.y);
+			//let y = (i as u32)*(size.y-bottom-top)/(set_count as u32);
+			label.paint(&mut target, size, sets_label_scale, (xy{x: size.x-right-sets_label_scale*sets_label_size.x, y: top+y}/sets_label_scale).signed());
+			//xy{x: left+(i as u32)*(size.x-right-left)/(set_count as u32), y: 0}/sets_label_scale
 		}
 
-		let fg = 0;//(0x3FF << 20) | (0x3FF << 10) | 0x3FF;
-		target.slice_mut(xy{x: left, y: size.y-self.bottom}, xy{x: size.x-right-left, y: 1}).set(|_| fg); // horizontal axis
-		target.slice_mut(xy{x: left, y: self.top}, xy{x: 1, y: size.y.checked_sub(self.bottom+self.top).expect(&format!("{} {} {}", size.y, self.bottom, self.top))}).set(|_| fg); // vertical axis
-		//target.slice_mut(xy{x: size.x-right, y: self.top}, xy{x: 1, y: size.y.checked_sub(self.bottom+self.top).unwrap()}).set(|_| fg); // right vertical axis
+		// Horizontal axis
+		target.slice_mut(xy{x: left, y: size.y-bottom}, xy{x: size.x-right-left, y: 1}).set(|_| fg.into());
+		{
+			let p = match axis_label_x_inline {
+				true => xy{x: (size.x-right)/scale, y: (size.y-bottom)/scale-axis_label_x.size().y/2},
+				false => xy{x: (size.x/scale-axis_label_x.size().x)/2, y: (size.y-bottom+x_label_scale*x_label_size.y)/scale}
+			};
+			axis_label_x.paint(&mut target, size, scale, p.signed());
+		}
+
+		// Vertical axis
+		target.slice_mut(xy{x: left, y: top}, xy{x: 1, y: size.y.checked_sub(bottom+top).expect(&format!("{} {} {}", size.y, bottom, top))}).set(|_| fg.into());
+		{
+			let p = xy{x: (left/scale).checked_sub(axis_label_y.size().x/2).unwrap_or(0), y: top/scale-axis_label_y.size().y};
+			axis_label_y.paint(&mut target, size, scale, p.signed());
+		}
+
+		//target.slice_mut(xy{x: size.x-right, y: top}, xy{x: 1, y: size.y.checked_sub(bottom+top).unwrap()}).set(|_| fg); // right vertical axis
 
 		let tick_length = 16;
 		if x_minmax.min < x_minmax.max {
 			for (&(value,_), tick_label) in x_labels.iter().zip(x_ticks.iter_mut()) {
-				let p = xy{x: map_x(size, left, right, x_minmax, value).unwrap() as u32, y: size.y-self.bottom};
-				target.slice_mut(p-xy{x:0, y:tick_length}, xy{x:1, y:tick_length}).set(|_| fg);
+				let p = xy{x: map_x(size, left, right, x_minmax, value).unwrap() as u32, y: size.y-bottom};
+				target.slice_mut(p-xy{x:0, y:tick_length}, xy{x:1, y:tick_length}).set(|_| fg.into());
 				let p = p/x_label_scale - xy{x: tick_label.size().x/2, y: 0};
 				tick_label.paint(&mut target, size, x_label_scale, p.signed());
 			}
@@ -156,8 +187,8 @@ impl crate::Widget for Plot<'_> {
 			if let (Some(&minmax), Some(labels), Some(ticks)) = (sets_minmax.get(i), sets_tick_labels.get(i), sets_ticks.get_mut(i)) {
 				if minmax.min < minmax.max {
 					for (&(value,_), tick_label) in labels.iter().zip(ticks.iter_mut()) {
-						let p = xy{x: [0, size.x-right][i], y: map_y(size, self.top, self.bottom, minmax, value).unwrap() as u32};
-						target.slice_mut(p+xy{x:[left,0][i],y:0}-xy{x:[0,tick_length][i],y:0}, xy{x:tick_length, y:1}).set(|_| fg);
+						let p = xy{x: [0, size.x-right][i], y: map_y(size, top, bottom, minmax, value).unwrap() as u32};
+						target.slice_mut(p+xy{x:[left,0][i],y:0}-xy{x:[0,tick_length][i],y:0}, xy{x:tick_length, y:1}).set(|_| fg.into());
 						let sub = |a,b| (a as i32 - b as i32).max(0) as u32;
 						let p = p/scale + xy{x: [sub(left/scale, tick_label.size().x),0][i], y: 0} - xy{x: 0, y: tick_label.size().y/2};
 						tick_label.paint(&mut target, size, scale, p.signed());
@@ -166,9 +197,7 @@ impl crate::Widget for Plot<'_> {
 			}
 		}
 
-		self.x_minmax = x_minmax;
-		self.sets_minmax = sets_minmax;
-		self.last = 0;
+		(self.x_minmax, self.sets_minmax, self.last) = (x_minmax, sets_minmax, 0);
 	}
 
 	use itertools::Itertools;
