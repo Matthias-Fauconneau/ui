@@ -1,3 +1,4 @@
+#![allow(non_upper_case_globals)]
 #[path="wayland.rs"] mod wayland;
 use {num::{zero,IsZero}, vector::{xy, int2}, /*image::bgra,*/ crate::{prelude::*, widget::{/*Target,*/ Widget, EventContext, ModifiersState, Event}}, wayland::*};
 
@@ -96,7 +97,7 @@ pub fn run<T:Widget>(widget: &mut T, idle: &mut dyn FnMut(&mut T)->Result<bool>)
 	surface.commit();
 
 	let device = Device::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
-	
+
 	let mut buffer = None;
 	let ref params : dmabuf::Params = server.new();
 	let ref buffer_ref : Buffer = server.new();
@@ -254,8 +255,9 @@ pub fn run<T:Widget>(widget: &mut T, idle: &mut dyn FnMut(&mut T)->Result<bool>)
 				}
 				else if id == keyboard.id && opcode == keyboard::key {
 					let [_serial,UInt(_key_time),UInt(key),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
-					let unknown = 240;
-					if key != unknown {
+					//enum Key { prog3 = 202, unknown = 240 };
+					const prog3 : u32 = 202; const unknown : u32 = 240;
+					if let unknown|prog3 = key {} else {
 						let key = [
 							'\0','⎋','1','2','3','4','5','6','7','8',
 							'9','0','-','=','⌫','\t','q','w','e','r',

@@ -206,7 +206,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				}
 
 				let mut cache = CACHE.lock().unwrap();
-				let (coverage_pq10, one_minus_coverage_pq10, coverage) = cache.entry((scale, id)).or_insert_with(|| {
+				let (_coverage_pq10, one_minus_coverage_pq10, coverage) = cache.entry((scale, id)).or_insert_with(|| {
 					let linear = font::Rasterize::rasterize(face, scale, id, bbox);
 					(image::from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::PQ10(1.-v))), linear)
 				});

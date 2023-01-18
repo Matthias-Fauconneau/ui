@@ -11,7 +11,8 @@ fn line(target: &mut Image<&mut[u32]>, p0: vec2, p1: vec2, color: bgrf) {
 	let gradient = d.y / d.x;
 	fn blend(target: &mut Image<&mut[u32]>, x: u32, y: u32, color: bgrf, coverage: f32, transpose: bool) {
 		let xy{x,y} = if transpose { xy{x: y, y: x} } else { xy{x,y} };
-		if x < target.size.x && y < target.size.y { target[xy{x,y}]/*.saturating_add_assign(*/= (coverage*color).into(); }
+		//if x < target.size.x && y < target.size.y { target[xy{x,y}]/*.saturating_add_assign(*/= (coverage*color).into(); }
+		if x < target.size.x && y < target.size.y { target[xy{x,y}] = (coverage*color + (1.-coverage)*image::bgr::from(1.)/*white background*/).into(); } // PQ10
 	}
 	let (i0, intery) = {
 		let xend = f32::round(p0.x);
@@ -79,7 +80,7 @@ impl crate::Widget for Plot<'_> {
 
 	let colors =
 		if sets.len() == 1 { [fg].into() }
-		else { map(0..sets.len(), |i| bgrf::from(crate::color::LCh{L: if fg>bg { 100. } else { 100. /*53.*/ }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(sets.len() as f32)})) };
+		else { map(0..sets.len(), |i| bgrf::from(crate::color::LCh{L: if fg>bg { 100. } else { 75./*53.*/ }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(sets.len() as f32)})) };
 
 	let ticks = |Range{end,..}| {
 		if end == 0. { return (zero(), [(0.,"0".to_string())].into(), ""); }
