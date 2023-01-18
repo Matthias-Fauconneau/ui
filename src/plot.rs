@@ -1,7 +1,7 @@
-use {::vector::{xy,vec2}, image::{Image, bgrf}};
 pub fn list<T>(iter: impl std::iter::IntoIterator<Item=T>) -> Box<[T]> { iter.into_iter().collect() }
 fn map<T,U>(iter: impl std::iter::IntoIterator<Item=T>, f: impl Fn(T)->U) -> Box<[U]> { list(iter.into_iter().map(f)) }
 
+use {::vector::{xy,vec2}, image::{Image, bgrf}};
 fn line(target: &mut Image<&mut[u32]>, p0: vec2, p1: vec2, color: bgrf) {
 	use num::{abs, fract};
 	let d = p1 - p0;
@@ -41,103 +41,117 @@ fn line(target: &mut Image<&mut[u32]>, p0: vec2, p1: vec2, color: bgrf) {
 	}
 }
 
-use vector::MinMax;
-type Frame = (f64, Box<[Box<[f64]>]>);
+use {std::ops::Range, num::zero};
 pub struct Plot<'t> {
-	title: String,
-	axis_label: xy<String>,
-	keys: &'t [&'t [&'t str]],
-	pub values: &'t [Frame],
-	x_minmax: MinMax<f64>,
-	sets_minmax: Box<[MinMax<f64>]>,
+	title: &'t str,
+	axis_label: xy<&'t str>,
+	keys: &'t [&'t str],
+	pub x_values: &'t [f64],
+	pub sets: &'t [&'t [f64]],
+	//pub values: &'t [Frame],
+	range: xy<Range<f64>>,
 	top: u32, bottom: u32, left: u32, right: u32,
 	last: usize,
 }
 
 impl<'t> Plot<'t> {
-	pub fn new(title: String, axis_label: xy<String>, keys: &'t [&'t [&'t str]], values: &'t [Frame]) -> Self {
-		for (_, value) in values { for (keys, set) in keys.iter().zip(value.iter()) { assert_eq!(keys.len(), set.len(), "{keys:?} {set:?}"); } }
-		use num::zero; Self{title, axis_label, keys, values, x_minmax: MinMax{min: zero(), max: zero()}, sets_minmax: [].into(), top: 0, bottom: 0, left: 0, right: 0, last: 0}
+	pub fn new(title: &'t str, axis_label: xy<&'t str>, keys: &'t [&'t str], x_values: &'t [f64], sets: &'t [&'t [f64]]) -> Self {
+		for set in sets { assert_eq!(x_values.len(), set.len(), "{x_values:?} {set:?}"); }
+		Self{title, axis_label, keys, x_values, sets, range: zero(), top: 0, bottom: 0, left: 0, right: 0, last: 0}
 	}
 }
 
 impl crate::Widget for Plot<'_> {
 #[fehler::throws(crate::Error)] fn paint(&mut self, mut target: &mut crate::Target, _: crate::size, _: crate::int2) {
-	let (keys, values) = {
+	let [black, white] : [bgrf; 2]  = [0., 1.].map(Into::into);
+	#[allow(non_upper_case_globals)] const dark : bool = true;
+	let [bg, fg] = if dark { [black, white] } else { [white, black] };
+
+	/*let (keys, values) = {
 		let filter = self.values.iter()
 			.map(|(_,sets)| map(&**sets, |set| map(&**set, |&_y| /*_y>1e-6*/true)))
 			.reduce(|a,b| map(a.iter().zip(b.iter()), |(a,b)| map(a.iter().zip(b.iter()), |(a,b)| a|b))).unwrap();
 		let keys = map(self.keys.iter().zip(filter.iter()), |(sets, filter)| map(sets.iter().zip(filter.iter()).filter(|(_,&filter)| filter), |(set,_)| set));
 		let values = map(self.values, |(x,sets)| (x, map(sets.iter().zip(filter.iter()), |(set,filter)| map(set.iter().zip(filter.iter()).filter(|(_,&filter)| filter), |(&set,_)| set))));
 		(keys, values)
+	};*/
+	let (keys, sets) = (self.keys, self.sets);
+
+	let colors =
+		if sets.len() == 1 { [fg].into() }
+		else { map(0..sets.len(), |i| bgrf::from(crate::color::LCh{L: if fg>bg { 100. } else { 100. /*53.*/ }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(sets.len() as f32)})) };
+
+	let ticks = |Range{end,..}| {
+		if end == 0. { return (zero(), [(0.,"0".to_string())].into(), ""); }
+		assert!(end > 0.);
+		let end = f64::abs(end);
+		let log10 = f64::log10(end);
+		let floor10 = f64::floor(log10); // order of magnitude
+		let part10 = num::exp10(log10 - floor10); // remaining magnitude part within the decade: x / 10^⌊log(x)⌋
+		//assert!(part10 >= 1.. "{part10}");
+		let (end, tick_count) = *[(1.,5),(1.2,6),(1.4,7),(2.,10),(2.5,5),(3.,3),(3.2,8),(4.,8),(5.,5),(6.,6),(8.,8),(10.,5)].iter().find(|(end,_)| part10-f64::exp2(-52.) <= *end).unwrap();
+		assert!(end <= 10.);
+		let end = end*num::exp10(floor10); // Scale back with order of magnitude
+		let log10 = f64::log10(end);
+		let floor1000 = f64::floor(log10/3.); // submultiple
+		let part1000 = num::exp10(log10 - floor1000*3.); // remaining magnitude part within the submultiple: x / 1000^⌊log1000(x)⌋
+		let labels = map(0..=tick_count, |i| { let fract = (i as f64)/(tick_count as f64); (fract*end, (fract*part1000).to_string()) });
+		for [a,b] in labels.array_windows() { assert!(a.1 != b.1, "{a:?} {b:?} {:?}", (end, log10)); }
+		let submultiple = ["n","µ","m","","k","M","G"][(3+(floor1000 as i8)) as usize];
+		((0.)..end, labels, submultiple)
 	};
 
-	let [black, white] : [bgrf; 2]  = [0., 1.].map(Into::into);
-	#[allow(non_upper_case_globals)] const dark : bool = true;
-	let [bg, fg] = if dark { [black, white] } else { [white, black] };
-
-	let sets_colors = map(&*keys, |set|
-		if set.len() == 1 { [fg].into() }
-		else { map(0..set.len(), |i| bgrf::from(crate::color::LCh{L: if fg>bg { 100. } else { 100. /*53.*/ }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(set.len() as f32)})) }
-	);
-
-	let ticks = |MinMax{max,..}| {
-		if max == 0. { return (vector::MinMax{min: 0., max: 0.}, [(0.,"0".to_string())].into()); }
-		let log10 = f64::log10(f64::abs(max));
-		let exp_fract_log10 = num::exp10(log10 - f64::floor(log10));
-		let (max, tick_count) = *[(1.,5),(1.2,6),(1.4,7),(2.,10),(2.5,5),(3.,3),(3.2,8),(4.,8),(5.,5),(6.,6),(8.,8),(10.,5)].iter().find(|(max,_)| exp_fract_log10-f64::exp2(-52.) <= *max).unwrap();
-		let max = max*num::exp10(f64::floor(log10));
-		let precision = if max/(tick_count as f64) < 1. { 1 } else { 0 };
-		(vector::MinMax{min: 0., max}, map((0..=tick_count).map(|i| max*(i as f64)/(tick_count as f64)), |value| (value, format!("{:.1$}", value, precision))))
-	};
-
-	let x_minmax = vector::minmax(values.iter().map(|&(x,_)| *x)).unwrap();
-	let (x_minmax, x_labels) = ticks(x_minmax);
-
-	let mut serie_of_sets = values.iter().map(|(_,sets)| sets);
-	let mut sets_data_minmax = map(&**serie_of_sets.next().unwrap(), |set| vector::minmax(set.iter().copied()).unwrap());
-	for sets in serie_of_sets { for (minmax, set) in sets_data_minmax.iter_mut().zip(sets.iter()) { *minmax = minmax.minmax(vector::minmax(set.iter().copied()).unwrap()) } }
-	let sets_minmax = map(&*sets_data_minmax, |&minmax| ticks(minmax).0); // fixme
+	struct Axis { range: Range<f64>, labels: Box<[(f64, String)]>, submultiple: &'static str }
+	let xy{x: Some(x), y: Some(y)} = xy{x: vector::minmax(self.x_values.iter().copied()).unwrap(), y: vector::minmax(sets.iter().map(|&set| set.iter()).flatten().copied()).unwrap()}.map(|&minmax| {
+		let range = Range::from(minmax);
+		if range.is_empty() { return None; }
+		let (range, labels, submultiple) = ticks(range);
+		assert!(!range.is_empty());
+		Some(Axis{range, labels, submultiple})
+	}) else { return Ok(()); };
 
 	let size = target.size;
-	fn linear_step(MinMax{min,max} : MinMax<f64>, v: f64) -> Option<f32> { if min < max { Some(((v-min) / (max-min)) as f32) } else { None } }
+	#[track_caller] fn linear_step(Range{start,end} : &Range<f64>, v: f64) -> f32 { assert!(start < end); ((v-start) / (end-start)) as f32 }
 	use crate::size;
-	fn map_x(size: size, left: u32, right: u32, minmax: MinMax<f64>, v: f64) -> Option<f32> { Some(left as f32+linear_step(minmax, v)?*(size.x-left-right-1) as f32) }
-	fn map_y(size: size, top: u32, bottom: u32, minmax: MinMax<f64>, v: f64) -> Option<f32> { Some((size.y-bottom-1) as f32-linear_step(minmax, v)?*(size.y-top-bottom-1) as f32) }
+	#[track_caller] fn map_x(size: size, left: u32, right: u32, range: &Range<f64>, v: f64) -> f32 { left as f32+linear_step(range, v)*(size.x-left-right-1) as f32 }
+	#[track_caller] fn map_y(size: size, top: u32, bottom: u32, range: &Range<f64>, v: f64) -> f32 { (size.y-bottom-1) as f32-linear_step(range, v)*(size.y-top-bottom-1) as f32 }
 
-	if (x_minmax, &sets_minmax) != (self.x_minmax, &self.sets_minmax) {
+	let axis = xy{x,y};
+	let range = axis.map(|a| a.range.clone());
+	if range != self.range {
+		(self.range, self.last) = (range, 0);
+		let ref range = self.range;
+
 		image::fill(&mut target, bg.into());
 
 		let ref bold = [crate::text::Style{color: fg, style: crate::text::FontStyle::Bold}.into()];
 		let text = |text, style| crate::text::with_color(fg, text, style);
-		let mut x_ticks = map(&*x_labels, |(_,label)| text(label, &[]));
-		let x_label_size = vector::max(x_ticks.iter_mut().map(|tick| tick.size())).unwrap();
 
-		let sets_tick_labels = map(&*sets_data_minmax, |&minmax| ticks(minmax).1);
-		let mut sets_ticks = map(&*sets_tick_labels, |set| map(&**set, |(_,label)| text(label, &[])));
-		let sets_tick_label_size = map(&mut *sets_ticks, |set_ticks| { vector::max(set_ticks.iter_mut().map(|tick| tick.size())).unwrap() });
+		let labels = xy{x: map(&*axis.x.labels, |(_,label)| label.as_ref()), y: map(&*axis.y.labels, |(_,label)| label.as_ref())};
+		let mut ticks = labels.map(|labels| map(&**labels, |label| text(label, &[])));
+		let label_size = ticks.map_mut(|ticks| vector::max(ticks.iter_mut().map(|tick| tick.size())).unwrap());
 
-		let sets_styles = map(&*sets_colors, |set| map(&**set, |&color| (Box::from([color.into()]))));
-		let mut sets_labels = map(keys.iter().zip(sets_styles.iter()),
-			|(keys, styles)| map(keys.iter().zip(styles.iter()), |(key,style)| text(key, style))
-		);
-		let sets_label_size = vector::max( sets_labels.iter_mut().map(|set| { vector::max(set.iter_mut().map(|label| label.size())).unwrap() }) ).unwrap();
+		let styles = map(&*colors, |&color| Box::from([color.into()]));
+		let mut key_labels = map(keys.iter().zip(&*styles), |(&key,style)| text(key, style));
+		let key_label_size = vector::max(key_labels.iter_mut().map(|label| label.size())).unwrap();
 
-		let x_label_scale = num::Ratio{num: size.x/(x_labels.len() as u32*2).max(5)-1, div: x_label_size.x-1};
-		let y_label_scale = sets_tick_labels.iter().zip(sets_tick_label_size.iter()).map(|(labels, label_size)| num::Ratio{num: size.y/4/(labels.len() as u32)-1, div: label_size.y-1}).min().unwrap();
+		let x_label_scale = num::Ratio{num: size.x/(ticks.x.len() as u32*2).max(5)-1, div: label_size.x.x-1};
+		let y_label_scale = num::Ratio{num: size.y/4/(ticks.y.len() as u32)-1, div: label_size.y.y-1};
 		let scale = std::cmp::min(x_label_scale, y_label_scale);
 		//let set_count = keys.iter().map(|set| set.len()).sum::<usize>();
-		let [x_label_scale, y_label_scale, sets_label_scale] = [scale; 3]; //(set_count>0).then(|| num::Ratio{num: size.x/(set_count as u32*2).max(5)-1, div: sets_label_size.x-1});
+		let [x_label_scale, y_label_scale, key_label_scale] = [scale; 3]; //(set_count>0).then(|| num::Ratio{num: size.x/(set_count as u32*2).max(5)-1, div: y_label_size.x-1});
 
-		let mut axis_label_y = text(&self.axis_label.y, bold);
-		let top = (scale*axis_label_y.size().y).max(((sets_tick_label_size.iter().map(|&label_size| y_label_scale.ceil(label_size.y)).max().unwrap() + 1) / 2).min(size.y/4));
-		let [left, right] = [0,1].map(|i|
-			(if let Some(&label_size) = sets_tick_label_size.get(i) { y_label_scale.ceil(label_size.x) } else { 0 })
-				.max((x_label_scale.ceil(x_label_size.x)+1)/2).min(size.x/4)
+		let axis_label_y = self.axis_label.y.replace("$", axis.y.submultiple);
+		let mut axis_label_y = text(&axis_label_y, bold);
+		let top = (scale*axis_label_y.size().y).max((y_label_scale.ceil(label_size.y.y) + 1) / 2).min(size.y/4);
+		let [left, right] = [0,1].map(|_i|
+			(if let Some(&label_size) = Some(&label_size.y)/*.get(i)*/ { y_label_scale.ceil(label_size.x) } else { 0 })
+				.max((x_label_scale.ceil(label_size.x.x)+1)/2).min(size.x/4)
 		);
-		let mut axis_label_x = text(&self.axis_label.x, bold);
+		let axis_label_x = self.axis_label.x.replace("$", axis.x.submultiple);
+		let mut axis_label_x = text(&axis_label_x, bold);
 		let axis_label_x_inline = scale*axis_label_x.size().x < right;
-		let bottom = (x_label_scale * x_label_size.y + if axis_label_x_inline { 0 } else { scale * axis_label_x.size().y }).min(size.y/4);
+		let bottom = (x_label_scale * label_size.x.y + if axis_label_x_inline { 0 } else { scale * axis_label_x.size().y }).min(size.y/4);
 
 		(self.left, self.right, self.top, self.bottom) = (left,right,top,bottom);
 
@@ -147,11 +161,11 @@ impl crate::Widget for Plot<'_> {
 		title.paint(&mut target, size, scale, p.signed());
 
 		// Key
-		for (i, label) in sets_labels.iter_mut().map(|set| set.iter_mut()).flatten().enumerate() {
-			let y = (i as u32)*(sets_label_scale*sets_label_size.y);
+		for (i, label) in key_labels.iter_mut().enumerate() {
+			let y = (i as u32)*(y_label_scale*key_label_size.y);
 			//let y = (i as u32)*(size.y-bottom-top)/(set_count as u32);
-			label.paint(&mut target, size, sets_label_scale, (xy{x: size.x-right-sets_label_scale*sets_label_size.x, y: top+y}/sets_label_scale).signed());
-			//xy{x: left+(i as u32)*(size.x-right-left)/(set_count as u32), y: 0}/sets_label_scale
+			label.paint(&mut target, size, y_label_scale, (xy{x: size.x-right-key_label_scale*key_label_size.x, y: top+y}/y_label_scale).signed());
+			//xy{x: left+(i as u32)*(size.x-right-left)/(set_count as u32), y: 0}/y_label_scale
 		}
 
 		// Horizontal axis
@@ -159,7 +173,7 @@ impl crate::Widget for Plot<'_> {
 		{
 			let p = match axis_label_x_inline {
 				true => xy{x: (size.x-right)/scale, y: (size.y-bottom)/scale-axis_label_x.size().y/2},
-				false => xy{x: (size.x/scale-axis_label_x.size().x)/2, y: (size.y-bottom+x_label_scale*x_label_size.y)/scale}
+				false => xy{x: (size.x/scale-axis_label_x.size().x)/2, y: (size.y-bottom+x_label_scale*label_size.x.y)/scale}
 			};
 			axis_label_x.paint(&mut target, size, scale, p.signed());
 		}
@@ -174,40 +188,38 @@ impl crate::Widget for Plot<'_> {
 		//target.slice_mut(xy{x: size.x-right, y: top}, xy{x: 1, y: size.y.checked_sub(bottom+top).unwrap()}).set(|_| fg); // right vertical axis
 
 		let tick_length = 16;
-		if x_minmax.min < x_minmax.max {
-			for (&(value,_), tick_label) in x_labels.iter().zip(x_ticks.iter_mut()) {
-				let p = xy{x: map_x(size, left, right, x_minmax, value).unwrap() as u32, y: size.y-bottom};
-				target.slice_mut(p-xy{x:0, y:tick_length}, xy{x:1, y:tick_length}).set(|_| fg.into());
-				let p = p/x_label_scale - xy{x: tick_label.size().x/2, y: 0};
-				tick_label.paint(&mut target, size, x_label_scale, p.signed());
-			}
+
+		assert!(!range.x.is_empty());
+		for (&(value,_), tick_label) in axis.x.labels.iter().zip(ticks.x.iter_mut()) {
+			let p = xy{x: map_x(size, left, right, &range.x, value) as u32, y: size.y-bottom};
+			target.slice_mut(p-xy{x:0, y:tick_length}, xy{x:1, y:tick_length}).set(|_| fg.into());
+			let p = p/x_label_scale - xy{x: tick_label.size().x/2, y: 0};
+			tick_label.paint(&mut target, size, x_label_scale, p.signed());
 		}
 
-		for i in 0..keys.len() {
-			if let (Some(&minmax), Some(labels), Some(ticks)) = (sets_minmax.get(i), sets_tick_labels.get(i), sets_ticks.get_mut(i)) {
-				if minmax.min < minmax.max {
-					for (&(value,_), tick_label) in labels.iter().zip(ticks.iter_mut()) {
-						let p = xy{x: [0, size.x-right][i], y: map_y(size, top, bottom, minmax, value).unwrap() as u32};
-						target.slice_mut(p+xy{x:[left,0][i],y:0}-xy{x:[0,tick_length][i],y:0}, xy{x:tick_length, y:1}).set(|_| fg.into());
-						let sub = |a,b| (a as i32 - b as i32).max(0) as u32;
-						let p = p/scale + xy{x: [sub(left/scale, tick_label.size().x),0][i], y: 0} - xy{x: 0, y: tick_label.size().y/2};
-						tick_label.paint(&mut target, size, scale, p.signed());
-					}
-				}
-			}
+		assert!(!range.y.is_empty());
+		for (&(value,_), tick_label) in axis.y.labels.iter().zip(ticks.y.iter_mut()) {
+			let p = xy{x: [0, size.x-right][0], y: map_y(size, top, bottom, &range.y, value) as u32};
+			target.slice_mut(p + xy{x: [left,0][0], y:0} - xy{x: [0,tick_length][0], y:0}, xy{x:tick_length, y:1}).set(|_| fg.into());
+			let sub = |a,b| (a as i32 - b as i32).max(0) as u32;
+			let p = p/scale + xy{x: [sub(left/scale, tick_label.size().x), 0][0], y: 0} - xy{x: 0, y: tick_label.size().y/2};
+			tick_label.paint(&mut target, size, scale, p.signed());
 		}
-
-		(self.x_minmax, self.sets_minmax, self.last) = (x_minmax, sets_minmax, 0);
 	}
 
-	use itertools::Itertools;
 	let (left,right,top,bottom) = (self.left,self.right,self.top,self.bottom);
-	values[self.last.max(1)-1..].iter().map(|(&x, sets)| sets.iter().zip(self.sets_minmax.iter()).zip(sets_colors.iter()).map(
-		move |((set, &minmax), colors)| set.iter().zip(colors.iter()).map(move |(&y, color)| Some((xy{x: map_x(size, left, right, x_minmax, x)?, y: map_y(size, top, bottom, minmax, y)?}, color)))
-	))
-	.tuple_windows().for_each(|(sets0, sets1)| sets0.zip(sets1).for_each(|(s0,s1)| s0.zip(s1).for_each(
-		|line| if let (Some((p0, &color)), Some((p1, _))) = line { self::line(&mut target, p0, p1, color) }
-	)));
-	self.last = values.len();
+	let mut frames = (self.last.max(1)-1..self.x_values.len()).map(|i| (
+		map_x(size, left, right, &self.range.x, self.x_values[i]),
+		{let range = self.range.y.clone(); sets.iter().map(move |values| map_y(size, top, bottom, &range, values[i]))}
+	));
+	let mut last = {let (x, y) = frames.next().unwrap(); (x, list(y))};
+	let mut next = (0., map(sets, |_| 0.));
+	fn collect<T>(target: &mut [T], iter: impl IntoIterator<Item=T>) -> &[T] { for (slot, item) in target.iter_mut().zip(iter) { *slot = item; } target }
+	for (next_x, next_y) in frames {
+		let next_y = collect(&mut next.1, next_y);
+		for (i, (&last_y, &next_y)) in last.1.iter().zip(&*next_y).enumerate() { self::line(&mut target, xy{x: last.0, y: last_y}, xy{x: next_x, y: next_y}, colors[i]) }
+		last.0 = next_x; std::mem::swap(&mut last.1, &mut next.1);
+	}
+	self.last = self.x_values.len();
 }
 }
