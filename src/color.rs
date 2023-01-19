@@ -15,11 +15,11 @@ impl From<Luv> for XYZ{ fn from(Luv{L, uv}: Luv) -> Self {
 	let Y = if L < 8. { L*cb(3./29f32) } else { cb((L+16.)/116.) };
 	Self{X: Y*(9.*u)/(4.*v), Y, Z: Y*(12.-3.*u-20.*v)/(4.*v)}
 }}
-pub use image::{bgr, bgrf, bgra8};
+pub use image::{bgr, bgrf};
 impl From<XYZ> for bgrf { fn from(XYZ{X,Y,Z}: XYZ) -> Self { Self{
 	b:   0.0557 * X - 0.2040 * Y + 1.0570 * Z,
 	g: - 0.9689 * X + 1.8758 * Y + 0.0415 * Z,
 	r:    3.2406 * X - 1.5372 * Y - 0.4986 * Z
 }}}
 impl From<LCh> for bgrf { fn from(v: LCh) -> Self { bgrf::from(XYZ::from(Luv::from(v))).clamp() } }
-//impl From<LCh> for bgra8 { fn from(v: LCh) -> Self { bgrf::from(v).into() } }
+//impl From<LCh> for image::bgra8 { fn from(v: LCh) -> Self { bgrf::from(v).into() } }

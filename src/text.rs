@@ -174,7 +174,7 @@ impl<D:AsRef<str>> View<'_, D> {
 	}
 	pub fn paint_span(&self, target: &mut Target, scale: Ratio, offset: int2, span: Span, bgr: crate::color::bgr<bool>) {
 		let [min, max] = [span.min(), span.max()];
-		let mut invert = |r:Rect| Some(image::invert(&mut target.slice_mut_clip(&(scale*(-offset+r)))?, bgr));
+		let mut invert = |r:Rect| Some(image::invert(&mut target.slice_mut_clip(scale*(-offset+r))?, bgr));
 		if min.line < max.line { invert(self.span(min,LineColumn{line: min.line, column: usize::MAX})); }
 		if min.line == max.line {
 			if min != max { invert(self.span(min,max)); } // selection
@@ -206,9 +206,9 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				}
 
 				let mut cache = CACHE.lock().unwrap();
-				let (_coverage_pq10, one_minus_coverage_pq10, coverage) = cache.entry((scale, id)).or_insert_with(|| {
+				let (_coverage_pq10, _one_minus_coverage_pq10, coverage) = cache.entry((scale, id)).or_insert_with(|| {
 					let linear = font::Rasterize::rasterize(face, scale, id, bbox);
-					(image::from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::PQ10(1.-v))), linear)
+					(image::PQ10_from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::PQ10(1.-v))), linear)
 				});
 
 				let position = xy{
@@ -225,18 +225,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				if size.x > 0 && size.y > 0 {
 					let size = size.unsigned();
 					let color = style.map(|x|x.attribute.color).unwrap_or(self.color);
-					/*if color != zero() /*(color.b+color.g+color.r)/3. > 1./3.*/ { // Bright (on black)
-						image::multiply(&mut target.slice_mut(target_offset, size), color, &coverage_pq10.slice(source_offset.unsigned(), size));
-					} else*/ if color == zero() { // Dark (on white)
-						target.slice_mut(target_offset, size).set_map(&one_minus_coverage_pq10.slice(source_offset.unsigned(), size), |_,&s| {
-							let s = s as u32;
-							(s<<20) | (s<<10) | s
-						});
-					} else { // Color on white
-						target.slice_mut(target_offset, size).set_map(&coverage.slice(source_offset.unsigned(), size), |_,&s| {
-							(s*color + (1.-s)*bgr::from(1.)/*white background*/).into() // PQ10
-						});
-					}
+					image::blend(&coverage.slice(source_offset.unsigned(), size), &mut target.slice_mut(target_offset, size), color);
 				}
 			}
 		}

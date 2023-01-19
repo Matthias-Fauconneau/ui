@@ -83,8 +83,8 @@ impl widget::Widget for View<'_> {
 					let size = vector::component_wise_min(source_size, target_size);
 					if size.x > 0 && size.y > 0 {
 						let size = size.unsigned();
-						target.slice_mut(target_offset, size).zip_map(coverage.slice(source_offset.unsigned(), size),
-							|_, &target, &coverage| target +/*-*/ coverage
+						target.slice_mut(target_offset, size).zip(coverage.slice(source_offset.unsigned(), size),
+							|&target, &coverage| target +/*-*/ coverage
 						);
 					}
 					/*let offset = *scale*(top_left + glyph_scale*int2{x: -face.glyph_hor_side_bearing(id).unwrap() as _, y: face.glyph_bounding_box(id).unwrap().y_max as _}).unsigned();
