@@ -7,7 +7,7 @@ pub type Target<'t> = image::Image<&'t mut [u32]>;
 
 pub struct EventContext<'e, 't> {
 	pub modifiers_state: ModifiersState,
-	pub cursor: &'e mut crate::app::Cursor<'t>,
+	pub cursor: Option<&'e mut crate::app::Cursor<'t>>,
 }
 
 pub type MouseButtons = u32;
