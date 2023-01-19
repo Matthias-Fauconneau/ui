@@ -207,20 +207,11 @@ impl crate::Widget for Plot {
 			tick_label.paint(&mut target, size, scale, p.signed());
 		}
 	} else if self.last == 0 {
-		//image::fill(&mut target.slice_mut(xy{x: self.left, y: self.top}, xy{x: size.x-self.right-self.left, y: size.y-self.bottom-self.top}), background.into());
 		let offset = xy{x: self.left+1, y: self.top}.signed();
-		//assert!(offset <= self.key.min, "{:?}", (offset, self.key.min));
-		assert!(offset.x <= self.key.min.x && offset.y <= self.key.min.y, "{:?}", (offset, self.key.min));
 		let key = {let mut key = self.key; key.translate(-offset); vector::MinMax{min: key.min.unsigned(), max: key.max.unsigned()}};
-		/*target.slice_mut(offset.unsigned(), xy{x: size.x-self.right, y: size.y-self.bottom}-offset.unsigned()).set_map(|p,t| {
-			if key.min.unsigned() <= p && p <= key.max.unsigned() { *t } else { background.into() }
-		})*/
 		let mut target = target.slice_mut(offset.unsigned(), xy{x: size.x-self.right, y: size.y-self.bottom}-offset.unsigned());
 		let size = target.size;
 		image::fill(&mut target.slice_mut(zero(), xy{x: key.min.x, y: size.y}), background.into());
-		/*let top = map_y(size, self.top, self.bottom, &self.range.y, vector::max(self.sets.iter().flatten().copied()).unwrap()) as u32;
-		let max_x = map_x(size, self.left, self.right, &self.range.x, *self.x_values.last().unwrap());
-		image::fill(&mut target.slice_mut(xy{x: self.left+1, y: top}, xy{x: max_x as u32 - (self.left+1), y: size.y-self.bottom-top}), background.into());*/
 	}
 
 	let (left,right,top,bottom) = (self.left,self.right,self.top,self.bottom);
