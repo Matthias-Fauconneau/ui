@@ -1,7 +1,9 @@
+use num::IsZero;
+
 pub fn list<T>(iter: impl std::iter::IntoIterator<Item=T>) -> Box<[T]> { iter.into_iter().collect() }
 pub fn map<T,U>(iter: impl std::iter::IntoIterator<Item=T>, f: impl Fn(T)->U) -> Box<[U]> { list(iter.into_iter().map(f)) }
 
-use {::vector::{xy,vec2}, image::{Image, bgrf}};
+use {vector::{xy,vec2}, image::{Image, bgrf}};
 fn line(target: &mut Image<&mut[u32]>, p0: vec2, p1: vec2, color: bgrf) {
 	use num::{abs, fract};
 	let d = p1 - p0;
@@ -41,7 +43,7 @@ fn line(target: &mut Image<&mut[u32]>, p0: vec2, p1: vec2, color: bgrf) {
 	}
 }
 
-use {std::ops::Range, num::zero};
+use {std::ops::Range, num::zero, vector::Rect};
 #[derive(Debug)] pub struct Plot {
 	title: &'static str,
 	axis_label: xy<&'static str>,
@@ -52,12 +54,13 @@ use {std::ops::Range, num::zero};
 	range: xy<Range<f64>>,
 	top: u32, bottom: u32, left: u32, right: u32,
 	last: usize,
+	key: Rect,
 }
 
 impl Plot {
 	pub fn new(title: &'static str, axis_label: xy<&'static str>, keys: Box<[String]>) -> Self {
 		let sets = map(&*keys, |_| Vec::new());
-		Self{title, axis_label, keys, x_values: Vec::new(), sets, range: zero(), top: 0, bottom: 0, left: 0, right: 0, last: 0}
+		Self{title, axis_label, keys, x_values: Vec::new(), sets, range: zero(), top: 0, bottom: 0, left: 0, right: 0, last: 0, key: zero()}
 	}
 	pub fn need_update(&mut self) { self.last = 0; }
 }
@@ -79,7 +82,7 @@ impl crate::Widget for Plot {
 		let floor10 = f64::floor(log10); // order of magnitude
 		let part10 = num::exp10(log10 - floor10); // remaining magnitude part within the decade: x / 10^⌊log(x)⌋
 		//assert!(part10 >= 1.. "{part10}");
-		let (end, tick_count) = *[(1.,5),(1.2,6),(1.4,7),(2.,10),(2.5,5),(3.,3),(3.2,8),(4.,8),(5.,5),(6.,6),(8.,8),(10.,5)].iter().find(|(end,_)| part10-f64::exp2(-52.) <= *end).unwrap();
+		let (end, tick_count) = *[(1.,5),(1.2,6),(1.4,7),(2.,10),(2.5,5),(3.,3),(3.2,8),(4.,8),(5.,5),(6.,6),(8.,8),(10.,5)].iter().find(|(end,_)| part10-f64::exp2(-52.) <= *end).unwrap_or_else(||panic!("{end}"));
 		assert!(end <= 10.);
 		let end = end*num::exp10(floor10); // Scale back with order of magnitude
 		let log10 = f64::log10(end);
@@ -156,12 +159,17 @@ impl crate::Widget for Plot {
 		title.paint(&mut target, size, scale, p.signed());
 
 		// Key
+		let mut key : Rect = zero();
 		for (i, label) in key_labels.iter_mut().enumerate() {
 			let y = (i as u32)*(y_label_scale*key_label_size.y);
 			//let y = (i as u32)*(size.y-bottom-top)/(set_count as u32);
-			label.paint(&mut target, size, y_label_scale, (xy{x: size.x-right-key_label_scale*key_label_size.x, y: top+y}/y_label_scale).signed());
+			let offset = xy{x: size.x-right-key_label_scale*key_label_size.x, y: top+y};
+			label.paint(&mut target, size, key_label_scale, (offset/y_label_scale).signed());
 			//xy{x: left+(i as u32)*(size.x-right-left)/(set_count as u32), y: 0}/y_label_scale
+			let r = offset.signed()+Rect::from(y_label_scale*label.size());
+			key = if key.is_zero() { r } else { key.minmax( r ) };
 		}
+		self.key = key;
 
 		// Horizontal axis
 		target.slice_mut(xy{x: left, y: size.y-bottom}, xy{x: size.x-right-left, y: 1}).set(|_| foreground.into());
@@ -200,9 +208,19 @@ impl crate::Widget for Plot {
 		}
 	} else if self.last == 0 {
 		//image::fill(&mut target.slice_mut(xy{x: self.left, y: self.top}, xy{x: size.x-self.right-self.left, y: size.y-self.bottom-self.top}), background.into());
-		let top = map_y(size, self.top, self.bottom, &self.range.y, vector::max(self.sets.iter().flatten().copied()).unwrap()) as u32;
+		let offset = xy{x: self.left+1, y: self.top}.signed();
+		//assert!(offset <= self.key.min, "{:?}", (offset, self.key.min));
+		assert!(offset.x <= self.key.min.x && offset.y <= self.key.min.y, "{:?}", (offset, self.key.min));
+		let key = {let mut key = self.key; key.translate(-offset); vector::MinMax{min: key.min.unsigned(), max: key.max.unsigned()}};
+		/*target.slice_mut(offset.unsigned(), xy{x: size.x-self.right, y: size.y-self.bottom}-offset.unsigned()).set_map(|p,t| {
+			if key.min.unsigned() <= p && p <= key.max.unsigned() { *t } else { background.into() }
+		})*/
+		let mut target = target.slice_mut(offset.unsigned(), xy{x: size.x-self.right, y: size.y-self.bottom}-offset.unsigned());
+		let size = target.size;
+		image::fill(&mut target.slice_mut(zero(), xy{x: key.min.x, y: size.y}), background.into());
+		/*let top = map_y(size, self.top, self.bottom, &self.range.y, vector::max(self.sets.iter().flatten().copied()).unwrap()) as u32;
 		let max_x = map_x(size, self.left, self.right, &self.range.x, *self.x_values.last().unwrap());
-		image::fill(&mut target.slice_mut(xy{x: self.left+1, y: top}, xy{x: max_x as u32 - (self.left+1), y: size.y-self.bottom-top}), background.into());
+		image::fill(&mut target.slice_mut(xy{x: self.left+1, y: top}, xy{x: max_x as u32 - (self.left+1), y: size.y-self.bottom-top}), background.into());*/
 	}
 
 	let (left,right,top,bottom) = (self.left,self.right,self.top,self.bottom);
@@ -220,4 +238,5 @@ impl crate::Widget for Plot {
 	}
 	self.last = self.x_values.len();
 }
+fn event(&mut self, _: crate::size, _: &mut crate::EventContext, _: &crate::Event) -> crate::Result<bool> { self.range = zero(); Ok(true) }
 }
