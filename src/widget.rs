@@ -16,11 +16,12 @@ pub enum Event {
 	Key (char),
 	Button { position: int2, button: u8, state: u8 },
 	Motion { position: int2, mouse_buttons: MouseButtons },
-	Scroll (i32)
+	Scroll (i32),
+	Stale,
 }
 
 pub trait Widget {
     fn size(&mut self, size: size) -> size { size }
     fn paint(&mut self, target: &mut Target, size: size, offset: int2) -> Result;
-    fn event(&mut self, _size: size, _event_context: &mut EventContext, _event: &Event) -> Result<bool> { Ok(false) }
+    fn event(&mut self, _size: size, _context: &mut EventContext, _event: &Event) -> Result<bool> { Ok(false) }
 }

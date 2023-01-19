@@ -1,3 +1,12 @@
+pub type Color = crate::color::bgrf;
+//let [black, white] : [Color; 2]  = [0., 1.].map(Into::into);
+#[allow(non_upper_case_globals)] const black : Color = Color::from(0.);
+#[allow(non_upper_case_globals)] const white : Color = Color::from(1.);
+#[allow(non_upper_case_globals)] const dark : bool = true;
+//const [background, foreground] : [Color; 2] = if dark { [black, white] } else { [white, black] };
+#[allow(non_upper_case_globals)] pub const background : Color = if dark { black } else { white };
+#[allow(non_upper_case_globals)] pub(crate) const foreground : Color = if dark { white } else { black };
+
 use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect}, /*ttf_parser*/rustybuzz::Face,ttf_parser::GlyphId, num::{zero, Ratio}, crate::font::{self, rect}};
 pub mod unicode_segmentation;
 //use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
@@ -58,8 +67,6 @@ fn metrics<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> LineMetrics {
 	})
 }
 
-pub type Color = crate::color::bgrf;
-pub use crate::color::bgr;
 #[derive(Clone,Copy,Default,Debug)] pub enum FontStyle { #[default] Normal, Bold, /*Italic, BoldItalic*/ }
 #[derive(Clone,Copy,Default,Debug)] pub struct Style { pub color: Color, pub style: FontStyle }
 pub type TextRange = std::ops::Range<usize>;
@@ -70,8 +77,8 @@ impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { Style{co
 #[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(||
 	["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(std::path::Path::new(p)).unwrap()));
 pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| std::ops::Deref::deref(x)) }
-#[allow(non_upper_case_globals)] pub const default_color: Color = Color{b:0.,r:0.,g:0.};
-//#[allow(non_upper_case_globals)] pub const default_color: Color = Color{b:1.,r:1.,g:1.};
+
+#[allow(non_upper_case_globals)] pub const default_color: Color = foreground;
 #[allow(non_upper_case_globals)] pub const bold: [Attribute::<Style>; 1] = [Style{color: default_color, style: FontStyle::Bold}.into()];
 
 use {std::{sync::Mutex, collections::BTreeMap}, image::Image};

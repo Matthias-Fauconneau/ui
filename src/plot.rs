@@ -66,15 +66,10 @@ impl crate::Widget for Plot {
 #[fehler::throws(crate::Error)] fn paint(&mut self, mut target: &mut crate::Target, _: crate::size, _: crate::int2) {
 	for set in &*self.sets { assert_eq!(self.x_values.len(), set.len(), "{:?}", (&self.x_values, &self.sets)); }
 
-	let [black, white] : [bgrf; 2]  = [0., 1.].map(Into::into);
-	#[allow(non_upper_case_globals)] const dark : bool = true;
-	let [background, foreground] = if dark { [black, white] } else { [white, black] };
-
-	let (keys, sets) = (&self.keys, &self.sets);
-
+	use crate::text::{background, foreground};
 	let colors =
-		if sets.len() == 1 { [foreground].into() }
-		else { map(0..sets.len(), |i| bgrf::from(crate::color::LCh{L: if foreground>background { 100. } else { 66.6 }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(sets.len() as f32)})) };
+		if self.sets.len() == 1 { [foreground].into() }
+		else { map(0..self.sets.len(), |i| bgrf::from(crate::color::LCh{L: if foreground>background { 100. } else { 66.6 }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(self.sets.len() as f32)})) };
 
 	let ticks = |Range{end,..}| {
 		if end == 0. { return (zero(), [(0.,"0".to_string())].into(), ""); }
@@ -103,7 +98,7 @@ impl crate::Widget for Plot {
 	};
 
 	struct Axis { range: Range<f64>, labels: Box<[(f64, String)]>, submultiple: &'static str }
-	let xy{x: Some(x), y: Some(y)} = xy{x: vector::minmax(self.x_values.iter().copied()).unwrap(), y: vector::minmax(sets.iter().flatten().copied()).unwrap()}.map(|&minmax| {
+	let xy{x: Some(x), y: Some(y)} = xy{x: vector::minmax(self.x_values.iter().copied()).unwrap(), y: vector::minmax(self.sets.iter().flatten().copied()).unwrap()}.map(|&minmax| {
 		let range = Range::from(minmax);
 		if range.is_empty() { return None; }
 		let (range, labels, submultiple) = ticks(range);
@@ -133,7 +128,7 @@ impl crate::Widget for Plot {
 		let label_size = ticks.map_mut(|ticks| vector::max(ticks.iter_mut().map(|tick| tick.size())).unwrap());
 
 		let styles = map(&*colors, |&color| Box::from([color.into()]));
-		let mut key_labels = map(keys.iter().zip(&*styles), |(key,style)| text(key, style));
+		let mut key_labels = map(self.keys.iter().zip(&*styles), |(key,style)| text(key, style));
 		let key_label_size = vector::max(key_labels.iter_mut().map(|label| label.size())).unwrap();
 
 		let x_label_scale = num::Ratio{num: size.x/(ticks.x.len() as u32*2).max(5)-1, div: label_size.x.x-1};
@@ -205,16 +200,18 @@ impl crate::Widget for Plot {
 		}
 	} else if self.last == 0 {
 		//image::fill(&mut target.slice_mut(xy{x: self.left, y: self.top}, xy{x: size.x-self.right-self.left, y: size.y-self.bottom-self.top}), background.into());
-		
+		let top = map_y(size, self.top, self.bottom, &self.range.y, vector::max(self.sets.iter().flatten().copied()).unwrap()) as u32;
+		let max_x = map_x(size, self.left, self.right, &self.range.x, *self.x_values.last().unwrap());
+		image::fill(&mut target.slice_mut(xy{x: self.left+1, y: top}, xy{x: max_x as u32 - (self.left+1), y: size.y-self.bottom-top}), background.into());
 	}
 
 	let (left,right,top,bottom) = (self.left,self.right,self.top,self.bottom);
 	let mut frames = (self.last.max(1)-1..self.x_values.len()).map(|i| (
 		map_x(size, left, right, &self.range.x, self.x_values[i]),
-		{let range = self.range.y.clone(); sets.iter().map(move |values| map_y(size, top, bottom, &range, values[i]))}
+		{let ref range = self.range.y; self.sets.iter().map(move |values| map_y(size, top, bottom, range, values[i]))}
 	));
 	let mut last = {let (x, y) = frames.next().unwrap(); (x, list(y))};
-	let mut next = (0., map(&**sets, |_| 0.));
+	let mut next = (0., map(&*self.sets, |_| 0.));
 	fn collect<T>(target: &mut [T], iter: impl IntoIterator<Item=T>) -> &[T] { for (slot, item) in target.iter_mut().zip(iter) { *slot = item; } target }
 	for (next_x, next_y) in frames {
 		let next_y = collect(&mut next.1, next_y);

@@ -176,6 +176,7 @@ pub fn run<T:Widget>(widget: &mut T, idle: &mut dyn FnMut(&mut T)->Result<bool>)
 				}
 				else if id == toplevel.id && opcode == toplevel::configure {
 					let [UInt(x),UInt(y),_] = server.args({use Type::*; [UInt,UInt,Array]}) else {unreachable!()};
+					buffer = None;
 					size = xy{x: x*scale_factor, y: y*scale_factor};
 					if size.is_zero() { assert!(configure_bounds.x > 0 && configure_bounds.y > 0); size = widget.size(configure_bounds); }
 					assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
@@ -306,7 +307,10 @@ pub fn run<T:Widget>(widget: &mut T, idle: &mut dyn FnMut(&mut T)->Result<bool>)
 		if paint && can_paint {
 			assert!(size.x > 0 && size.y > 0);
 			use drm::{control::Device as _, buffer::Buffer as _};
-			let mut buffer = buffer.get_or_insert_with(|| device.create_dumb_buffer(size.into(), drm::buffer::DrmFourcc::Xrgb2101010, 32).unwrap() );
+			let mut buffer = buffer.get_or_insert_with(|| {
+				widget.event(size, &mut EventContext{modifiers_state, cursor}, &Event::Stale).unwrap();
+				device.create_dumb_buffer(size.into(), drm::buffer::DrmFourcc::Xrgb2101010, 32).unwrap()
+			});
 			{
 				let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
 				let mut map = device.map_dumb_buffer(&mut buffer)?;
