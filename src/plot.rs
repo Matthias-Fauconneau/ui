@@ -215,18 +215,31 @@ impl crate::Widget for Plot {
 	}
 
 	let (left,right,top,bottom) = (self.left,self.right,self.top,self.bottom);
-	let mut frames = (self.last.max(1)-1..self.x_values.len()).map(|i| (
-		map_x(size, left, right, &self.range.x, self.x_values[i]),
-		{let ref range = self.range.y; self.sets.iter().map(move |values| map_y(size, top, bottom, range, values[i]))}
-	));
-	let mut last = {let (x, y) = frames.next().unwrap(); (x, list(y))};
-	let mut next = (0., map(&*self.sets, |_| 0.));
-	fn collect<T>(target: &mut [T], iter: impl IntoIterator<Item=T>) -> &[T] { for (slot, item) in target.iter_mut().zip(iter) { *slot = item; } target }
-	for (next_x, next_y) in frames {
-		let next_y = collect(&mut next.1, next_y);
-		for (i, (&last_y, &next_y)) in last.1.iter().zip(&*next_y).enumerate() { self::line(&mut target, xy{x: last.0, y: last_y}, xy{x: next_x, y: next_y}, colors[i]) }
-		last.0 = next_x; std::mem::swap(&mut last.1, &mut next.1);
+	for (values, &color) in self.sets.iter().zip(&*colors) {
+		let points = map(self.last.max(1)-1..self.x_values.len(), |i| xy{
+			x: map_x(size, left, right, &self.range.x, self.x_values[i]),
+			y: map_y(size, top, bottom, &self.range.y, values[i])
+		});
+		let thickness = 1.; // FIXME: orthogonal to line not vertical
+		let thick_line = points.iter().map(|p| p-xy{x: 0., y: thickness/2.}).chain(points.iter().rev().map(|p| p+xy{x: 0., y: thickness/2.}));
+		let mut a = points[0]+xy{x: 0., y: 1.}; // Starts by closing the loop with left edge
+		for b in thick_line {
+			self::line(&mut target, a, b, color);
+			a = b;
+		}
 	}
+	/*let mut frames = (self.last.max(1)-1..self.x_values.len()).map(|i| xy{
+		x: map_x(size, left, right, &self.range.x, self.x_values[i]),
+		y: {let ref range = self.range.y; self.sets.iter().map(move |values| map_y(size, top, bottom, range, values[i]))}
+	});
+	let mut last = {let xy{x, y} = frames.next().unwrap(); xy{x, list(y)}};
+	let mut next = xy{x:0., y: map(&*self.sets, |_| 0.)};
+	fn collect<T>(target: &mut [T], iter: impl IntoIterator<Item=T>) -> &[T] { for (slot, item) in target.iter_mut().zip(iter) { *slot = item; } target }
+	for frame in frames {
+		collect(&mut next.y, frame.y);
+		for (i, (&last_y, &next_y)) in last.y.iter().zip(&*next.y).enumerate() { self::line(&mut target, xy{x: last.x, y: last_y}, xy{x: next.x, y: next_y}, colors[i]) }
+		last.x = next_x; std::mem::swap(&mut last.y, &mut next.y);
+	}*/
 	self.last = self.x_values.len();
 }
 fn event(&mut self, _: crate::size, _: &mut crate::EventContext, _: &crate::Event) -> crate::Result<bool> { self.range = zero(); Ok(true) }
