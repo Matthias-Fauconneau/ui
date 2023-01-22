@@ -5,7 +5,7 @@ pub type Color = crate::color::bgrf;
 #[allow(non_upper_case_globals)] const dark : bool = true;
 //const [background, foreground] : [Color; 2] = if dark { [black, white] } else { [white, black] };
 #[allow(non_upper_case_globals)] pub const background : Color = if dark { black } else { white };
-#[allow(non_upper_case_globals)] pub(crate) const foreground : Color = if dark { white } else { black };
+#[allow(non_upper_case_globals)] pub const foreground : Color = if dark { white } else { black };
 
 use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect}, /*ttf_parser*/rustybuzz::Face,ttf_parser::GlyphId, num::{zero, Ratio}, crate::font::{self, rect}};
 pub mod unicode_segmentation;
@@ -75,7 +75,7 @@ impl const From<Style> for Attribute<Style> { fn from(attribute: Style) -> Self 
 impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { Style{color, style: FontStyle::Normal}.into() } }
 
 #[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(||
-	["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(std::path::Path::new(p)).unwrap()));
+	["/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf","/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(std::path::Path::new(p)).unwrap()));
 pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| std::ops::Deref::deref(x)) }
 
 #[allow(non_upper_case_globals)] pub const default_color: Color = foreground;

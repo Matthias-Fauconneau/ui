@@ -65,11 +65,11 @@ impl Plot {
 	pub fn need_update(&mut self) { self.last = 0; }
 }
 
-impl crate::Widget for Plot {
-#[fehler::throws(crate::Error)] fn paint(&mut self, mut target: &mut crate::Target, _: crate::size, _: crate::int2) {
+use crate::*;
+impl Widget for Plot {
+#[throws] fn paint(&mut self, mut target: &mut Target, _: size, _: int2) {
 	for set in &*self.sets { assert_eq!(self.x_values.len(), set.len(), "{:?}", (&self.x_values, &self.sets)); }
 
-	use crate::text::{background, foreground};
 	let colors =
 		if self.sets.len() == 1 { [foreground].into() }
 		else { map(0..self.sets.len(), |i| bgrf::from(crate::color::LCh{L: if foreground>background { 100. } else { 66.6 }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(self.sets.len() as f32)})) };
@@ -184,7 +184,7 @@ impl crate::Widget for Plot {
 		// Vertical axis
 		target.slice_mut(xy{x: left, y: top}, xy{x: 1, y: size.y.checked_sub(bottom+top).expect(&format!("{} {} {}", size.y, bottom, top))}).set(|_| foreground.into());
 		{
-			let p = xy{x: (left/scale).checked_sub(axis_label_y.size().x/2).unwrap_or(0), y: top/scale-axis_label_y.size().y};
+			let p = xy{x: (left/scale).checked_sub(axis_label_y.size().x/2).unwrap_or(0), y: (top/scale).checked_sub(axis_label_y.size().y).unwrap_or(0)};
 			axis_label_y.paint(&mut target, size, scale, p.signed());
 		}
 
@@ -242,5 +242,5 @@ impl crate::Widget for Plot {
 	}*/
 	self.last = self.x_values.len();
 }
-fn event(&mut self, _: crate::size, _: &mut crate::EventContext, _: &crate::Event) -> crate::Result<bool> { self.range = zero(); Ok(true) }
+#[throws] fn event(&mut self, _: size, _: &mut EventContext, event: &Event) -> bool { if let Event::Stale = event { self.range = zero(); true } else { false } }
 }

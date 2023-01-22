@@ -11,6 +11,7 @@ font=['derive-more','owning-ref','ttf-parser','kurbo']
 text=['derive-more','text-size','unicode-segmentation','font','rustybuzz']
 edit=['text','xcursor']
 plot=['text','itertools']
+graphic=[]
 
 [dependencies]
 fehler='*'

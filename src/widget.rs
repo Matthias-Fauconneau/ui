@@ -18,6 +18,7 @@ pub enum Event {
 	Motion { position: int2, mouse_buttons: MouseButtons },
 	Scroll (i32),
 	Stale,
+	Idle
 }
 
 pub trait Widget {

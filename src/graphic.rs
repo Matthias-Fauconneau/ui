@@ -47,7 +47,7 @@ impl widget::Widget for View<'_> {
     #[throws] fn paint(&mut self, target: &mut Target, size: size, _offset: int2) {
 		let Self{graphic: Graphic{scale, rects, parallelograms, glyphs}, view: Rect{min, ..}} = &self;
 
-		use {num::zero, image::{Image, bgra, sRGB::sRGB8}};
+		use {num::zero, image::{Image, bgr, sRGB::sRGB8}};
 		let buffer = {
 			let mut target = Image::fill(target.size, 0./*1.*/);
 
@@ -102,7 +102,7 @@ impl widget::Widget for View<'_> {
 			}
 			target
 		};
-		target.set_map(&buffer, |_, &buffer| bgra{a: 0xFF, ..sRGB8(f32::min(buffer,1.)).into()});
+		target.set_map(&buffer, |_, &buffer| PQ10(buffer,1.).into()});
 	}
 }
 

@@ -63,7 +63,7 @@ impl Cursor<'_> {
 	}
 }
 
-pub fn run<T:Widget>(widget: &mut T, idle: &mut dyn FnMut(&mut T)->Result<bool>) -> Result<()> {
+pub fn run<T:Widget>(widget: &mut T) -> Result<()> {
 	let server = std::os::unix::net::UnixStream::connect({
 		let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
 		path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
@@ -113,7 +113,7 @@ pub fn run<T:Widget>(widget: &mut T, idle: &mut dyn FnMut(&mut T)->Result<bool>)
 	let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
 
 	loop {
-		let mut paint = idle(widget).unwrap();
+		let mut paint = widget.event(size, &mut EventContext{modifiers_state, cursor: Some(cursor)}, &Event::Idle).unwrap();
 		loop {
 			let events = {
 				let fd = server.server.borrow();
