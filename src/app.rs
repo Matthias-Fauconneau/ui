@@ -190,6 +190,9 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> {
 				else if id == surface.id && opcode == surface::enter {
 					let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 				}
+				else if id == surface.id && opcode == surface::leave {
+					let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+				}
 				else if id == buffer_ref.id && opcode == buffer::release {
 				}
 				else if id == pointer.id && opcode == pointer::enter {
@@ -295,7 +298,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> {
 					//println!("close");
 					return Ok(());
 				}
-				else { panic!("{:?} {opcode:?}", id); }
+				else { panic!("{:?} {opcode:?} {:?}", id, [toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, dmabuf.id]); }
 			}
 			else if events.len() > 1 && events[1] && let Some((msec, key)) = repeat {
 				if widget.event(size, &mut EventContext{modifiers_state, cursor: Some(cursor)}, &Event::Key(key))? { paint=true; }
