@@ -63,7 +63,7 @@ impl Cursor<'_> {
 	}
 }
 
-pub fn run<T:Widget>(widget: &mut T) -> Result<()> {
+pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> {
 	let server = std::os::unix::net::UnixStream::connect({
 		let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
 		path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
@@ -93,7 +93,7 @@ pub fn run<T:Widget>(widget: &mut T) -> Result<()> {
 	wm_base.get_xdg_surface(xdg_surface, surface);
 	let ref toplevel = server.new();
 	xdg_surface.get_toplevel(toplevel);
-	toplevel.set_title("App");
+	toplevel.set_title(title);
 	surface.commit();
 
 	let device = Device::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
@@ -300,9 +300,7 @@ pub fn run<T:Widget>(widget: &mut T) -> Result<()> {
 			else if events.len() > 1 && events[1] && let Some((msec, key)) = repeat {
 				if widget.event(size, &mut EventContext{modifiers_state, cursor: Some(cursor)}, &Event::Key(key))? { paint=true; }
 				repeat = Some((msec+33, key));
-			} else {
-				break;
-			}
+			} else { break; }
 		}
 		if paint && can_paint {
 			assert!(size.x > 0 && size.y > 0);

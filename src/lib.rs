@@ -12,7 +12,7 @@ mod app; pub use app::{Device, run};
 #[cfg(feature="text")] pub mod text; #[cfg(feature="text")] pub use text::{background, foreground, Text};
 #[cfg(feature="graphic")] pub mod graphic; #[cfg(feature="graphic")] pub use graphic::Graphic;
 #[cfg(feature="edit")] pub mod edit; //pub use edit::TextEdit;
-#[cfg(feature="plot")] pub mod plot; #[cfg(feature="plot")] pub use plot::Plot;
+#[cfg(feature="plot")] pub mod plot; #[cfg(feature="plot")] pub use plot::{list, Plot};
 
 pub fn time<T>(id: &str, task: impl FnOnce() -> T) -> T {
 	let time = std::time::Instant::now();
