@@ -7,7 +7,7 @@ pub type Color = crate::color::bgrf;
 #[allow(non_upper_case_globals)] pub const background : Color = if dark { black } else { white };
 #[allow(non_upper_case_globals)] pub const foreground : Color = if dark { white } else { black };
 
-use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect}, /*ttf_parser*/rustybuzz::Face,ttf_parser::GlyphId, num::{zero, Ratio}, crate::font::{self, rect}};
+use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect}, /*ttf_parser*/rustybuzz::Face,ttf_parser::GlyphId, num::{zero, IsZero, Ratio}, crate::font::{self, rect}};
 pub mod unicode_segmentation;
 //use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 type TextIndex = usize;//GraphemeIndex
@@ -97,9 +97,8 @@ impl<'t, D> View<'t, D> {
 	pub fn with_face(face : &'t Face<'t>, data: D) -> Self { Self{font: [&face, &face], color: default_color,data, size: None} }
 }
 
-use num::{IsZero, div_ceil};
-pub fn fit_width(width: u32, from : size) -> size { if from.x == 0 { return zero(); } xy{x: width, y: div_ceil(width * from.y, from.x)} }
-pub fn fit_height(height: u32, from : size) -> size { if from.y == 0 { return zero(); } xy{x: div_ceil(height * from.x, from.y), y: height} }
+pub fn fit_width(width: u32, from : size) -> size { if from.x == 0 { return zero(); } xy{x: width, y: u32::div_ceil(width * from.y, from.x)} }
+pub fn fit_height(height: u32, from : size) -> size { if from.y == 0 { return zero(); } xy{x: u32::div_ceil(height * from.x, from.y), y: height} }
 pub fn fit(size: size, from: size) -> size { if size.x*from.y < size.y*from.x { fit_width(size.x, from) } else { fit_height(size.y, from) } }
 
 impl<D:AsRef<str>> View<'_, D> {
