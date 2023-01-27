@@ -5,7 +5,7 @@ pub use fehler::throws;
 pub mod prelude { pub use super::{Result,Error,throws, size,int2, Target, Widget, App, run}; }
 
 //pub use num::Ratio;
-pub mod color; pub use color::{black,white,background,foreground};
+pub mod color; pub use color::{bgrf,black,white,background,foreground};
 pub mod widget; pub use widget::{xy,size,int2, Widget, Target, Event,EventContext};
 mod app; pub use app::{App, run};
 #[cfg(feature="font")] pub mod font;

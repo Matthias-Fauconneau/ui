@@ -1,13 +1,12 @@
 #![allow(non_snake_case)]
 pub use image::{bgr, bgrf};
-pub type Color = crate::color::bgrf;
 //let [black, white] : [Color; 2]  = [0., 1.].map(Into::into);
-#[allow(non_upper_case_globals)] pub const black : Color = Color::from(0.);
-#[allow(non_upper_case_globals)] pub const white : Color = Color::from(1.);
+#[allow(non_upper_case_globals)] pub const black : bgrf = (0.).into();
+#[allow(non_upper_case_globals)] pub const white : bgrf = (1.).into();
 #[allow(non_upper_case_globals)] const dark : bool = true;
 //const [background, foreground] : [Color; 2] = if dark { [black, white] } else { [white, black] };
-#[allow(non_upper_case_globals)] pub const background : Color = if dark { black } else { white };
-#[allow(non_upper_case_globals)] pub const foreground : Color = if dark { white } else { black };
+#[allow(non_upper_case_globals)] pub const background : bgrf = if dark { black } else { white };
+#[allow(non_upper_case_globals)] pub const foreground : bgrf = if dark { white } else { black };
 
 use {num::{cos,sin,cb}, vector::xy};
 pub struct LCh { pub L: f32, pub C: f32, pub h: f32}

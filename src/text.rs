@@ -1,4 +1,5 @@
-use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect}, /*ttf_parser*/rustybuzz::Face, ttf_parser::GlyphId, num::{zero, IsZero, Ratio}, crate::font::{self, rect}};
+use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, num::{zero, IsZero, Ratio}, vector::{xy, uint2, int2, size, Rect}, image::bgrf as Color, super::foreground};
+use {/*ttf_parser*/rustybuzz::Face, ttf_parser::GlyphId, crate::font::{self, rect}};
 pub mod unicode_segmentation;
 //use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 type TextIndex = usize;//GraphemeIndex

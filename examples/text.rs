@@ -1,2 +1,2 @@
-use {std::fs::read, ui::{*, text::*}};
-fn main() -> Result { run(&mut View::new(Plain("⎙"))) }
+use ui::*;
+fn main() -> Result { run("text", &mut text("⎙",&[])) }
