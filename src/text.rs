@@ -1,7 +1,7 @@
 pub type Color = crate::color::bgrf;
 //let [black, white] : [Color; 2]  = [0., 1.].map(Into::into);
-#[allow(non_upper_case_globals)] const black : Color = Color::from(0.);
-#[allow(non_upper_case_globals)] const white : Color = Color::from(1.);
+#[allow(non_upper_case_globals)] pub const black : Color = Color::from(0.);
+#[allow(non_upper_case_globals)] pub const white : Color = Color::from(1.);
 #[allow(non_upper_case_globals)] const dark : bool = true;
 //const [background, foreground] : [Color; 2] = if dark { [black, white] } else { [white, black] };
 #[allow(non_upper_case_globals)] pub const background : Color = if dark { black } else { white };
