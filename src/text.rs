@@ -1,13 +1,4 @@
-pub type Color = crate::color::bgrf;
-//let [black, white] : [Color; 2]  = [0., 1.].map(Into::into);
-#[allow(non_upper_case_globals)] pub const black : Color = Color::from(0.);
-#[allow(non_upper_case_globals)] pub const white : Color = Color::from(1.);
-#[allow(non_upper_case_globals)] const dark : bool = true;
-//const [background, foreground] : [Color; 2] = if dark { [black, white] } else { [white, black] };
-#[allow(non_upper_case_globals)] pub const background : Color = if dark { black } else { white };
-#[allow(non_upper_case_globals)] pub const foreground : Color = if dark { white } else { black };
-
-use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect}, /*ttf_parser*/rustybuzz::Face,ttf_parser::GlyphId, num::{zero, IsZero, Ratio}, crate::font::{self, rect}};
+use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, vector::{xy, uint2, int2, size, Rect}, /*ttf_parser*/rustybuzz::Face, ttf_parser::GlyphId, num::{zero, IsZero, Ratio}, crate::font::{self, rect}};
 pub mod unicode_segmentation;
 //use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 type TextIndex = usize;//GraphemeIndex

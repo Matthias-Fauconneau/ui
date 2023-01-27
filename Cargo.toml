@@ -1,9 +1,11 @@
 package={name='ui', version='0.0.0', edition='2021'}
 example=[
- #{name='empty', path='examples/empty.rs'}
+ {name='empty', path='examples/empty.rs'},
+ {name='glyph', path='examples/glyph.rs', required-features=['text']},
  {name='text', path='examples/text.rs', required-features=['text']},
- #{name='compose', path='examples/compose.rs', required-features=['text']},
+ {name='compose', path='examples/compose.rs', required-features=['text','edit']},
  {name='edit', path='examples/edit.rs', required-features=['edit']},
+ {name='plot', path='examples/plot.rs', required-features=['plot']},
 ]
 
 [features]
@@ -11,7 +13,7 @@ font=['derive-more','owning-ref','ttf-parser','kurbo']
 text=['derive-more','text-size','unicode-segmentation','font','rustybuzz']
 edit=['text','xcursor']
 plot=['text','itertools']
-graphic=[]
+graphic=['font','rustybuzz']
 
 [dependencies]
 fehler='*'
@@ -41,6 +43,3 @@ xcursor={version='*', optional=true}
 
 #[dev-dependencies]
 image-io={package='image', version='*', optional=true}
-
-[patch.'https://github.com/Matthias-Fauconneau/image']
-image={path='../image'}

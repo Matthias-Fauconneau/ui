@@ -30,7 +30,7 @@ impl Graphic<'_> {
 	pub fn new(scale: Ratio) -> Self { Self{scale, rects: vec![], parallelograms: vec![], glyphs: vec![]} }
 	pub fn bounds(&self) -> Rect {
 		use {vector::MinMax, num::Option};
-		self.rects.iter().map(|r| MinMax{min: r.min, max: std::iter::zip(r.min, r.max).map(|(min,max)| if max < i32::MAX as _ { max } else { min }).collect()})
+		self.rects.iter().map(|r| MinMax{min: r.min, max: r.min.zip(r.max).map(|(min,max)| if max < i32::MAX as _ { max } else { min })})
 		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + rect(g.face.glyph_bounding_box(g.id).unwrap()).size().signed()}) )
 		.reduce(MinMax::minmax)
 		.map(|MinMax{min, max}| Rect{min: min, max: max})
@@ -47,16 +47,16 @@ impl widget::Widget for View<'_> {
     #[throws] fn paint(&mut self, target: &mut Target, size: size, _offset: int2) {
 		let Self{graphic: Graphic{scale, rects, parallelograms, glyphs}, view: Rect{min, ..}} = &self;
 
-		use {num::zero, image::{Image, bgr, sRGB::sRGB8}};
+		use {num::zero, image::{Image, PQ10}, crate::{background,foreground}};
 		let buffer = {
-			let mut target = Image::fill(target.size, 0./*1.*/);
+			let mut target = Image::fill(target.size, background.g);
 
 			for &Rect{min: top_left, max: bottom_right} in rects {
 				let top_left = top_left - min;
 				if top_left < (size/scale).signed() {
 					let top_left = ifloor(*scale, top_left);
 					let bottom_right : int2 = int2::enumerate().map(|i| if bottom_right[i] == i32::MAX { size[i] as _ } else { scale.ifloor(bottom_right[i]-min[i]) }).into();
-					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, target.size.signed())-top_left).unsigned()).set(|_| /*0.*/1.);
+					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, target.size.signed())-top_left).unsigned()).set(|_| foreground.g);
 					//context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
 				}
 			}
@@ -65,7 +65,7 @@ impl widget::Widget for View<'_> {
 				if top_left < (size/scale).signed() {
 					let top_left = ifloor(*scale, top_left);
 					let bottom_right : int2 = int2::enumerate().map(|i| if bottom_right[i] == i32::MAX as _ { size[i] as _ } else { scale.ifloor(bottom_right[i] as i32 - min[i]) }).into();
-					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, target.size.signed())-top_left).unsigned()).set(|_| /*0.*/1.);
+					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, target.size.signed())-top_left).unsigned()).set(|_| foreground.g);
 					//context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
 				}
 			}
@@ -83,7 +83,7 @@ impl widget::Widget for View<'_> {
 					let size = vector::component_wise_min(source_size, target_size);
 					if size.x > 0 && size.y > 0 {
 						let size = size.unsigned();
-						target.slice_mut(target_offset, size).zip(coverage.slice(source_offset.unsigned(), size),
+						target.slice_mut(target_offset, size).zip_map(&coverage.slice(source_offset.unsigned(), size),
 							|&target, &coverage| target +/*-*/ coverage
 						);
 					}
@@ -102,7 +102,7 @@ impl widget::Widget for View<'_> {
 			}
 			target
 		};
-		target.set_map(&buffer, |_, &buffer| PQ10(buffer,1.).into()});
+		target.zip_map(&buffer, |_, &buffer| PQ10(buffer).into());
 	}
 }
 

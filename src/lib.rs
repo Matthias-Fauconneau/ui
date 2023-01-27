@@ -4,12 +4,12 @@ pub type Result<T=(),E=Error> = std::result::Result<T, E>;
 pub use fehler::throws;
 pub mod prelude { pub use super::{Result,Error,throws, size,int2, Target, Widget, App, run}; }
 
-pub use num::Ratio;
-pub mod color;
+//pub use num::Ratio;
+pub mod color; pub use color::{black,white,background,foreground};
 pub mod widget; pub use widget::{xy,size,int2, Widget, Target, Event,EventContext};
 mod app; pub use app::{App, run};
 #[cfg(feature="font")] pub mod font;
-#[cfg(feature="text")] pub mod text; #[cfg(feature="text")] pub use text::{fit, background,foreground,white,black, Text,text};
+#[cfg(feature="text")] pub mod text; #[cfg(feature="text")] pub use text::{fit,Text,text};
 #[cfg(feature="graphic")] pub mod graphic; #[cfg(feature="graphic")] pub use graphic::Graphic;
 #[cfg(feature="edit")] pub mod edit; //pub use edit::TextEdit;
 #[cfg(feature="plot")] pub mod plot; #[cfg(feature="plot")] pub use plot::{list, Plot};
