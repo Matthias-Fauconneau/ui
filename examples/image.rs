@@ -1,4 +1,5 @@
 #![feature(vec_into_raw_parts)]
+
 fn cast<T,U>(v: Box<[T]>) -> Box<[U]> {
     use std::mem::size_of;
     assert!(size_of::<U>()%size_of::<T>() == 0);
@@ -13,10 +14,6 @@ pub fn rgb10(target: &mut Image<&mut [u32]>, source: Image<&[rgb8]>) {
     time("",|| for y in 0..std::cmp::min(source.size.y*den/num, target.size.y) {
         for x in 0..std::cmp::min(source.size.x*den/num, target.size.x) {
             target[xy{x,y}] = rgb8_to_10(map, source[xy{x: x*num/den, y: y*num/den}]);
-            /*use image::{rgb, bgr};
-            let rgb{r,g,b} = source[xy{x: x*num/den, y: y*num/den}];
-            let bgr{b,g,r} = bgr{b: sRGB_to_PQ10[b as usize], g: sRGB_to_PQ10[g as usize], r: sRGB_to_PQ10[r as usize]};
-            target[xy{x,y}] = ((b as u32) << 20) | ((g as u32) << 10) | (r as u32)*/
         }
     })
 }
@@ -32,6 +29,10 @@ impl Widget for ImageView {
 }
 
 fn main() -> ui::Result {
-    let image = image_io::io::Reader::open(std::env::args().skip(1).next()?)?.decode()?.into_rgb8();
+    for i in 0..1<<10 {
+        assert_eq!(i, image::PQ10(image::from_PQ10(i)));
+        //println!("{i} {}", image::from_PQ10(i)*1024.);
+    }
+    let image = image_io::io::Reader::open(std::env::args().skip(1).next().unwrap_or("test.jpg".into()))?.decode()?.into_rgb8();
     ui::run("image", &mut ImageView(image::Image::new(image.dimensions().into(), cast(image.into_raw().into_boxed_slice()))))
 }

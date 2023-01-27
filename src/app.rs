@@ -133,7 +133,9 @@ impl App {
 					rustix::io::poll(fds, if paint {0} else {-1})?;
 					fds.iter().map(|fd| fd.revents().contains(PollFlags::IN)).collect::<Box<_>>()
 				};
+				//{static mut counter : std::sync::atomic::AtomicU64 = 0.into(); dbg!(&events, unsafe{&counter}.fetch_add(1, std::sync::atomic::Ordering::Relaxed));}
 				if events[0] {
+					assert!({let mut buf = [0; 8]; assert!(rustix::io::read(&self.0, &mut buf)? == buf.len()); let trigger_count = u64::from_ne_bytes(buf); trigger_count == 1});
 					paint = widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Trigger).unwrap(); // determines whether to wait for events
 				} else if events[1] {
 					let Message{id, opcode, ..} = message(&mut*server.server.borrow_mut());
@@ -310,7 +312,7 @@ impl App {
 					}
 					else { panic!("{:?} {opcode:?} {:?}", id, [toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, dmabuf.id]); }
 				}
-				else if events.len() > 1 && events[1] && let Some((msec, key)) = repeat {
+				else if events.len() > 2 && events[2] && let Some((msec, key)) = repeat {
 					if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Key(key))? { paint=true; }
 					repeat = Some((msec+33, key));
 				} else { break; }
@@ -342,3 +344,5 @@ impl App {
 		} // idle-event loop
 	}
 }
+impl Default for App { fn default() -> Self { Self::new().unwrap() } }
+pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> { App::new()?.run(title, widget) }

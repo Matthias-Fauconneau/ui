@@ -41,3 +41,6 @@ xcursor={version='*', optional=true}
 
 #[dev-dependencies]
 image-io={package='image', version='*', optional=true}
+
+[patch.'https://github.com/Matthias-Fauconneau/image']
+image={path='../image'}
