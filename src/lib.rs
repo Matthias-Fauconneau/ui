@@ -2,14 +2,14 @@
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T=(),E=Error> = std::result::Result<T, E>;
 pub use fehler::throws;
-pub mod prelude { pub use super::{Result,Error,throws, size,int2,Target,Widget, App}; }
+pub mod prelude { pub use super::{Result,Error,throws, size,int2, Target, Widget, App}; }
 
 pub use num::Ratio;
 pub mod color;
-pub mod widget; pub use widget::{Widget, Target, size, int2, Event, EventContext};
+pub mod widget; pub use widget::{xy,size,int2, Widget, Target, Event,EventContext};
 mod app; pub use app::App;
 #[cfg(feature="font")] pub mod font;
-#[cfg(feature="text")] pub mod text; #[cfg(feature="text")] pub use text::{background, foreground, Text};
+#[cfg(feature="text")] pub mod text; #[cfg(feature="text")] pub use text::{fit, background,foreground, Text,text};
 #[cfg(feature="graphic")] pub mod graphic; #[cfg(feature="graphic")] pub use graphic::Graphic;
 #[cfg(feature="edit")] pub mod edit; //pub use edit::TextEdit;
 #[cfg(feature="plot")] pub mod plot; #[cfg(feature="plot")] pub use plot::{list, Plot};
