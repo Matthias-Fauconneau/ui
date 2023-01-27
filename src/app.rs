@@ -63,273 +63,282 @@ impl Cursor<'_> {
 	}
 }
 
-pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> {
-	let server = std::os::unix::net::UnixStream::connect({
-		let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
-		path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
-		path
-	})?;
-	let ref server = Server::from(server);
-	let display = Display{server, id: 1};
+pub struct App(rustix::fd::OwnedFd);
+impl App {
+	pub fn new() -> Result<Self> { Ok(Self(rustix::io::eventfd(0, rustix::io::EventfdFlags::empty())?)) }
+	pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
+	pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result<()> {
+		let server = std::os::unix::net::UnixStream::connect({
+			let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
+			path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
+			path
+		})?;
+		let ref server = Server::from(server);
+		let display = Display{server, id: 1};
 
-	let ref registry = server.new();
-	display.get_registry(registry);
+		let ref registry = server.new();
+		display.get_registry(registry);
 
-	let [dmabuf, compositor, wm_base, seat, output] = server.globals(registry, ["zwp_linux_dmabuf_v1", "wl_compositor",  "xdg_wm_base", "wl_seat", "wl_output"]);
-	let ref dmabuf = DMABuf{server, id: dmabuf};
-	let ref compositor = Compositor{server, id: compositor};
-	let ref wm_base = WmBase{server, id: wm_base};
-	let ref seat = Seat{server, id: seat};
-	let ref output = Output{server, id: output};
+		let [dmabuf, compositor, wm_base, seat, output] = server.globals(registry, ["zwp_linux_dmabuf_v1", "wl_compositor",  "xdg_wm_base", "wl_seat", "wl_output"]);
+		let ref dmabuf = DMABuf{server, id: dmabuf};
+		let ref compositor = Compositor{server, id: compositor};
+		let ref wm_base = WmBase{server, id: wm_base};
+		let ref seat = Seat{server, id: seat};
+		let ref output = Output{server, id: output};
 
-	let ref pointer = server.new();
-	seat.get_pointer(pointer);
-	let ref keyboard = server.new();
-	seat.get_keyboard(keyboard);
+		let ref pointer = server.new();
+		seat.get_pointer(pointer);
+		let ref keyboard = server.new();
+		seat.get_keyboard(keyboard);
 
-	let ref surface = server.new();
-	compositor.create_surface(surface);
-	let ref xdg_surface = server.new();
-	wm_base.get_xdg_surface(xdg_surface, surface);
-	let ref toplevel = server.new();
-	xdg_surface.get_toplevel(toplevel);
-	toplevel.set_title(title);
-	surface.commit();
+		let ref surface = server.new();
+		compositor.create_surface(surface);
+		let ref xdg_surface = server.new();
+		wm_base.get_xdg_surface(xdg_surface, surface);
+		let ref toplevel = server.new();
+		xdg_surface.get_toplevel(toplevel);
+		toplevel.set_title(title);
+		surface.commit();
 
-	let device = Device::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
+		let device = Device::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
 
-	let mut buffer = None;
-	let ref params : dmabuf::Params = server.new();
-	let ref buffer_ref : Buffer = server.new();
-	let mut scale_factor = 0;
-	let mut configure_bounds = zero();
-	let mut size = zero();
-	let mut can_paint = false;
-	let mut modifiers_state = ModifiersState::default();
-	let mut pointer_position = int2::default();
-	let mut mouse_buttons = 0;
-	let ref mut cursor = Cursor{name: "", pointer, serial: 0, dmabuf, compositor, surface: None};
-	let mut repeat : Option<(u64, char)> = None;
-	let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
+		let mut buffer = None;
+		let ref params : dmabuf::Params = server.new();
+		let ref buffer_ref : Buffer = server.new();
+		let mut scale_factor = 0;
+		let mut configure_bounds = zero();
+		let mut size = zero();
+		let mut can_paint = false;
+		let mut modifiers_state = ModifiersState::default();
+		let mut pointer_position = int2::default();
+		let mut mouse_buttons = 0;
+		let ref mut cursor = Cursor{name: "", pointer, serial: 0, dmabuf, compositor, surface: None};
+		let mut repeat : Option<(u64, char)> = None;
+		let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
 
-	loop {
-		let mut paint = widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Idle).unwrap();
 		loop {
-			let events = {
-				let fd = server.server.borrow();
-				let ref mut fds = vec![rustix::io::PollFd::new(&*fd, rustix::io::PollFlags::IN)];
-				if let Some((msec, _)) = repeat {
-					rustix::time::timerfd_settime(&timerfd, rustix::time::TimerfdTimerFlags::ABSTIME,
-						&rustix::time::Itimerspec{it_interval:linux_raw_sys::general::__kernel_timespec{tv_sec:0,tv_nsec:0},it_value: linux_raw_sys::general::__kernel_timespec{tv_sec:(msec/1000) as i64,tv_nsec:((msec%1000)*1000000) as i64}}
-					)?;
-					fds.push(rustix::io::PollFd::new(&timerfd, rustix::io::PollFlags::IN));
-				}
-				rustix::io::poll(fds, if paint {0} else {-1})?;
-				fds.iter().map(|fd| fd.revents().contains(rustix::io::PollFlags::IN)).collect::<Box<_>>()
-			};
-			if events[0] {
-				let Message{id, opcode, ..} = message(&mut*server.server.borrow_mut());
-				use Arg::*;
-				/**/ if id == display.id && opcode == display::error {
-					panic!("{:?}", server.args({use Type::*; [UInt, UInt, String]}));
-				}
-				else if id == display.id && opcode == display::delete_id {
-					let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-					assert!(id == params.id || id == buffer_ref.id); // Reused immediately
-				}
-				else if id == dmabuf.id && opcode == dmabuf::format {
-					let [UInt(format)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-					println!("f {format:x}");
-				}
-				else if id == dmabuf.id && opcode == dmabuf::modifier {
-					let [UInt(modifier)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-					println!("m {modifier:x}");
-				}
-				else if id == seat.id && opcode == seat::capabilities {
-					server.args({use Type::*; [UInt]});
-				}
-				else if id == seat.id && opcode == seat::name {
-					server.args({use Type::*; [String]});
-				}
-				else if id == output.id && opcode == output::geometry {
-					server.args({use Type::*; [UInt, UInt, UInt, UInt, UInt, String, String, UInt]});
-				}
-				else if id == output.id && opcode == output::mode {
-					let [_, UInt(x), UInt(y), _] = server.args({use Type::*; [UInt, UInt, UInt, UInt]}) else {unreachable!()};
-					configure_bounds = xy{x,y};
-				}
-				else if id == output.id && opcode == output::scale {
-					let [UInt(factor)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-					scale_factor = factor;
-					surface.set_buffer_scale(scale_factor);
-				}
-				else if id == output.id && opcode == output::name {
-					server.args({use Type::*; [String]});
-				}
-				else if id == output.id && opcode == output::description {
-					server.args({use Type::*; [String]});
-				}
-				else if id == output.id && opcode == output::done {
-				}
-				else if id == toplevel.id && opcode == toplevel::configure_bounds {
-					let [UInt(_width),UInt(_height)] = server.args({use Type::*; [UInt,UInt]}) else {unreachable!()};
-				}
-				else if id == toplevel.id && opcode == toplevel::configure {
-					let [UInt(x),UInt(y),_] = server.args({use Type::*; [UInt,UInt,Array]}) else {unreachable!()};
-					buffer = None;
-					size = xy{x: x*scale_factor, y: y*scale_factor};
-					if size.is_zero() { assert!(configure_bounds.x > 0 && configure_bounds.y > 0); size = widget.size(configure_bounds); }
-					assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
-				}
-				else if id == xdg_surface.id && opcode == xdg_surface::configure {
-					let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-					xdg_surface.ack_configure(serial);
-					can_paint = true;
-					paint = true;
-				}
-				else if id == surface.id && opcode == surface::enter {
-					let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-				}
-				else if id == surface.id && opcode == surface::leave {
-					let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-				}
-				else if id == buffer_ref.id && opcode == buffer::release {
-				}
-				else if id == pointer.id && opcode == pointer::enter {
-					let [UInt(serial),_,_,_] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
-					cursor.serial = serial;
-				}
-				else if id == pointer.id && opcode == pointer::leave {
-					server.args({use Type::*; [UInt,UInt]});
-				}
-				else if id == pointer.id && opcode == pointer::motion {
-					let [_,Int(x),Int(y)] = server.args({use Type::*; [UInt,Int,Int]}) else {unreachable!()};
-					pointer_position = xy{x: x*scale_factor as i32/256,y: y*scale_factor as i32/256};
-					if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Motion{position: pointer_position, mouse_buttons})? { paint=true }
-				}
-				else if id == pointer.id && opcode == pointer::button {
-					let [_,_,UInt(button),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
-					#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
-					let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
-					if state>0 { mouse_buttons |= 1<<button; } else { mouse_buttons &= !(1<<button); }
-					if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
-						paint=true;
+			let mut paint = widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Idle).unwrap(); // determines whether to wait for events
+			// ^ could also trigger eventfd instead
+			loop {
+				let events = {
+					use {rustix::{io::{PollFd,PollFlags},time::{timerfd_settime,TimerfdTimerFlags,Itimerspec}}, linux_raw_sys::general::__kernel_timespec};
+					let server = server.server.borrow();
+					let ref mut fds = vec![PollFd::new(&self.0, PollFlags::IN), PollFd::new(&*server, PollFlags::IN)];
+					if let Some((msec, _)) = repeat {
+						timerfd_settime(&timerfd, TimerfdTimerFlags::ABSTIME,
+							&Itimerspec{it_interval:__kernel_timespec{tv_sec:0, tv_nsec:0}, it_value: __kernel_timespec{tv_sec:(msec/1000) as i64,tv_nsec:((msec%1000)*1000000) as i64}}
+						)?;
+						fds.push(PollFd::new(&timerfd, PollFlags::IN));
 					}
-				}
-				else if id == pointer.id && opcode == pointer::axis {
-					let [_,UInt(axis),Int(value)] = server.args({use Type::*; [UInt,UInt,Int]}) else {unreachable!()};
-					if axis != 0 { continue; }
-					if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Scroll(value*scale_factor as i32/256))? { paint=true; }
-				}
-				else if id == pointer.id && opcode == pointer::frame {
-					server.args([]);
-				}
-				else if id == pointer.id && opcode == pointer::axis_source {
-					server.args({use Type::*; [UInt]});
-				}
-				else if id == pointer.id && opcode == pointer::axis_stop {
-					server.args({use Type::*; [UInt,UInt]});
-				}
-				else if id == keyboard.id && opcode == keyboard::keymap {
-					server.args({use Type::*; [UInt,UInt]});
-				}
-				else if id == keyboard.id && opcode == keyboard::repeat_info {
-					server.args({use Type::*; [UInt,UInt]});
-				}
-				else if id == keyboard.id && opcode == keyboard::modifiers {
-					let [_,UInt(depressed),_,_,_] = server.args({use Type::*; [UInt,UInt,UInt,UInt,UInt]}) else {unreachable!()};
-					const SHIFT: u32 = 0b1;
-					const CTRL: u32 = 0b100;
-					const ALT: u32 = 0b1000;
-					const LOGO: u32 = 0b1000000;
-					modifiers_state = ModifiersState{
-						shift: depressed&SHIFT != 0,
-						ctrl: depressed&CTRL != 0,
-						logo: depressed&LOGO != 0,
-						alt: depressed&ALT != 0,
-					};
-				}
-				else if id == keyboard.id && opcode == keyboard::enter {
-					server.args({use Type::*; [UInt,UInt,Array]});
-				}
-				else if id == keyboard.id && opcode == keyboard::leave {
-					server.args({use Type::*; [UInt,UInt]});
-				}
-				else if id == wm_base.id && opcode == wm_base::ping {
-					let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-					wm_base.pong(serial);
-				}
-				else if id == keyboard.id && opcode == keyboard::key {
-					let [_serial,UInt(_key_time),UInt(key),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
-					//enum Key { prog3 = 202, unknown = 240 };
-					const prog3 : u32 = 202; const unknown : u32 = 240;
-					if let unknown|prog3 = key {} else {
-						let key = [
-							'\0','⎋','1','2','3','4','5','6','7','8',
-							'9','0','-','=','⌫','\t','q','w','e','r',
-							't','y','u','i','o','p','{','}','\n','⌃',
-							'a','s','d','f','g','h','j','k','l',
-							';','\'','`','⇧','\\','z','x','c','v','b',
-							'n','m',',','.','/','⇧','�','⎇',' ','⇪',
-							'\u{F701}','\u{F702}','\u{F703}','\u{F704}','\u{F705}','\u{F706}','\u{F707}','\u{F708}','\u{F709}','\u{F70A}',
-							'�','⇳','7','8','9','-','4','5','6','+',
-							'1','2','3','0','.','�','�','≷','\u{F70B}','\u{F70C}','\u{F70D}',
-							'�','�','�','�','�',',','\n','⌃'/*\x1B⎈*/,'/','⎙',
-							'⎇','\n','⇤','↑','⇞','←','→','⇥','↓','⇟',
-							'⎀','⌦','�','🔇','🕩','🕪','⏻','=','±','⏯',
-							'�',',','�','�','¥','◆','◆','⎄'][key as usize];
-						if state > 0 {
-							if key == '⎋' { return Ok(()); }
-							if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Key(key))? { paint=true; }
-							let linux_raw_sys::general::__kernel_timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
-							let base = tv_sec as u64*1000+tv_nsec as u64/1000000;
-							//let time = base&0xFFFFFFFF_00000000 + key_time as u64;
-							repeat = Some((base+150, key));
-						} else { repeat = None; }
+					rustix::io::poll(fds, if paint {0} else {-1})?;
+					fds.iter().map(|fd| fd.revents().contains(PollFlags::IN)).collect::<Box<_>>()
+				};
+				if events[0] {
+					paint = widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Trigger).unwrap(); // determines whether to wait for events
+				} else if events[1] {
+					let Message{id, opcode, ..} = message(&mut*server.server.borrow_mut());
+					use Arg::*;
+					/**/ if id == display.id && opcode == display::error {
+						panic!("{:?}", server.args({use Type::*; [UInt, UInt, String]}));
 					}
+					else if id == display.id && opcode == display::delete_id {
+						let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+						assert!(id == params.id || id == buffer_ref.id); // Reused immediately
+					}
+					else if id == dmabuf.id && opcode == dmabuf::format {
+						let [UInt(format)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+						println!("f {format:x}");
+					}
+					else if id == dmabuf.id && opcode == dmabuf::modifier {
+						let [UInt(modifier)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+						println!("m {modifier:x}");
+					}
+					else if id == seat.id && opcode == seat::capabilities {
+						server.args({use Type::*; [UInt]});
+					}
+					else if id == seat.id && opcode == seat::name {
+						server.args({use Type::*; [String]});
+					}
+					else if id == output.id && opcode == output::geometry {
+						server.args({use Type::*; [UInt, UInt, UInt, UInt, UInt, String, String, UInt]});
+					}
+					else if id == output.id && opcode == output::mode {
+						let [_, UInt(x), UInt(y), _] = server.args({use Type::*; [UInt, UInt, UInt, UInt]}) else {unreachable!()};
+						configure_bounds = xy{x,y};
+					}
+					else if id == output.id && opcode == output::scale {
+						let [UInt(factor)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+						scale_factor = factor;
+						surface.set_buffer_scale(scale_factor);
+					}
+					else if id == output.id && opcode == output::name {
+						server.args({use Type::*; [String]});
+					}
+					else if id == output.id && opcode == output::description {
+						server.args({use Type::*; [String]});
+					}
+					else if id == output.id && opcode == output::done {
+					}
+					else if id == toplevel.id && opcode == toplevel::configure_bounds {
+						let [UInt(_width),UInt(_height)] = server.args({use Type::*; [UInt,UInt]}) else {unreachable!()};
+					}
+					else if id == toplevel.id && opcode == toplevel::configure {
+						let [UInt(x),UInt(y),_] = server.args({use Type::*; [UInt,UInt,Array]}) else {unreachable!()};
+						buffer = None;
+						size = xy{x: x*scale_factor, y: y*scale_factor};
+						if size.is_zero() { assert!(configure_bounds.x > 0 && configure_bounds.y > 0); size = widget.size(configure_bounds); }
+						assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
+					}
+					else if id == xdg_surface.id && opcode == xdg_surface::configure {
+						let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+						xdg_surface.ack_configure(serial);
+						can_paint = true;
+						paint = true;
+					}
+					else if id == surface.id && opcode == surface::enter {
+						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+					}
+					else if id == surface.id && opcode == surface::leave {
+						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+					}
+					else if id == buffer_ref.id && opcode == buffer::release {
+					}
+					else if id == pointer.id && opcode == pointer::enter {
+						let [UInt(serial),_,_,_] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
+						cursor.serial = serial;
+					}
+					else if id == pointer.id && opcode == pointer::leave {
+						server.args({use Type::*; [UInt,UInt]});
+					}
+					else if id == pointer.id && opcode == pointer::motion {
+						let [_,Int(x),Int(y)] = server.args({use Type::*; [UInt,Int,Int]}) else {unreachable!()};
+						pointer_position = xy{x: x*scale_factor as i32/256,y: y*scale_factor as i32/256};
+						if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Motion{position: pointer_position, mouse_buttons})? { paint=true }
+					}
+					else if id == pointer.id && opcode == pointer::button {
+						let [_,_,UInt(button),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
+						#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
+						let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
+						if state>0 { mouse_buttons |= 1<<button; } else { mouse_buttons &= !(1<<button); }
+						if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
+							paint=true;
+						}
+					}
+					else if id == pointer.id && opcode == pointer::axis {
+						let [_,UInt(axis),Int(value)] = server.args({use Type::*; [UInt,UInt,Int]}) else {unreachable!()};
+						if axis != 0 { continue; }
+						if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Scroll(value*scale_factor as i32/256))? { paint=true; }
+					}
+					else if id == pointer.id && opcode == pointer::frame {
+						server.args([]);
+					}
+					else if id == pointer.id && opcode == pointer::axis_source {
+						server.args({use Type::*; [UInt]});
+					}
+					else if id == pointer.id && opcode == pointer::axis_stop {
+						server.args({use Type::*; [UInt,UInt]});
+					}
+					else if id == keyboard.id && opcode == keyboard::keymap {
+						server.args({use Type::*; [UInt,UInt]});
+					}
+					else if id == keyboard.id && opcode == keyboard::repeat_info {
+						server.args({use Type::*; [UInt,UInt]});
+					}
+					else if id == keyboard.id && opcode == keyboard::modifiers {
+						let [_,UInt(depressed),_,_,_] = server.args({use Type::*; [UInt,UInt,UInt,UInt,UInt]}) else {unreachable!()};
+						const SHIFT: u32 = 0b1;
+						const CTRL: u32 = 0b100;
+						const ALT: u32 = 0b1000;
+						const LOGO: u32 = 0b1000000;
+						modifiers_state = ModifiersState{
+							shift: depressed&SHIFT != 0,
+							ctrl: depressed&CTRL != 0,
+							logo: depressed&LOGO != 0,
+							alt: depressed&ALT != 0,
+						};
+					}
+					else if id == keyboard.id && opcode == keyboard::enter {
+						server.args({use Type::*; [UInt,UInt,Array]});
+					}
+					else if id == keyboard.id && opcode == keyboard::leave {
+						server.args({use Type::*; [UInt,UInt]});
+					}
+					else if id == wm_base.id && opcode == wm_base::ping {
+						let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+						wm_base.pong(serial);
+					}
+					else if id == keyboard.id && opcode == keyboard::key {
+						let [_serial,UInt(_key_time),UInt(key),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
+						//enum Key { prog3 = 202, unknown = 240 };
+						const prog3 : u32 = 202; const unknown : u32 = 240;
+						if let unknown|prog3 = key {} else {
+							let key = [
+								'\0','⎋','1','2','3','4','5','6','7','8',
+								'9','0','-','=','⌫','\t','q','w','e','r',
+								't','y','u','i','o','p','{','}','\n','⌃',
+								'a','s','d','f','g','h','j','k','l',
+								';','\'','`','⇧','\\','z','x','c','v','b',
+								'n','m',',','.','/','⇧','�','⎇',' ','⇪',
+								'\u{F701}','\u{F702}','\u{F703}','\u{F704}','\u{F705}','\u{F706}','\u{F707}','\u{F708}','\u{F709}','\u{F70A}',
+								'�','⇳','7','8','9','-','4','5','6','+',
+								'1','2','3','0','.','�','�','≷','\u{F70B}','\u{F70C}','\u{F70D}',
+								'�','�','�','�','�',',','\n','⌃'/*\x1B⎈*/,'/','⎙',
+								'⎇','\n','⇤','↑','⇞','←','→','⇥','↓','⇟',
+								'⎀','⌦','�','🔇','🕩','🕪','⏻','=','±','⏯',
+								'�',',','�','�','¥','◆','◆','⎄'][key as usize];
+							if state > 0 {
+								if key == '⎋' { return Ok(()); }
+								if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Key(key))? { paint=true; }
+								let linux_raw_sys::general::__kernel_timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
+								let base = tv_sec as u64*1000+tv_nsec as u64/1000000;
+								//let time = base&0xFFFFFFFF_00000000 + key_time as u64;
+								repeat = Some((base+150, key));
+							} else { repeat = None; }
+						}
+					}
+					/*else if let Some(pool) = &cursor.pool && id == pool.buffer.id && opcode == buffer::release {
+					}*/
+					else if let Some(surface) = &cursor.surface && id == surface.id && opcode == surface::enter {
+						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+					}
+					else if let Some(surface) = &cursor.surface && id == surface.id && opcode == surface::leave {
+						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+					}
+					else if id == toplevel.id && opcode == toplevel::close {
+						//println!("close");
+						return Ok(());
+					}
+					else { panic!("{:?} {opcode:?} {:?}", id, [toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, dmabuf.id]); }
 				}
-				/*else if let Some(pool) = &cursor.pool && id == pool.buffer.id && opcode == buffer::release {
-				}*/
-				else if let Some(surface) = &cursor.surface && id == surface.id && opcode == surface::enter {
-					let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+				else if events.len() > 1 && events[1] && let Some((msec, key)) = repeat {
+					if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Key(key))? { paint=true; }
+					repeat = Some((msec+33, key));
+				} else { break; }
+			} // event loop
+			if paint && can_paint {
+				assert!(size.x > 0 && size.y > 0);
+				use drm::{control::Device as _, buffer::Buffer as _};
+				let mut buffer = buffer.get_or_insert_with(|| {
+					widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Stale).unwrap();
+					device.create_dumb_buffer(size.into(), drm::buffer::DrmFourcc::Xrgb2101010, 32).unwrap()
+				});
+				{
+					let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
+					let mut map = device.map_dumb_buffer(&mut buffer)?;
+					widget.paint(&mut image::Image::cast_slice_mut(map.as_mut(), size, stride), size, zero())?;
 				}
-				else if let Some(surface) = &cursor.surface && id == surface.id && opcode == surface::leave {
-					let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-				}
-				else if id == toplevel.id && opcode == toplevel::close {
-					//println!("close");
-					return Ok(());
-				}
-				else { panic!("{:?} {opcode:?} {:?}", id, [toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, dmabuf.id]); }
+				dmabuf.create_params(params);
+				use std::os::fd::FromRawFd;
+				let fd = unsafe{std::os::fd::OwnedFd::from_raw_fd(device.buffer_to_prime_fd(buffer.handle(), 0)?)};
+				let modifiers = 0u64;
+				params.add(&fd, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
+				params.create_immed(buffer_ref, buffer.size().0, buffer.size().1, buffer.format() as u32, 0);
+				params.destroy();
+				surface.attach(&buffer_ref,0,0);
+				buffer_ref.destroy();
+				surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
+				surface.commit();
 			}
-			else if events.len() > 1 && events[1] && let Some((msec, key)) = repeat {
-				if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Key(key))? { paint=true; }
-				repeat = Some((msec+33, key));
-			} else { break; }
-		}
-		if paint && can_paint {
-			assert!(size.x > 0 && size.y > 0);
-			use drm::{control::Device as _, buffer::Buffer as _};
-			let mut buffer = buffer.get_or_insert_with(|| {
-				widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Stale).unwrap();
-				device.create_dumb_buffer(size.into(), drm::buffer::DrmFourcc::Xrgb2101010, 32).unwrap()
-			});
-			{
-				let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
-				let mut map = device.map_dumb_buffer(&mut buffer)?;
-				widget.paint(&mut image::Image::cast_slice_mut(map.as_mut(), size, stride), size, zero())?;
-			}
-			dmabuf.create_params(params);
-			use std::os::fd::FromRawFd;
-			let fd = unsafe{std::os::fd::OwnedFd::from_raw_fd(device.buffer_to_prime_fd(buffer.handle(), 0)?)};
-			let modifiers = 0u64;
-			params.add(&fd, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
-			params.create_immed(buffer_ref, buffer.size().0, buffer.size().1, buffer.format() as u32, 0);
-			params.destroy();
-			surface.attach(&buffer_ref,0,0);
-			buffer_ref.destroy();
-			surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
-			surface.commit();
-		}
+		} // idle-event loop
 	}
 }

@@ -20,7 +20,7 @@ pub enum Event {
 	Scroll (i32),
 	Stale,
 	Idle,
-	Event,
+	Trigger,
 }
 
 pub trait Widget {
