@@ -5,9 +5,10 @@ pub use vector::{size, int2, vec2, xy};
 pub type Target<'t> = image::Image<&'t mut [u32]>;
 #[derive(Default,Clone,Copy)] pub struct ModifiersState { pub shift: bool, pub ctrl: bool, pub logo: bool, pub alt: bool }
 
-pub struct EventContext<'e, 't> {
+pub struct EventContext<'t, 's, 'c> {
+	pub toplevel: &'t crate::app::wayland::toplevel::Toplevel<'s>,
 	pub modifiers_state: ModifiersState,
-	pub cursor: Option<&'e mut crate::app::Cursor<'t>>,
+	pub cursor: &'t mut crate::app::Cursor<'c>,
 }
 
 pub type MouseButtons = u32;
@@ -18,7 +19,8 @@ pub enum Event {
 	Motion { position: int2, mouse_buttons: MouseButtons },
 	Scroll (i32),
 	Stale,
-	Idle
+	Idle,
+	Event,
 }
 
 pub trait Widget {

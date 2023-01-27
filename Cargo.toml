@@ -38,3 +38,6 @@ unicode-segmentation={version='*', optional=true}
 ttf-parser={version='0.17', optional=true}
 rustybuzz={version='*', optional=true}
 xcursor={version='*', optional=true}
+
+#[dev-dependencies]
+image-io={package='image', version='*', optional=true}

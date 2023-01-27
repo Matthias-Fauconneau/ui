@@ -1,5 +1,5 @@
 #![allow(non_upper_case_globals)]
-#[path="wayland.rs"] mod wayland;
+#[path="wayland.rs"] pub mod wayland;
 use {num::{zero,IsZero}, vector::{xy, int2}, /*image::bgra,*/ crate::{prelude::*, widget::{/*Target,*/ Widget, EventContext, ModifiersState, Event}}, wayland::*};
 
 pub struct Device(std::fs::File);
@@ -113,7 +113,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> {
 	let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
 
 	loop {
-		let mut paint = widget.event(size, &mut EventContext{modifiers_state, cursor: Some(cursor)}, &Event::Idle).unwrap();
+		let mut paint = widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Idle).unwrap();
 		loop {
 			let events = {
 				let fd = server.server.borrow();
@@ -205,19 +205,21 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> {
 				else if id == pointer.id && opcode == pointer::motion {
 					let [_,Int(x),Int(y)] = server.args({use Type::*; [UInt,Int,Int]}) else {unreachable!()};
 					pointer_position = xy{x: x*scale_factor as i32/256,y: y*scale_factor as i32/256};
-					if widget.event(size, &mut EventContext{modifiers_state, cursor: Some(cursor)}, &Event::Motion{position: pointer_position, mouse_buttons})? { paint=true }
+					if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Motion{position: pointer_position, mouse_buttons})? { paint=true }
 				}
 				else if id == pointer.id && opcode == pointer::button {
 					let [_,_,UInt(button),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
 					#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
 					let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
 					if state>0 { mouse_buttons |= 1<<button; } else { mouse_buttons &= !(1<<button); }
-					if widget.event(size, &mut EventContext{modifiers_state, cursor: Some(cursor)}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? { paint=true; }
+					if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
+						paint=true;
+					}
 				}
 				else if id == pointer.id && opcode == pointer::axis {
 					let [_,UInt(axis),Int(value)] = server.args({use Type::*; [UInt,UInt,Int]}) else {unreachable!()};
 					if axis != 0 { continue; }
-					if widget.event(size, &mut EventContext{modifiers_state, cursor: Some(cursor)}, &Event::Scroll(value*scale_factor as i32/256))? { paint=true; }
+					if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Scroll(value*scale_factor as i32/256))? { paint=true; }
 				}
 				else if id == pointer.id && opcode == pointer::frame {
 					server.args([]);
@@ -278,7 +280,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> {
 							'�',',','�','�','¥','◆','◆','⎄'][key as usize];
 						if state > 0 {
 							if key == '⎋' { return Ok(()); }
-							if widget.event(size, &mut EventContext{modifiers_state, cursor: Some(cursor)}, &Event::Key(key))? { paint=true; }
+							if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Key(key))? { paint=true; }
 							let linux_raw_sys::general::__kernel_timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
 							let base = tv_sec as u64*1000+tv_nsec as u64/1000000;
 							//let time = base&0xFFFFFFFF_00000000 + key_time as u64;
@@ -301,7 +303,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> {
 				else { panic!("{:?} {opcode:?} {:?}", id, [toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, dmabuf.id]); }
 			}
 			else if events.len() > 1 && events[1] && let Some((msec, key)) = repeat {
-				if widget.event(size, &mut EventContext{modifiers_state, cursor: Some(cursor)}, &Event::Key(key))? { paint=true; }
+				if widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Key(key))? { paint=true; }
 				repeat = Some((msec+33, key));
 			} else { break; }
 		}
@@ -309,7 +311,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> {
 			assert!(size.x > 0 && size.y > 0);
 			use drm::{control::Device as _, buffer::Buffer as _};
 			let mut buffer = buffer.get_or_insert_with(|| {
-				widget.event(size, &mut EventContext{modifiers_state, cursor: Some(cursor)}, &Event::Stale).unwrap();
+				widget.event(size, &mut EventContext{toplevel, modifiers_state, cursor}, &Event::Stale).unwrap();
 				device.create_dumb_buffer(size.into(), drm::buffer::DrmFourcc::Xrgb2101010, 32).unwrap()
 			});
 			{
