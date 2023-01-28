@@ -40,14 +40,13 @@ impl ttf_parser::OutlineBuilder for Outline<'_> {
 	fn close(&mut self) { line(&mut self.target, self.p0.unwrap(), self.first.unwrap()); self.first = None; self.p0 = None; }
 }
 
-use {ttf_parser::GlyphId, vector::size};
+use {vector::size, ttf_parser::GlyphId};
 pub trait Rasterize {
 	fn glyph_size(&self, id: GlyphId) -> size;
 	fn glyph_scaled_size(&self, scale: Ratio, id: GlyphId) -> size;
 	fn rasterize(&self, scale: Ratio, id: GlyphId, bbox: Rect) -> Image<Box<[f32]>>;
 }
-use /*ttf_parser*/rustybuzz::Face;
-impl<'t> Rasterize for Face<'t> {
+impl<'t> Rasterize for ttf_parser::Face<'t> {
 	fn glyph_size(&self, id: ttf_parser::GlyphId) -> size {
 		let b = self.glyph_bounding_box(id).unwrap();
 		xy{x: (b.x_max as i32 - b.x_min as i32) as u32, y: (b.y_max as i32 - b.y_min as i32) as u32}
@@ -87,8 +86,6 @@ impl ttf_parser::OutlineBuilder for PathEncoder<'_> {
 	fn close(&mut self) { self.path_encoder.close_path(); }
 }*/
 
-use {fehler::throws, super::Error};
-#[derive(derive_more::Deref)] pub struct Handle<'t>(Face<'t>);
 pub struct MemoryMap{ ptr: *mut core::ffi::c_void, len: usize }
 impl MemoryMap {
 	fn map<Fd: std::os::fd::AsFd>(fd: Fd) -> rustix::io::Result<Self> { unsafe {
@@ -101,10 +98,14 @@ impl Deref for MemoryMap { type Target = [u8]; fn deref(&self) -> &Self::Target 
 impl Drop for MemoryMap { fn drop(&mut self) { unsafe { rustix::mm::munmap(self.ptr, self.len).unwrap() } } }
 unsafe impl Sync for MemoryMap {}
 unsafe impl Send for MemoryMap {}
+
+pub type Face<'t> = rustybuzz::Face<'t>;
+#[derive(derive_more::Deref)] pub struct Handle<'t>(Face<'t>);
 pub type File<'t> = owning_ref::OwningHandle<Box<MemoryMap>, Handle<'t>>;
+use {fehler::throws, super::Error};
 #[throws] pub fn open<'t>(path: &std::path::Path) -> File<'t> {
 	owning_ref::OwningHandle::new_with_fn(
 		Box::new(MemoryMap::map(&std::fs::File::open(path)?)?),
-		unsafe { |map| Handle(Face::from_slice(&*map, 0).unwrap()) }
+		unsafe { |map| Handle(rustybuzz::Face::from_slice(&*map, 0).unwrap()) }
 	)
 }
