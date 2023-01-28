@@ -47,7 +47,7 @@ impl widget::Widget for View<'_> {
     #[throws] fn paint(&mut self, target: &mut Target, size: size, _offset: int2) {
 		let Self{graphic: Graphic{scale, rects, parallelograms, glyphs}, view: Rect{min, ..}} = &self;
 
-		use {num::zero, image::{Image, PQ10}, crate::{background,foreground}};
+		use {num::zero, image::{Image, bgr, PQ10}, crate::{background,foreground}};
 		let buffer = {
 			let mut target = Image::fill(target.size, background.g);
 
@@ -102,7 +102,7 @@ impl widget::Widget for View<'_> {
 			}
 			target
 		};
-		target.zip_map(&buffer, |_, &buffer| PQ10(buffer).into());
+		target.zip_map(&buffer, |_, &buffer| bgr::from(PQ10(buffer)).into());
 	}
 }
 

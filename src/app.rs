@@ -188,7 +188,12 @@ impl App {
 						let [UInt(x),UInt(y),_] = server.args({use Type::*; [UInt,UInt,Array]}) else {unreachable!()};
 						buffer = None;
 						size = xy{x: x*scale_factor, y: y*scale_factor};
-						if size.is_zero() { assert!(configure_bounds.x > 0 && configure_bounds.y > 0); size = widget.size(configure_bounds); }
+						if size.is_zero() {
+							assert!(configure_bounds.x > 0 && configure_bounds.y > 0);
+							size = widget.size(configure_bounds);
+							size = size.map(|x| x.next_multiple_of(3));
+							assert!(size.x % scale_factor == 0 && size.y % scale_factor == 0);
+						}
 						assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
 					}
 					else if id == xdg_surface.id && opcode == xdg_surface::configure {
