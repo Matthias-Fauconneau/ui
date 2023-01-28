@@ -102,7 +102,7 @@ impl widget::Widget for View<'_> {
 			}
 			target
 		};
-		target.zip_map(&buffer, |_, &buffer| bgr::from(PQ10(buffer)).into());
+		target.zip_map(&buffer, |_, &buffer| bgr::from(PQ10(f32::min(1.,buffer))).into());
 	}
 }
 
