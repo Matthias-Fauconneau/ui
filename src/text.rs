@@ -26,7 +26,7 @@ pub fn layout<'t>(font: &'t Font<'t>, str: &'t str) -> impl 't+IntoIterator<Item
 			|x, (&rustybuzz::GlyphInfo{glyph_id,cluster:byte_index,..},&rustybuzz::GlyphPosition{x_offset,x_advance,..})| {
 		let (face, id, x_offset, x_advance) = if glyph_id>0 { (&font[0], GlyphId(glyph_id as u16), x_offset, x_advance) } else {
 			let c = str[byte_index as usize..].chars().next().unwrap();
-			let (face, id) = font.iter().find_map(|face| face.glyph_index(if c == '\t' { ' ' } else { c }).map(|id| (face, id))).unwrap_or_else(||panic!("Missing glyph for '{c}' {:x?}", c as u32));
+			let (face, id) = font.iter().find_map(|face| face.glyph_index(c/*if c == '\t' { ' ' } else{ c }*/).map(|id| (face, id))).unwrap_or_else(||panic!("Missing glyph for '{c}' {:x?}", c as u32));
 			(face, id, face.glyph_hor_side_bearing(id).unwrap() as i32, face.glyph_hor_advance(id)? as i32)
 		};
 		let next = Glyph{byte_index: byte_index as usize, x: (*x+x_offset) as u32, face, id};
@@ -34,8 +34,9 @@ pub fn layout<'t>(font: &'t Font<'t>, str: &'t str) -> impl 't+IntoIterator<Item
 		Some((next, x_advance))
 	}).peekable();
 	let layout = str./*graphemes(true).*/bytes().enumerate().scan((Glyph{byte_index:0, x:0, id:GlyphId(0), face:font[0]},0), move |(cluster,advance), (byte_index,_)| {
-		Some(if let Some((next,_)) = clusters.peek() && next.byte_index == byte_index {
-			(*cluster,*advance) = clusters.next().unwrap();
+		let (next_cluster, next_advance) = clusters.next()?;
+		Some(if next_cluster.byte_index == byte_index {
+			(*cluster, *advance) = (next_cluster, next_advance);
 			*cluster
 		} else { // Divide cluster horizontally
 			let next_index = clusters.peek().map_or(str./*graphemes(true).count()*/len(), |(cluster,_)| cluster.byte_index);
