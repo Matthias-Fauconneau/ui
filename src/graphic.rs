@@ -20,7 +20,7 @@ pub fn vertical   (x: i32, dx: u32, y0: i32, y1: i32) -> Rect { Rect{ min: xy{ x
 pub struct Graphic<'t> {
 	pub scale: Ratio,
 	pub rects: Vec<Rect>,
-	pub parallelograms: Vec<Parallelogram>,
+	parallelograms: Vec<Parallelogram>,
 	pub glyphs: Vec<Glyph<'t>>,
 }
 
@@ -28,14 +28,27 @@ use {crate::{throws, Error, Result}, vector::{xy, ifloor, ceil}, crate::{font::r
 
 impl Graphic<'_> {
 	pub fn new(scale: Ratio) -> Self { Self{scale, rects: vec![], parallelograms: vec![], glyphs: vec![]} }
-	pub fn rect(&mut self, rect: Rect) { self.rects.push(rect) }
+	pub fn extend(&mut self, mut graphic: Self, position: int2) {
+		self.rects.extend(graphic.rects.drain(..).map(|mut x| { x.translate(position); x }));
+		self.parallelograms.extend(graphic.parallelograms.drain(..).map(|mut x| { x.translate(position); x }));
+		self.glyphs.extend(graphic.glyphs.drain(..).map(|mut x| { x.translate(position); x }));
+	}
 	pub fn bounds(&self) -> Rect {
 		use {vector::MinMax, num::Option};
 		self.rects.iter().map(|r| MinMax{min: r.min, max: r.min.zip(r.max).map(|(min,max)| if max < i32::MAX as _ { max } else { min })})
+		.chain( self.parallelograms.iter().map(|p| MinMax{min: p.top_left, max: p.bottom_right}) )
 		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + g.face.bbox(g.id).unwrap().size().signed()}) )
 		.reduce(MinMax::minmax)
 		.map(|MinMax{min, max}| Rect{min: min, max: max})
 		.unwrap_or_zero()
+	}
+
+	pub fn rect(&mut self, rect: Rect) { self.rects.push(rect) }
+	pub fn horizontal(&mut self, y: i32, dy: u32, x0: i32, x1: i32) { self.rects.push(horizontal(y,dy,x0,x1)) }
+
+	#[track_caller] pub fn parallelogram(&mut self, p: Parallelogram) {
+		assert!(p.top_left <= p.bottom_right);
+		self.parallelograms.push(p)
 	}
 }
 
@@ -50,14 +63,15 @@ impl widget::Widget for View<'_> {
 
 		use {num::zero, image::{Image, bgr, PQ10}, crate::{background,foreground}};
 		let buffer = {
-			let mut target = Image::fill(target.size, background.g);
+			assert!(target.size == size);
+			let mut target = Image::fill(size, background.g);
 
 			for &Rect{min: top_left, max: bottom_right} in rects {
 				let top_left = top_left - min;
 				if top_left < (size/scale).signed() {
 					let top_left = ifloor(*scale, top_left);
 					let bottom_right : int2 = int2::enumerate().map(|i| if bottom_right[i] == i32::MAX { size[i] as _ } else { scale.ifloor(bottom_right[i]-min[i]) }).into();
-					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, target.size.signed())-top_left).unsigned()).set(|_| foreground.g);
+					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| foreground.g);
 					//context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
 				}
 			}
@@ -66,7 +80,7 @@ impl widget::Widget for View<'_> {
 				if top_left < (size/scale).signed() {
 					let top_left = ifloor(*scale, top_left);
 					let bottom_right : int2 = int2::enumerate().map(|i| if bottom_right[i] == i32::MAX as _ { size[i] as _ } else { scale.ifloor(bottom_right[i] as i32 - min[i]) }).into();
-					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, target.size.signed())-top_left).unsigned()).set(|_| foreground.g);
+					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| foreground.g);
 					//context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
 				}
 			}
@@ -75,7 +89,7 @@ impl widget::Widget for View<'_> {
 				if top_left < (size/scale).signed() {
 					let coverage = rasterize(face, *scale*glyph_scale, id, face.bbox(id).unwrap());
 					let offset = *scale*top_left;
-					let target_size = target.size.signed() - offset;
+					let target_size = size.signed() - offset;
 					let target_offset = vector::component_wise_max(zero(), offset).unsigned();
 					let source_offset = vector::component_wise_max(zero(), -offset);
 					let source_size = coverage.size.signed() - source_offset;

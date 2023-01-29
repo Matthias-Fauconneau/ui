@@ -108,7 +108,7 @@ pub fn line(target : &mut Image<&mut [f32]>, p0: vec2, p1: vec2) {
     let mut x = x0;
     // Modified from https://github.com/raphlinus/font-rs Apache 2
     //for (y, row) in target.rows_mut(y0 as u32..y1.ceil() as u32).enumerate() {
-    for y in y0 as u32..(y1.ceil() as u32).min(target.size.y) { let row = &mut target.data[(y*target.stride) as usize..]; // May access first column of next line
+    for y in y0 as u32..(y1.ceil() as u32)/*.min(target.size.y)*/ { let row = &mut target.data[(y*target.stride) as usize..]; // May access first column of next line
         let dy = ((y + 1) as f32).min(y1) - (y as f32).max(y0);
         let xnext = x + dxdy * dy;
         let d = dy * dir;
@@ -119,12 +119,12 @@ pub fn line(target : &mut Image<&mut [f32]>, p0: vec2, p1: vec2) {
         let x1i = x1ceil as u32;
         if x1i <= x0i + 1 {
             let xmf = (x + xnext) / 2. - x0floor;
-            //assert!((x0i as usize) < line.len(), "{:?} {} {}", target.size, line.len(), x0i);
+            assert!(x0i < target.size.x);
             row[x0i as usize] += d - d * xmf;
-            //assert!(((x0i+1) as usize) < line.len(), "{:?} {} {}", target.size, line.len(), x0i);
+            assert!(x0i+1 <= target.size.x);
             row[(x0i + 1) as usize] += d * xmf;
         } else {
-            //assert!(x0 >= 0. && x0i >= 0, (x0, x1, x, xnext, x0floor, x0i, x1ceil, x1i));
+            assert!(x0 >= 0. && x0i < target.size.x);
             let s = 1./(x1 - x0);
             let x0f = x0 - x0floor;
             let a0 = s / 2. * (1. - x0f) * (1. - x0f);
