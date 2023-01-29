@@ -1,5 +1,5 @@
-use {fehler::throws, super::Error, std::{cmp::{min, max}, ops::Range}, num::{zero, IsZero, Ratio}, vector::{xy, uint2, int2, size, Rect}, image::bgrf as Color, super::foreground};
-use {/*ttf_parser*/rustybuzz::Face, ttf_parser::GlyphId, crate::font::{self, rect}};
+use {std::{cmp::{min, max}, ops::Range}, crate::{throws, Error}, num::{zero, IsZero, Ratio}, vector::{xy, uint2, int2, size, Rect}};
+use {image::bgrf as Color, crate::{foreground, font::{self, Face, GlyphId}}};
 pub mod unicode_segmentation;
 //use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
 type TextIndex = usize;//GraphemeIndex
@@ -47,9 +47,7 @@ pub fn layout<'t>(font: &'t Font<'t>, str: &'t str) -> impl 't+IntoIterator<Item
 	layout
 }
 
-pub(crate) fn bbox<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> impl Iterator<Item=(Rect, Glyph<'t>)> {
-	iter.filter_map(move |g| Some((rect(g.face.glyph_bounding_box(g.id)?), g)))
-}
+pub(crate) fn bbox<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> impl Iterator<Item=(Rect, Glyph<'t>)> { iter.filter_map(move |g| Some((g.face.bbox(g.id)?, g))) }
 
 struct LineMetrics {pub width: u32, pub ascent: i16, pub descent: i16}
 fn metrics<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> LineMetrics {
@@ -68,7 +66,7 @@ impl const From<Style> for Attribute<Style> { fn from(attribute: Style) -> Self 
 impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { Style{color, style: FontStyle::Normal}.into() } }
 
 #[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(||
-	["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(std::path::Path::new(p)).unwrap()));
+	["/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf","/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(std::path::Path::new(p)).unwrap()));
 pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| std::ops::Deref::deref(x)) }
 
 #[allow(non_upper_case_globals)] pub const default_color: Color = foreground;
@@ -126,9 +124,9 @@ pub fn index(text: &str, LineColumn{line, column}: LineColumn) -> /*GraphemeInde
 }
 
 impl LineColumn {
-	#[throws(as Option)] pub fn from_text_index(text: &str, index: TextIndex/*GraphemeIndex*/) -> Self {
+	pub fn from_text_index(text: &str, index: TextIndex/*GraphemeIndex*/) -> Option<Self> {
 		let (line, LineRange{range: Range{start,..}, ..}) = line_ranges(text).enumerate().find(|&(_,LineRange{range: Range{start,end},..})| start <= index && index <=/*\n*/ end)?;
-		Self{line, column: index-start}
+		Some(Self{line, column: index-start})
 	}
 }
 
@@ -206,7 +204,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 
 				let mut cache = CACHE.lock().unwrap();
 				let (_coverage_pq10, _one_minus_coverage_pq10, coverage) = cache.entry((scale, id)).or_insert_with(|| {
-					let linear = font::Rasterize::rasterize(face.as_ref(), scale, id, bbox);
+					let linear = font::rasterize(face, scale, id, bbox);
 					(image::PQ10_from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::PQ10(1.-v))), linear)
 				});
 

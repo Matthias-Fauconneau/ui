@@ -1,12 +1,16 @@
-use std::ops::Deref;
-
+#[derive(derive_more::Deref)] pub struct Face<'t>(rustybuzz::Face<'t>);
+pub use rustybuzz::ttf_parser::{self, GlyphId};
 use vector::{xy, vec2, Rect};
-
-pub fn rect(r: ttf_parser::Rect) -> Rect { Rect{min: xy{ x: r.x_min as i32, y: r.y_min as i32}, max: xy{ x: r.x_max as i32, y: r.y_max as i32} } }
-
+impl<'t> Face<'t> {
+	pub fn advance(&self, codepoint: char) -> u32 { self.glyph_hor_advance(self.glyph_index(codepoint).unwrap()).unwrap() as u32 }
+	pub fn bbox(&self, id: GlyphId) -> Option<Rect> {
+		let r = self.glyph_bounding_box(id)?;
+		Some(Rect{min:xy{x: r.x_min.into(), y: r.y_min.into()}, max: xy{x: r.x_max.into(), y: r.y_max.into()}})
+	}
+}
 mod quad; mod cubic; mod raster;
-use {num::Ratio, image::Image, quad::quad, cubic::cubic, raster::line};
 
+use {num::Ratio, image::Image, quad::quad, cubic::cubic, raster::line};
 struct Outline<'t> { scale : Ratio /*f32 loses precision*/, x_min: f32, y_max: f32, target : &'t mut Image<&'t mut[f32]>, first : Option<vec2>, p0 : Option<vec2>}
 impl Outline<'_> { fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-self.x_min, y: -(self.scale*y)+self.y_max} } }
 impl ttf_parser::OutlineBuilder for Outline<'_> {
@@ -40,28 +44,12 @@ impl ttf_parser::OutlineBuilder for Outline<'_> {
 	fn close(&mut self) { line(&mut self.target, self.p0.unwrap(), self.first.unwrap()); self.first = None; self.p0 = None; }
 }
 
-use {vector::size, ttf_parser::GlyphId};
-pub trait Rasterize {
-	fn glyph_size(&self, id: GlyphId) -> size;
-	fn glyph_scaled_size(&self, scale: Ratio, id: GlyphId) -> size;
-	fn rasterize(&self, scale: Ratio, id: GlyphId, bbox: Rect) -> Image<Box<[f32]>>;
-}
-impl<'t> Rasterize for ttf_parser::Face<'t> {
-	fn glyph_size(&self, id: ttf_parser::GlyphId) -> size {
-		let b = self.glyph_bounding_box(id).unwrap();
-		xy{x: (b.x_max as i32 - b.x_min as i32) as u32, y: (b.y_max as i32 - b.y_min as i32) as u32}
-	}
-	fn glyph_scaled_size(&self, scale: Ratio, id: ttf_parser::GlyphId) -> size {
-		let b = self.glyph_bounding_box(id).unwrap();
-		xy{x: (scale.iceil(b.x_max as i32) - scale.ifloor(b.x_min as i32)) as u32, y: (scale.iceil(b.y_max as i32) - scale.ifloor(b.y_min as i32)) as u32}
-	}
-	fn rasterize(&self, scale: Ratio, id: ttf_parser::GlyphId, bbox: Rect) -> Image<Box<[f32]>> {
-		let x_min = scale.ifloor(bbox.min.x)-1; // Correct rasterization with f32 roundoff without bound checking
-		let y_max = scale.iceil(bbox.max.y as i32);
-		let mut target = Image::zero(self.glyph_scaled_size(scale, id)+xy{x:1, y:1});
-		self.outline_glyph(id, &mut Outline{scale: scale.into(), x_min: x_min as f32, y_max: y_max as f32, target: &mut target.as_mut(), first:None, p0:None}).unwrap();
-		raster::fill(&target.as_ref())
-	}
+pub fn rasterize(face: &Face, scale: Ratio, id: GlyphId, bbox: Rect) -> Image<Box<[f32]>> {
+	let x_min = scale.ifloor(bbox.min.x)-1; // Correct rasterization with f32 roundoff without bound checking
+	let y_max = scale.iceil(bbox.max.y as i32);
+	let mut target = Image::zero(scale*face.bbox(id).unwrap().size()+xy{x:2, y:0});
+	face.outline_glyph(id, &mut Outline{scale: scale.into(), x_min: x_min as f32, y_max: y_max as f32, target: &mut target.as_mut(), first:None, p0:None}).unwrap();
+	raster::fill(&target.as_ref())
 }
 
 /*pub struct PathEncoder<'t> { pub scale : f32, pub offset: vec2, pub path_encoder: piet_gpu::stages::PathEncoder<'t> }
@@ -94,18 +82,17 @@ impl MemoryMap {
 		Ok(Self{ptr: mm::mmap(std::ptr::null_mut(), len, mm::ProtFlags::READ, mm::MapFlags::SHARED, fd, 0)?, len})
 	}}
 }
-impl Deref for MemoryMap { type Target = [u8]; fn deref(&self) -> &Self::Target { unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) } } }
+impl std::ops::Deref for MemoryMap { type Target = [u8]; fn deref(&self) -> &Self::Target { unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) } } }
 impl Drop for MemoryMap { fn drop(&mut self) { unsafe { rustix::mm::munmap(self.ptr, self.len).unwrap() } } }
 unsafe impl Sync for MemoryMap {}
 unsafe impl Send for MemoryMap {}
 
-pub type Face<'t> = rustybuzz::Face<'t>;
 #[derive(derive_more::Deref)] pub struct Handle<'t>(Face<'t>);
 pub type File<'t> = owning_ref::OwningHandle<Box<MemoryMap>, Handle<'t>>;
 use {fehler::throws, super::Error};
 #[throws] pub fn open<'t>(path: &std::path::Path) -> File<'t> {
 	owning_ref::OwningHandle::new_with_fn(
 		Box::new(MemoryMap::map(&std::fs::File::open(path)?)?),
-		unsafe { |map| Handle(rustybuzz::Face::from_slice(&*map, 0).unwrap()) }
+		unsafe { |map| Handle(Face(rustybuzz::Face::from_slice(&*map, 0).unwrap())) }
 	)
 }
