@@ -8,7 +8,7 @@ impl Parallelogram {
 
 pub use {num::Ratio, vector::Rect, crate::font::{Face, GlyphId}};
 
-pub struct Glyph<'t> { pub top_left: int2, pub face: &'t Face<'t>, pub id: GlyphId, pub scale: Ratio }
+pub struct Glyph<'t> { pub top_left: int2, pub face: &'t Face<'t>, pub id: GlyphId, pub scale: Ratio, pub style: f32 }
 
 impl Glyph<'_> {
 	pub fn translate(&mut self, offset: int2) { self.top_left += offset; }
@@ -19,7 +19,7 @@ pub fn vertical   (x: i32, dx: u32, y0: i32, y1: i32) -> Rect { Rect{ min: xy{ x
 
 pub struct Graphic<'t> {
 	pub scale: Ratio,
-	pub rects: Vec<Rect>,
+	pub rects: Vec<(Rect, f32)>,
 	parallelograms: Vec<Parallelogram>,
 	pub glyphs: Vec<Glyph<'t>>,
 }
@@ -29,13 +29,13 @@ use {crate::{throws, Error, Result}, vector::{xy, ifloor, ceil}, crate::{font::r
 impl Graphic<'_> {
 	pub fn new(scale: Ratio) -> Self { Self{scale, rects: vec![], parallelograms: vec![], glyphs: vec![]} }
 	pub fn extend(&mut self, mut graphic: Self, position: int2) {
-		self.rects.extend(graphic.rects.drain(..).map(|mut x| { x.translate(position); x }));
+		self.rects.extend(graphic.rects.drain(..).map(|(mut x, style)| { x.translate(position); (x, style) }));
 		self.parallelograms.extend(graphic.parallelograms.drain(..).map(|mut x| { x.translate(position); x }));
 		self.glyphs.extend(graphic.glyphs.drain(..).map(|mut x| { x.translate(position); x }));
 	}
 	pub fn bounds(&self) -> Rect {
 		use {vector::MinMax, num::Option};
-		self.rects.iter().map(|r| MinMax{min: r.min, max: r.min.zip(r.max).map(|(min,max)| if max < i32::MAX as _ { max } else { min })})
+		self.rects.iter().map(|(r,_)| MinMax{min: r.min, max: r.min.zip(r.max).map(|(min,max)| if max < i32::MAX as _ { max } else { min })})
 		.chain( self.parallelograms.iter().map(|p| MinMax{min: p.top_left, max: p.bottom_right}) )
 		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + g.face.bbox(g.id).unwrap().size().signed()}) )
 		.reduce(MinMax::minmax)
@@ -43,13 +43,11 @@ impl Graphic<'_> {
 		.unwrap_or_zero()
 	}
 
-	pub fn rect(&mut self, rect: Rect) { self.rects.push(rect) }
-	pub fn horizontal(&mut self, y: i32, dy: u32, x0: i32, x1: i32) { self.rects.push(horizontal(y,dy,x0,x1)) }
+	#[track_caller] pub fn rect(&mut self, r: Rect, style: f32) { assert!(r.min <= r.max); self.rects.push((r, style)) }
+	pub fn horizontal(&mut self, y: i32, dy: u32, x0: i32, x1: i32, style: f32) { self.rect(horizontal(y,dy,x0,x1), style) }
+	pub fn vertical(&mut self, x: i32, dx: u32, y0: i32, y1: i32, style: f32) { self.rect(vertical(x,dx,y0,y1), style) }
 
-	#[track_caller] pub fn parallelogram(&mut self, p: Parallelogram) {
-		assert!(p.top_left <= p.bottom_right);
-		self.parallelograms.push(p)
-	}
+	#[track_caller] pub fn parallelogram(&mut self, p: Parallelogram) { assert!(p.top_left <= p.bottom_right); self.parallelograms.push(p) }
 }
 
 pub struct View<'t> { graphic: Graphic<'t>, view: Rect }
@@ -66,12 +64,12 @@ impl widget::Widget for View<'_> {
 			assert!(target.size == size);
 			let mut target = Image::fill(size, background.g);
 
-			for &Rect{min: top_left, max: bottom_right} in rects {
+			for &(Rect{min: top_left, max: bottom_right}, style) in rects {
 				let top_left = top_left - min;
 				if top_left < (size/scale).signed() {
 					let top_left = ifloor(*scale, top_left);
 					let bottom_right : int2 = int2::enumerate().map(|i| if bottom_right[i] == i32::MAX { size[i] as _ } else { scale.ifloor(bottom_right[i]-min[i]) }).into();
-					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| foreground.g);
+					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| foreground.g*style);
 					//context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
 				}
 			}
@@ -84,7 +82,7 @@ impl widget::Widget for View<'_> {
 					//context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
 				}
 			}
-			for &Glyph{top_left, face, id, scale: glyph_scale} in glyphs {
+			for &Glyph{top_left, face, id, scale: glyph_scale, style} in glyphs {
 				let top_left = top_left - min;
 				if top_left < (size/scale).signed() {
 					let coverage = rasterize(face, *scale*glyph_scale, id, face.bbox(id).unwrap());
@@ -97,7 +95,7 @@ impl widget::Widget for View<'_> {
 					if size.x > 0 && size.y > 0 {
 						let size = size.unsigned();
 						target.slice_mut(target_offset, size).zip_map(&coverage.slice(source_offset.unsigned(), size),
-							|&target, &coverage| target +/*-*/ coverage
+							|&target, &coverage| target + coverage*style
 						);
 					}
 					/*let offset = *scale*(top_left + glyph_scale*int2{x: -face.glyph_hor_side_bearing(id).unwrap() as _, y: face.glyph_bounding_box(id).unwrap().y_max as _}).unsigned();
