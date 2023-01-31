@@ -10,7 +10,7 @@ example=[
 
 [features]
 font=['derive-more','owning-ref','rustybuzz','kurbo']
-text=['derive-more','text-size','unicode-segmentation','font','rustybuzz']
+text=['derive-more','text-size','unicode-segmentation','font','rustybuzz','glob']
 edit=['text','xcursor']
 plot=['text','itertools']
 graphic=['font','rustybuzz']
@@ -38,6 +38,7 @@ image={git='https://github.com/Matthias-Fauconneau/image'}
 text-size={version='*', optional=true}
 unicode-segmentation={version='*', optional=true}
 rustybuzz={version='*', optional=true}
+glob={version='*', optional=true}
 xcursor={version='*', optional=true}
 
 #[dev-dependencies]

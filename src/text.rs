@@ -65,8 +65,10 @@ pub type TextRange = std::ops::Range<usize>;
 impl const From<Style> for Attribute<Style> { fn from(attribute: Style) -> Self { Attribute{range: 0../*GraphemeIndex*/usize::MAX, attribute} } }
 impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { Style{color, style: FontStyle::Normal}.into() } }
 
-#[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(||
-	["/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf"].map(|p| font::open(std::path::Path::new(p)).unwrap()));
+
+#[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(|| ["-Regular","Symbols-Regular"].map(|v| {
+	font::open(&glob::glob(&format!("/usr/share/fonts/**/noto/NotoSans{v}.ttf")).unwrap().next().unwrap().unwrap()).unwrap()
+}));
 pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| std::ops::Deref::deref(x)) }
 
 #[allow(non_upper_case_globals)] pub const default_color: Color = foreground;
