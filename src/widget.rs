@@ -26,5 +26,5 @@ pub enum Event {
 pub trait Widget {
     fn size(&mut self, size: size) -> size { size }
     fn paint(&mut self, target: &mut Target, size: size, offset: int2) -> Result;
-    fn event(&mut self, size: size, context: &mut EventContext, event: &Event) -> Result<bool> { (size, context, event); Ok(false) }
+    fn event(&mut self, size: size, context: &mut Option<EventContext>, event: &Event) -> Result<bool> { (size, context, event); Ok(false) }
 }

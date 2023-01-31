@@ -101,7 +101,7 @@ impl Widget for Plot {
 	};
 
 	struct Axis { range: Range<f64>, labels: Box<[(f64, String)]>, submultiple: &'static str }
-	let xy{x: Some(x), y: Some(y)} = xy{x: vector::minmax(self.x_values.iter().copied()).unwrap(), y: vector::minmax(self.sets.iter().flatten().copied()).unwrap()}.map(|&minmax| {
+	let xy{x: Some(x), y: Some(y)} = xy{x: vector::minmax(self.x_values.iter().copied()).unwrap(), y: vector::minmax(self.sets.iter().flatten().copied()).unwrap()}.map(|minmax| {
 		let range = Range::from(minmax);
 		if range.is_empty() { return None; }
 		let (range, labels, submultiple) = ticks(range);
@@ -116,7 +116,7 @@ impl Widget for Plot {
 	#[track_caller] fn map_y(size: size, top: u32, bottom: u32, range: &Range<f64>, v: f64) -> f32 { (size.y-bottom-1) as f32-linear_step(range, v)*(size.y-top-bottom-1) as f32 }
 
 	let axis = xy{x,y};
-	let range = axis.map(|a| a.range.clone());
+	let range = axis.each_ref().map(|a| a.range.clone()).into();
 	if range != self.range {
 		(self.range, self.last) = (range, 0);
 		let ref range = self.range;
@@ -127,7 +127,7 @@ impl Widget for Plot {
 		let text = |text, style| crate::text::with_color(foreground, text, style);
 
 		let labels = xy{x: map(&*axis.x.labels, |(_,label)| label.as_ref()), y: map(&*axis.y.labels, |(_,label)| label.as_ref())};
-		let mut ticks = labels.map(|labels| map(&**labels, |label| text(label, &[])));
+		let mut ticks = labels.map(|labels| map(labels.iter(), |label| text(label, &[])));
 		let label_size = ticks.map_mut(|ticks| vector::max(ticks.iter_mut().map(|tick| tick.size())).unwrap());
 
 		let styles = map(&*colors, |&color| Box::from([color.into()]));
@@ -211,7 +211,7 @@ impl Widget for Plot {
 		let key = {let mut key = self.key; key.translate(-offset); vector::MinMax{min: key.min.unsigned(), max: key.max.unsigned()}};
 		let mut target = target.slice_mut(offset.unsigned(), xy{x: size.x-self.right, y: size.y-self.bottom}-offset.unsigned());
 		let size = target.size;
-		image::fill(&mut target.slice_mut(zero(), xy{x: key.min.x, y: size.y}), background.into());
+		image::fill(&mut target.slice_mut(zero(), xy{x: std::cmp::min(size.x, key.min.x), y: size.y}), background.into());
 	}
 
 	let (left,right,top,bottom) = (self.left,self.right,self.top,self.bottom);
@@ -242,5 +242,5 @@ impl Widget for Plot {
 	}*/
 	self.last = self.x_values.len();
 }
-#[throws] fn event(&mut self, _: size, _: &mut EventContext, event: &Event) -> bool { if let Event::Stale = event { self.range = zero(); true } else { false } }
+#[throws] fn event(&mut self, _: size, _: &mut Option<EventContext>, event: &Event) -> bool { if let Event::Stale = event { self.range = zero(); true } else { false } }
 }
