@@ -1,4 +1,4 @@
-use {std::{cmp::{min, max}, ops::Range}, crate::{throws, Error}, num::{zero, IsZero, Ratio}, vector::{xy, uint2, int2, size, Rect}};
+use {std::{cmp::{min, max}, ops::Range}, crate::{throws, Error}, num::{zero, Ratio}, vector::{xy, uint2, int2, size, Rect}};
 use {image::bgrf as Color, crate::{foreground, font::{self, Face, GlyphId}}};
 pub mod unicode_segmentation;
 //use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
