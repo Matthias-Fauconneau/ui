@@ -1,10 +1,11 @@
-#![feature(async_closure, once_cell, type_alias_impl_trait, array_methods, unix_socket_ancillary_data, stmt_expr_attributes, closure_track_caller, let_chains, const_trait_impl, const_convert, array_windows, int_roundings, generic_arg_infer, array_zip)]
+#![feature(async_closure, once_cell, type_alias_impl_trait, array_methods, unix_socket_ancillary_data, stmt_expr_attributes, closure_track_caller, let_chains, const_trait_impl, const_convert, array_windows, int_roundings, generic_arg_infer, array_zip, generators, iter_from_generator)]
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T=(),E=Error> = std::result::Result<T, E>;
 pub use fehler::throws;
 pub mod prelude { pub use super::{Result,Error,throws, size,int2, Target, Widget, App, run}; }
 
-pub mod color; pub use color::{bgrf,black,white,background,foreground};
+mod line; pub use line::{line, parallelogram};
+pub mod color; pub use color::{bgrf,black,white,dark,background,foreground};
 pub mod widget; pub use widget::{xy,size,int2, Widget, Target, Event,EventContext};
 mod app; pub use app::{App, run};
 #[cfg(feature="font")] pub mod font;

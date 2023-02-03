@@ -1,6 +1,6 @@
 pub use vector::int2;
 
-pub struct Parallelogram { pub top_left: int2, pub bottom_right: int2, pub vertical_thickness: u32 }
+pub struct Parallelogram { pub top_left: int2, pub bottom_right: int2, pub descending : bool, pub vertical_thickness: u32 }
 
 impl Parallelogram {
 	pub fn translate(&mut self, offset: int2) { self.top_left += offset; self.bottom_right += offset; }
@@ -24,7 +24,7 @@ pub struct Graphic<'t> {
 	pub glyphs: Vec<Glyph<'t>>,
 }
 
-use {crate::{throws, Error, Result}, vector::{xy, ifloor, ceil}, crate::{font::rasterize, widget::{self, Target, size}}};
+use {num::zero, crate::{throws, Error, Result}, vector::{xy, size, vec2, ifloor, ceil}, image::{Image, bgr, PQ10}, crate::{font::rasterize, widget, Target, dark}};
 
 impl Graphic<'_> {
 	pub fn new(scale: Ratio) -> Self { Self{scale, rects: vec![], parallelograms: vec![], glyphs: vec![]} }
@@ -59,27 +59,25 @@ impl widget::Widget for View<'_> {
     #[throws] fn paint(&mut self, target: &mut Target, size: size, _offset: int2) {
 		let Self{graphic: Graphic{scale, rects, parallelograms, glyphs}, view: Rect{min, ..}} = &self;
 
-		use {num::zero, image::{Image, bgr, PQ10}, crate::{background,foreground}};
 		let buffer = {
 			assert!(target.size == size);
-			let mut target = Image::fill(size, background.g);
+			let mut target = Image::fill(size, 0.);
 
 			for &(Rect{min: top_left, max: bottom_right}, style) in rects {
 				let top_left = top_left - min;
 				if top_left < (size/scale).signed() {
 					let top_left = ifloor(*scale, top_left);
 					let bottom_right : int2 = int2::enumerate().map(|i| if bottom_right[i] == i32::MAX { size[i] as _ } else { scale.ifloor(bottom_right[i]-min[i]) }).into();
-					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| foreground.g*style);
-					//context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
+					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| style);
 				}
 			}
-			for &Parallelogram{top_left, bottom_right, vertical_thickness: _} in parallelograms {
+			for &Parallelogram{top_left, bottom_right, descending, vertical_thickness} in parallelograms {
 				let top_left = top_left - min;
 				if top_left < (size/scale).signed() {
-					let top_left = ifloor(*scale, top_left);
-					let bottom_right : int2 = int2::enumerate().map(|i| if bottom_right[i] == i32::MAX as _ { size[i] as _ } else { scale.ifloor(bottom_right[i] as i32 - min[i]) }).into();
-					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| foreground.g);
-					//context.fill(piet::kurbo::Rect::new(top_left.x as _, top_left.y as _, bottom_right.x as f64, bottom_right.y as f64), &piet::Color::BLACK);
+					let scale = f32::from(*scale);
+					crate::parallelogram(&mut target.as_mut(), scale*vec2::from(top_left), scale*vec2::from(bottom_right-min), descending, scale*vertical_thickness as f32, 1.);
+					//parallelogram(target, scale*vec2::from(top_left), scale*vec2::from(bottom_right.signed()-min) )
+					//target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| foreground.g);
 				}
 			}
 			for &Glyph{top_left, face, id, scale: glyph_scale, style} in glyphs {
@@ -98,22 +96,11 @@ impl widget::Widget for View<'_> {
 							|&target, &coverage| target + coverage*style
 						);
 					}
-					/*let offset = *scale*(top_left + glyph_scale*int2{x: -face.glyph_hor_side_bearing(id).unwrap() as _, y: face.glyph_bounding_box(id).unwrap().y_max as _}).unsigned();
-					let mut glyph = piet_gpu::encoder::GlyphEncoder::default();
-					let mut path_encoder = PathEncoder{scale: f32::from(*scale)*glyph_scale, offset, path_encoder: glyph.path_encoder()};
-					if face.outline_glyph(*id, &mut path_encoder).is_some() {
-						let mut path_encoder = path_encoder.path_encoder;
-						path_encoder.path();
-						let n_pathseg = path_encoder.n_pathseg();
-						glyph.finish_path(n_pathseg);
-						context.encode_glyph(&glyph);
-						context.fill_glyph(piet::Color::BLACK.as_rgba_u32());
-					}*/
 				}
 			}
 			target
 		};
-		target.zip_map(&buffer, |_, &buffer| bgr::from(PQ10(f32::min(1.,buffer))).into());
+		target.zip_map(&buffer, |_, &buffer| { let c = f32::min(1.,buffer); bgr::from(PQ10(if dark {c} else {1.-c})).into()});
 	}
 }
 

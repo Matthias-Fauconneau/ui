@@ -1,56 +1,13 @@
-use num::IsZero;
-
 pub fn list<T>(iter: impl std::iter::IntoIterator<Item=T>) -> Box<[T]> { iter.into_iter().collect() }
 pub fn map<T,U>(iter: impl std::iter::IntoIterator<Item=T>, f: impl Fn(T)->U) -> Box<[U]> { list(iter.into_iter().map(f)) }
 
-use {vector::{xy,vec2}, image::{Image, bgrf}};
-fn line(target: &mut Image<&mut[u32]>, p0: vec2, p1: vec2, color: bgrf) {
-	use num::{abs, fract};
-	let d = p1 - p0;
-	let (transpose, p0, p1, d) = if abs(d.x) < abs(d.y) { (true, p0.yx(), p1.yx(), d.yx()) } else { (false, p0, p1, d) };
-	if d.x == 0. { return; } // p0==p1
-	let (p0, p1) = if p0.x > p1.x { (p1, p0) } else { (p0, p1) };
-	let gradient = d.y / d.x;
-	fn blend(target: &mut Image<&mut[u32]>, x: u32, y: u32, color: bgrf, coverage: f32, transpose: bool) {
-		let xy{x,y} = if transpose { xy{x: y, y: x} } else { xy{x,y} };
-		if x < target.size.x && y < target.size.y { target[xy{x,y}] = image::lerp/*PQ10(PQ10⁻¹)*/(coverage, target[xy{x,y}], color); }
-	}
-	let (i0, intery) = {
-		let xend = f32::round(p0.x);
-		let yend = p0.y + gradient * (xend - p0.x);
-		let xgap = 1. - (p0.x + 1./2. - xend);
-		let fract_yend = yend - f32::floor(yend);
-		blend(target, xend as u32, yend as u32, color, (1.-fract_yend) * xgap, transpose);
-		blend(target, xend as u32, yend as u32+1, color, fract_yend * xgap, transpose);
-		(xend as i32, yend + gradient)
-	};
-	let i1 = {
-		let xend = f32::round(p1.x);
-		let yend = p1.y + gradient * (xend - p1.x);
-		let xgap = p1.x + 1./2. - xend;
-		let fract_yend = yend - f32::floor(yend);
-		blend(target, xend as u32, yend as u32, color, (1.-fract_yend) * xgap, transpose);
-		blend(target, xend as u32, yend as u32+1, color, fract_yend * xgap, transpose);
-		xend as u32
-	};
-	let x = i0+1;
-	let (mut intery, mut x) = if x < 0 { (intery+(0-x as i32) as f32 * gradient, 0) } else { (intery, x as u32) };
-	while x < i1.min(if transpose { target.size.y } else { target.size.x }) {
-		blend(target, x, intery as u32, color, 1.-fract(intery), transpose);
-		blend(target, x, intery as u32+1, color, fract(intery), transpose);
-		intery += gradient;
-		x += 1;
-	}
-}
-
-use {std::ops::Range, num::zero, vector::Rect};
+use {std::ops::Range, num::{zero, IsZero}, vector::Rect};
 #[derive(Debug)] pub struct Plot {
 	title: &'static str,
 	axis_label: xy<&'static str>,
-	keys: Box<[String]>, //&'t [&'t str],
+	keys: Box<[String]>,
 	pub x_values: Vec<f64>,
 	pub sets: Box<[Vec<f64>]>,
-	//pub values: &'t [Frame],
 	range: xy<Range<f64>>,
 	top: u32, bottom: u32, left: u32, right: u32,
 	last: usize,
@@ -224,22 +181,10 @@ impl Widget for Plot {
 		let thick_line = points.iter().map(|p| p-xy{x: 0., y: thickness/2.}).chain(points.iter().rev().map(|p| p+xy{x: 0., y: thickness/2.}));
 		let mut a = points[0]+xy{x: 0., y: 1.}; // Starts by closing the loop with left edge
 		for b in thick_line {
-			self::line(&mut target, a, b, color);
+			crate::line(&mut target, a, b, color);
 			a = b;
 		}
 	}
-	/*let mut frames = (self.last.max(1)-1..self.x_values.len()).map(|i| xy{
-		x: map_x(size, left, right, &self.range.x, self.x_values[i]),
-		y: {let ref range = self.range.y; self.sets.iter().map(move |values| map_y(size, top, bottom, range, values[i]))}
-	});
-	let mut last = {let xy{x, y} = frames.next().unwrap(); xy{x, list(y)}};
-	let mut next = xy{x:0., y: map(&*self.sets, |_| 0.)};
-	fn collect<T>(target: &mut [T], iter: impl IntoIterator<Item=T>) -> &[T] { for (slot, item) in target.iter_mut().zip(iter) { *slot = item; } target }
-	for frame in frames {
-		collect(&mut next.y, frame.y);
-		for (i, (&last_y, &next_y)) in last.y.iter().zip(&*next.y).enumerate() { self::line(&mut target, xy{x: last.x, y: last_y}, xy{x: next.x, y: next_y}, colors[i]) }
-		last.x = next_x; std::mem::swap(&mut last.y, &mut next.y);
-	}*/
 	self.last = self.x_values.len();
 }
 #[throws] fn event(&mut self, _: size, _: &mut Option<EventContext>, event: &Event) -> bool { if let Event::Stale = event { self.range = zero(); true } else { false } }
