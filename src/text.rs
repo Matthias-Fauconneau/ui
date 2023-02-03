@@ -71,8 +71,8 @@ impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { Style{co
 }));
 pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| std::ops::Deref::deref(x)) }
 
-#[allow(non_upper_case_globals)] pub const default_color: Color = foreground;
-#[allow(non_upper_case_globals)] pub const bold: [Attribute::<Style>; 1] = [Style{color: default_color, style: FontStyle::Bold}.into()];
+#[allow(non_upper_case_globals)] pub fn default_color() -> Color { foreground() }
+#[allow(non_upper_case_globals)] pub fn bold() -> [Attribute::<Style>; 1] { [Style{color: default_color(), style: FontStyle::Bold}.into()] }
 
 use {std::{sync::Mutex, collections::BTreeMap}, image::Image};
 pub static CACHE: Mutex<BTreeMap<(Ratio, GlyphId),(Image<Box<[u16]>>,Image<Box<[u16]>>,Image<Box<[f32]>>)>> = Mutex::new(BTreeMap::new());
@@ -85,9 +85,9 @@ pub struct View<'t, D> {
 }
 
 impl<'t, D> View<'t, D> {
-	pub fn new(data: D) -> Self { Self{font: default_font(), color: default_color, data, size: None} }
+	pub fn new(data: D) -> Self { Self{font: default_font(), color: default_color(), data, size: None} }
 	pub fn with_color(color: Color, data: D) -> Self { Self{font: default_font(), color, data, size: None} }
-	pub fn with_face(face : &'t Face<'t>, data: D) -> Self { Self{font: [&face, &face], color: default_color,data, size: None} }
+	pub fn with_face(face : &'t Face<'t>, data: D) -> Self { Self{font: [&face, &face], color: default_color(),data, size: None} }
 }
 
 pub fn fit_width(width: u32, from : size) -> size { if from.x == 0 { return zero(); } xy{x: width, y: u32::div_ceil(width * from.y, from.x)} }
@@ -244,6 +244,8 @@ impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 pub struct Plain<T>(pub T);
 impl<T:AsRef<str>> AsRef<str> for Plain<T> { fn as_ref(&self) -> &str { self.0.as_ref() } }
 impl<T> AsRef<[Attribute<Style>]> for Plain<T> {  fn as_ref(&self) -> &[Attribute<Style>] { &[] } }
+pub fn text<'t>(text: &'t str) -> View<'static, Plain<&'t str>> { View::new(Plain(text)) }
+pub type Text = View<'static, Plain<&'static str>>;
 
 pub struct Buffer<T, S> {
 	pub text : T,
@@ -252,6 +254,5 @@ pub struct Buffer<T, S> {
 impl<T:AsRef<str>,S> AsRef<str> for Buffer<T,S> { fn as_ref(&self) -> &str { self.text.as_ref() } }
 impl<T,S:AsRef<[Attribute<Style>]>> AsRef<[Attribute<Style>]> for Buffer<T,S> { fn as_ref(&self) -> &[Attribute<Style>] { self.style.as_ref() } }
 pub type Borrowed<'t> = Buffer<&'t str, &'t [Attribute<Style>]>;
-pub fn text<'t>(text: &'t str, style: &'t [Attribute<Style>]) -> View<'static, Borrowed<'t>> { View::new(crate::text::Borrowed{text, style}) }
+//pub fn text<'t>(text: &'t str, style: &'t [Attribute<Style>]) -> View<'static, Borrowed<'t>> { View::new(Borrowed{text, style}) }
 pub fn with_color<'t>(color: Color, text: &'t str, style: &'t [Attribute<Style>]) -> View<'static, Borrowed<'t>> { View::with_color(color, crate::text::Borrowed{text, style}) }
-pub type Text = View<'static, Borrowed<'static>>;

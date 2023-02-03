@@ -28,8 +28,8 @@ impl Widget for Plot {
 	for set in &*self.sets { assert_eq!(self.x_values.len(), set.len(), "{:?}", (&self.x_values, &self.sets)); }
 
 	let colors =
-		if self.sets.len() == 1 { [foreground].into() }
-		else { map(0..self.sets.len(), |i| bgrf::from(crate::color::LCh{L: if foreground>background { 100. } else { 66.6 }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(self.sets.len() as f32)})) };
+		if self.sets.len() == 1 { [foreground()].into() }
+		else { map(0..self.sets.len(), |i| bgrf::from(crate::color::LCh{L: if foreground()>background() { 100. } else { 66.6 }, C:179., h: 2.*std::f32::consts::PI*(i as f32)/(self.sets.len() as f32)})) };
 
 	let ticks = |Range{end,..}| {
 		if end == 0. { return (zero(), [(0.,"0".to_string())].into(), ""); }
@@ -78,10 +78,10 @@ impl Widget for Plot {
 		(self.range, self.last) = (range, 0);
 		let ref range = self.range;
 
-		image::fill(&mut target, background.into());
+		image::fill(&mut target, background().into());
 
-		let ref bold = [crate::text::Style{color: foreground, style: crate::text::FontStyle::Bold}.into()];
-		let text = |text, style| crate::text::with_color(foreground, text, style);
+		let ref bold = [crate::text::Style{color: foreground(), style: crate::text::FontStyle::Bold}.into()];
+		let text = |text, style| crate::text::with_color(foreground(), text, style);
 
 		let labels = xy{x: map(&*axis.x.labels, |(_,label)| label.as_ref()), y: map(&*axis.y.labels, |(_,label)| label.as_ref())};
 		let mut ticks = labels.map(|labels| map(labels.iter(), |label| text(label, &[])));
@@ -129,7 +129,7 @@ impl Widget for Plot {
 		self.key = key;
 
 		// Horizontal axis
-		target.slice_mut(xy{x: left, y: size.y-bottom}, xy{x: size.x-right-left, y: 1}).set(|_| foreground.into());
+		target.slice_mut(xy{x: left, y: size.y-bottom}, xy{x: size.x-right-left, y: 1}).set(|_| foreground().into());
 		{
 			let p = match axis_label_x_inline {
 				true => xy{x: (size.x-right)/scale, y: (size.y-bottom)/scale-axis_label_x.size().y/2},
@@ -139,7 +139,7 @@ impl Widget for Plot {
 		}
 
 		// Vertical axis
-		target.slice_mut(xy{x: left, y: top}, xy{x: 1, y: size.y.checked_sub(bottom+top).expect(&format!("{} {} {}", size.y, bottom, top))}).set(|_| foreground.into());
+		target.slice_mut(xy{x: left, y: top}, xy{x: 1, y: size.y.checked_sub(bottom+top).expect(&format!("{} {} {}", size.y, bottom, top))}).set(|_| foreground().into());
 		{
 			let p = xy{x: (left/scale).checked_sub(axis_label_y.size().x/2).unwrap_or(0), y: (top/scale).checked_sub(axis_label_y.size().y).unwrap_or(0)};
 			axis_label_y.paint(&mut target, size, scale, p.signed());
@@ -150,7 +150,7 @@ impl Widget for Plot {
 		assert!(!range.x.is_empty());
 		for (&(value,_), tick_label) in axis.x.labels.iter().zip(ticks.x.iter_mut()) {
 			let p = xy{x: map_x(size, left, right, &range.x, value) as u32, y: size.y-bottom};
-			target.slice_mut(p-xy{x:0, y:tick_length}, xy{x:1, y:tick_length}).set(|_| foreground.into());
+			target.slice_mut(p-xy{x:0, y:tick_length}, xy{x:1, y:tick_length}).set(|_| foreground().into());
 			let p = p/x_label_scale - xy{x: tick_label.size().x/2, y: 0};
 			tick_label.paint(&mut target, size, x_label_scale, p.signed());
 		}
@@ -158,7 +158,7 @@ impl Widget for Plot {
 		assert!(!range.y.is_empty());
 		for (&(value,_), tick_label) in axis.y.labels.iter().zip(ticks.y.iter_mut()) {
 			let p = xy{x: [0, size.x-right][0], y: map_y(size, top, bottom, &range.y, value) as u32};
-			target.slice_mut(p + xy{x: [left,0][0], y:0} - xy{x: [0,tick_length][0], y:0}, xy{x:tick_length, y:1}).set(|_| foreground.into());
+			target.slice_mut(p + xy{x: [left,0][0], y:0} - xy{x: [0,tick_length][0], y:0}, xy{x:tick_length, y:1}).set(|_| foreground().into());
 			let sub = |a,b| (a as i32 - b as i32).max(0) as u32;
 			let p = p/scale + xy{x: [sub(left/scale, tick_label.size().x), 0][0], y: 0} - xy{x: 0, y: tick_label.size().y/2};
 			tick_label.paint(&mut target, size, scale, p.signed());
@@ -168,7 +168,7 @@ impl Widget for Plot {
 		let key = {let mut key = self.key; key.translate(-offset); vector::MinMax{min: key.min.unsigned(), max: key.max.unsigned()}};
 		let mut target = target.slice_mut(offset.unsigned(), xy{x: size.x-self.right, y: size.y-self.bottom}-offset.unsigned());
 		let size = target.size;
-		image::fill(&mut target.slice_mut(zero(), xy{x: std::cmp::min(size.x, key.min.x), y: size.y}), background.into());
+		image::fill(&mut target.slice_mut(zero(), xy{x: std::cmp::min(size.x, key.min.x), y: size.y}), background().into());
 	}
 
 	let (left,right,top,bottom) = (self.left,self.right,self.top,self.bottom);

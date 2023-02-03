@@ -1,4 +1,6 @@
 #![allow(non_upper_case_globals)]
+
+use crate::background;
 #[path="wayland.rs"] pub mod wayland;
 use {num::{zero,IsZero}, vector::{xy, int2}, /*image::bgra,*/ crate::{prelude::*, widget::{/*Target,*/ Widget, EventContext, ModifiersState, Event}}, wayland::*};
 
@@ -327,12 +329,24 @@ impl App {
 				use drm::{control::Device as _, buffer::Buffer as _};
 				let mut buffer = buffer.get_or_insert_with(|| {
 					widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Stale).unwrap();
-					device.create_dumb_buffer(size.into(), drm::buffer::DrmFourcc::Xrgb2101010, 32).unwrap()
+					let mut buffer = device.create_dumb_buffer(size.into(), drm::buffer::DrmFourcc::Xrgb2101010, 32).unwrap();
+					{
+						let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
+						let mut map = device.map_dumb_buffer(&mut buffer).unwrap();
+						image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride).fill(background().into());
+					}
+					buffer
 				});
 				{
 					let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
 					let mut map = device.map_dumb_buffer(&mut buffer)?;
-					widget.paint(&mut image::Image::cast_slice_mut(map.as_mut(), size, stride), size, zero())?;
+					let mut target = image::Image::cast_slice_mut(map.as_mut(), size, stride);
+					widget.paint(&mut target, size, zero())?;
+					if !crate::dark {
+						pub const PQ10_to_linear10 : std::sync::LazyLock<[u16; 0x400]> = std::sync::LazyLock::new(|| image::PQ10_EOTF.map(|pq| (pq*0x3FF as f32) as u16));
+						#[allow(non_snake_case)] let ref_PQ10_to_linear10 = &PQ10_to_linear10;
+						for pq in target.iter_mut() { *pq = u32::from(image::bgr::<u16>::from(*pq).map(|pq| ref_PQ10_to_linear10[pq as usize])) } // unimplemented wayland PQ
+					}
 				}
 				dmabuf.create_params(params);
 				use std::os::fd::FromRawFd;

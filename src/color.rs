@@ -3,10 +3,10 @@ pub use image::{bgr, bgrf};
 //let [black, white] : [Color; 2]  = [0., 1.].map(Into::into);
 #[allow(non_upper_case_globals)] pub const black : bgrf = (0.).into();
 #[allow(non_upper_case_globals)] pub const white : bgrf = (1.).into();
-#[allow(non_upper_case_globals)] pub const dark : bool = true;
+#[allow(non_upper_case_globals)] pub static dark : bool = true;
 //const [background, foreground] : [Color; 2] = if dark { [black, white] } else { [white, black] };
-#[allow(non_upper_case_globals)] pub const background : bgrf = if dark { black } else { white };
-#[allow(non_upper_case_globals)] pub const foreground : bgrf = if dark { white } else { black };
+#[allow(non_upper_case_globals)] pub fn background() -> bgrf { if dark { black } else { white } }
+#[allow(non_upper_case_globals)] pub fn foreground() -> bgrf { if dark { white } else { black } }
 
 use {num::{cos,sin,cb}, vector::xy};
 pub struct LCh { pub L: f32, pub C: f32, pub h: f32}
