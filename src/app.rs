@@ -4,12 +4,12 @@ use crate::background;
 #[path="wayland.rs"] pub mod wayland;
 use {num::{zero,IsZero}, vector::{xy, int2}, /*image::bgra,*/ crate::{prelude::*, widget::{/*Target,*/ Widget, EventContext, ModifiersState, Event}}, wayland::*};
 
-pub struct Device(std::fs::File);
-impl Device { pub fn new(path: &str) -> Self { Self(std::fs::OpenOptions::new().read(true).write(true).open(path).unwrap()) } }
-impl std::os::fd::AsFd for Device { fn as_fd(&self) -> std::os::fd::BorrowedFd { self.0.as_fd() } }
-impl std::os::fd::AsRawFd for Device { fn as_raw_fd(&self) -> std::os::fd::RawFd { self.0.as_raw_fd() } }
-impl ::drm::Device for Device {}
-impl ::drm::control::Device for Device {}
+pub struct DRM(std::fs::File);
+impl DRM { pub fn new(path: &str) -> Self { Self(std::fs::OpenOptions::new().read(true).write(true).open(path).unwrap()) } }
+impl std::os::fd::AsFd for DRM { fn as_fd(&self) -> std::os::fd::BorrowedFd { self.0.as_fd() } }
+impl std::os::fd::AsRawFd for DRM { fn as_raw_fd(&self) -> std::os::fd::RawFd { self.0.as_raw_fd() } }
+impl ::drm::Device for DRM {}
+impl ::drm::control::Device for DRM {}
 
 pub struct Cursor<'t> {
 	name: &'static str,
@@ -102,7 +102,7 @@ impl App {
 		toplevel.set_title(title);
 		surface.commit();
 
-		let device = Device::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
+		let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"}); // or use Vulkan ext acquire drm display
 
 		let mut buffer = None;
 		let ref params : dmabuf::Params = server.new();
@@ -117,6 +117,62 @@ impl App {
 		let ref mut cursor = Cursor{name: "", pointer, serial: 0, dmabuf, compositor, surface: None};
 		let mut repeat : Option<(u64, char)> = None;
 		let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
+
+		/*use {std::default::default, ash::{vk, extensions::ext::DebugUtils}};
+		let entry = ash::Entry::linked();
+		let ref name = std::ffi::CString::new(title)?;
+		let instance = unsafe{entry.create_instance(&vk::InstanceCreateInfo::builder()
+			.application_info(&vk::ApplicationInfo::builder().api_version(vk::make_api_version(0, 1, 5, 0)).application_name(name).application_version(0).engine_name(name))
+			.enabled_layer_names(&[std::ffi::CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()])
+			.enabled_extension_names(&[DebugUtils::name().as_ptr()])
+			.push_next(&mut vk::ValidationFeaturesEXT::builder().enabled_validation_features(&[vk::ValidationFeatureEnableEXT::DEBUG_PRINTF]))
+			, None)}?;
+		let debug_utils = DebugUtils::new(&entry, &instance);
+		unsafe extern "system" fn vulkan_debug_callback(severity: vk::DebugUtilsMessageSeverityFlagsEXT, r#type: vk::DebugUtilsMessageTypeFlagsEXT, data: *const vk::DebugUtilsMessengerCallbackDataEXT, _user_data: *mut std::os::raw::c_void) -> vk::Bool32 {
+			let data = *data;
+			if severity == vk::DebugUtilsMessageSeverityFlagsEXT::INFO &&
+					r#type == vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION &&
+					std::ffi::CStr::from_ptr(data.p_message_id_name).to_str().unwrap() == "UNASSIGNED-DEBUG-PRINTF"
+			{
+				let message = std::ffi::CStr::from_ptr(data.p_message).to_str().unwrap();
+				let [_, _, message]:[&str;3] = *{let t:Box<_> = message.split(" | ").collect::<Box<_>>().try_into().unwrap(); t};
+				if let Some(message) = message.strip_suffix("nan") { panic!("{message}"); }
+				println!("{message}");
+			} else /*if severity != vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE && severity != vk::DebugUtilsMessageSeverityFlagsEXT::INFO*/ {
+				println!("{:?} {:?} [{:?}] : {:?}", severity, r#type, Some(data.p_message_id_name).filter(|p| !p.is_null()).map(|p| std::ffi::CStr::from_ptr(p)).unwrap_or_default(), Some(data.p_message).filter(|p| !p.is_null()).map(|p| std::ffi::CStr::from_ptr(p)).unwrap_or_default() );
+			}
+			vk::FALSE
+		}
+		let _debug_utils_messenger = unsafe{debug_utils.create_debug_utils_messenger(&vk::DebugUtilsMessengerCreateInfoEXT{
+			message_severity: vk::DebugUtilsMessageSeverityFlagsEXT::ERROR|vk::DebugUtilsMessageSeverityFlagsEXT::WARNING|vk::DebugUtilsMessageSeverityFlagsEXT::INFO|vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE,
+			message_type: vk::DebugUtilsMessageTypeFlagsEXT::GENERAL|vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION|vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE, pfn_user_callback: Some(vulkan_debug_callback), ..default()}, None)?};*/
+
+		/*let device = unsafe{instance.enumerate_physical_devices()?.into_iter().find(|device| instance.get_physical_device_properties(*device).device_type == vk::PhysicalDeviceType::INTEGRATED_GPU)}.unwrap();
+		let queue_family_index = unsafe{instance.get_physical_device_queue_family_properties(device)}.iter().position(|p| p.queue_flags.contains(vk::QueueFlags::GRAPHICS)).unwrap() as u32;*/
+		/*let device = unsafe{instance.create_device(device, &vk::DeviceCreateInfo::builder()
+			.queue_create_infos(&[vk::DeviceQueueCreateInfo::builder().queue_family_index(queue_family_index).queue_priorities(&[1.]).build()])
+			/*.enabled_extension_names(&[Swapchain::name().as_ptr()])*/, None)}?;*/
+		/*let queue = unsafe{device.get_device_queue(queue_family_index, 0)};
+		let command_pool = unsafe{device.create_command_pool(&vk::CommandPoolCreateInfo{flags: vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index, ..default()}, None)}?;*/
+
+		/*let swapchain = Swapchain::new(&instance, &device);
+		let swapchain_create_info = vk::SwapchainCreateInfoKHR::default()
+			.surface(surface)
+			.min_image_count(desired_image_count)
+			.image_color_space(surface_format.color_space)
+			.image_format(surface_format.format)
+			.image_extent(surface_resolution)
+			.image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+			.image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+			.pre_transform(pre_transform)
+			.composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+			.present_mode(present_mode)
+			.clipped(true)
+			.image_array_layers(1);
+
+		let swapchain = swapchain_loader
+			.create_swapchain(&swapchain_create_info, None)
+			.unwrap();*/
 
 		loop {
 			let mut paint = widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Idle).unwrap(); // determines whether to wait for events
@@ -325,32 +381,147 @@ impl App {
 				} else { break; }
 			} // event loop
 			if paint && can_paint {
+				let time = std::time::Instant::now();
 				assert!(size.x > 0 && size.y > 0);
 				use drm::{control::Device as _, buffer::Buffer as _};
 				let mut buffer = buffer.get_or_insert_with(|| {
 					widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Stale).unwrap();
-					let mut buffer = device.create_dumb_buffer(size.into(), drm::buffer::DrmFourcc::Xrgb2101010, 32).unwrap();
+					let mut buffer = drm.create_dumb_buffer(size.into(), drm::buffer::DrmFourcc::Xrgb8888 /*drm::buffer::DrmFourcc::Xrgb2101010*/, 32).unwrap();
 					{
 						let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
-						let mut map = device.map_dumb_buffer(&mut buffer).unwrap();
+						let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
 						image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride).fill(background().into());
 					}
 					buffer
 				});
+				/*{
+					use vk::*;
+					//VkImageDrmFormatModifierExplicitCreateInfoEXT and VkExternalMemoryImageCreateInfo onto VkImageCreateInfo
+					/*VkImage vulkan_import_dmabuf(wlr_dmabuf_attributes *attribs) -> VkDeviceMemory mems[n_mems]:
+					vulkan_format_props_from_drm(renderer->dev, attribs->format);
+					uint32_t plane_count = attribs->n_planes;
+					assert(plane_count < WLR_DMABUF_MAX_PLANES);
+					const struct wlr_vk_format_modifier_props *mod = vulkan_format_props_find_modifier(fmt, attribs->modifier, for_render);
+					VkExternalMemoryHandleTypeFlagBits htype = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;*/
+					let image = unsafe{device.create_image(&ImageCreateInfo{
+						image_type: ImageType::TYPE_2D,
+						format: Format::A2R10G10B10_UNORM_PACK32,
+						mip_levels: 1, array_layers: 1, samples: SampleCountFlags::TYPE_1,
+						sharing_mode: SharingMode::EXCLUSIVE,
+						initial_layout: ImageLayout::UNDEFINED,
+						extent: Extent3D{width: size.x, height: size.y, depth: 1},
+						usage: ImageUsageFlags::COLOR_ATTACHMENT|ImageUsageFlags::TRANSFER_SRC|ImageUsageFlags::SAMPLED,
+						p_next: &ExternalMemoryImageCreateInfo{handle_types: ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
+							p_next: &ImageDrmFormatModifierExplicitCreateInfoEXT{drm_format_modifier_plane_count: 1, drm_format_modifier: 0, p_plane_layouts: &SubresourceLayout{offset: 0, row_pitch: buffer.pitch() as u64, size: 0, ..default()} as *const _, ..default()} as *const ImageDrmFormatModifierExplicitCreateInfoEXT as *const _, ..default()} as *const ExternalMemoryImageCreateInfo as *const _, ..default()}, None)}?;
+					panic!("{:?}", image);
+					/*unsigned mem_count = disjoint ? plane_count : 1u;
+					VkBindImageMemoryInfo bindi[WLR_DMABUF_MAX_PLANES] = {0};
+					VkBindImagePlaneMemoryInfo planei[WLR_DMABUF_MAX_PLANES] = {0};
+
+					for (unsigned i = 0u; i < mem_count; ++i) {
+						VkMemoryFdPropertiesKHR fdp = {
+							.sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR,
+						};
+						res = renderer->dev->api.getMemoryFdPropertiesKHR(dev, htype,
+							attribs->fd[i], &fdp);
+						if (res != VK_SUCCESS) {
+							wlr_vk_error("getMemoryFdPropertiesKHR", res);
+							goto error_image;
+						}
+
+						VkImageMemoryRequirementsInfo2 memri = {
+							.image = image,
+							.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2,
+						};
+
+						VkImagePlaneMemoryRequirementsInfo planeri;
+						if (disjoint) {
+							planeri = (VkImagePlaneMemoryRequirementsInfo){
+								.sType = VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO,
+								.planeAspect = mem_plane_aspect(i),
+							};
+							memri.pNext = &planeri;
+						}
+
+						VkMemoryRequirements2 memr = {
+							.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
+						};
+
+						vkGetImageMemoryRequirements2(dev, &memri, &memr);
+						int mem = vulkan_find_mem_type(renderer->dev, 0,
+							memr.memoryRequirements.memoryTypeBits & fdp.memoryTypeBits);
+						if (mem < 0) {
+							wlr_log(WLR_ERROR, "no valid memory type index");
+							goto error_image;
+						}
+
+						// Since importing transfers ownership of the FD to Vulkan, we have
+						// to duplicate it since this operation does not transfer ownership
+						// of the attribs to this texture. Will be closed by Vulkan on
+						// vkFreeMemory.
+						int dfd = fcntl(attribs->fd[i], F_DUPFD_CLOEXEC, 0);
+						if (dfd < 0) {
+							wlr_log_errno(WLR_ERROR, "fcntl(F_DUPFD_CLOEXEC) failed");
+							goto error_image;
+						}
+
+						VkMemoryAllocateInfo memi = {
+							.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+							.allocationSize = memr.memoryRequirements.size,
+							.memoryTypeIndex = mem,
+						};
+
+						VkImportMemoryFdInfoKHR importi = {
+							.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+							.fd = dfd,
+							.handleType = htype,
+						};
+						memi.pNext = &importi;
+
+						VkMemoryDedicatedAllocateInfo dedi = {
+							.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+							.image = image,
+						};
+						importi.pNext = &dedi;
+
+						res = vkAllocateMemory(dev, &memi, NULL, &mems[i]);
+						if (res != VK_SUCCESS) {
+							close(dfd);
+							wlr_vk_error("vkAllocateMemory failed", res);
+							goto error_image;
+						}
+
+						++(*n_mems);
+
+						// fill bind info
+						bindi[i].image = image;
+						bindi[i].memory = mems[i];
+						bindi[i].memoryOffset = 0;
+						bindi[i].sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO;
+
+						if (disjoint) {
+							planei[i].sType = VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO;
+							planei[i].planeAspect = planeri.planeAspect;
+							bindi[i].pNext = &planei[i];
+						}
+					}
+					res = vkBindImageMemory2(dev, mem_count, bindi);*/
+				}*/
 				{
 					let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
-					let mut map = device.map_dumb_buffer(&mut buffer)?;
+					let mut map = drm.map_dumb_buffer(&mut buffer)?;
 					let mut target = image::Image::cast_slice_mut(map.as_mut(), size, stride);
 					widget.paint(&mut target, size, zero())?;
+					/*// unimplemented wayland PQ. use vulkan ext hdr metadata ?
 					if !crate::dark {
 						pub const PQ10_to_linear10 : std::sync::LazyLock<[u16; 0x400]> = std::sync::LazyLock::new(|| image::PQ10_EOTF.map(|pq| (pq*0x3FF as f32) as u16));
 						#[allow(non_snake_case)] let ref_PQ10_to_linear10 = &PQ10_to_linear10;
-						for pq in target.iter_mut() { *pq = u32::from(image::bgr::<u16>::from(*pq).map(|pq| ref_PQ10_to_linear10[pq as usize])) } // unimplemented wayland PQ
-					}
+						for pq in target.iter_mut() { *pq = u32::from(image::bgr::<u16>::from(*pq).map(|pq| ref_PQ10_to_linear10[pq as usize])) }
+					}*/
 				}
 				dmabuf.create_params(params);
 				use std::os::fd::FromRawFd;
-				let fd = unsafe{std::os::fd::OwnedFd::from_raw_fd(device.buffer_to_prime_fd(buffer.handle(), 0)?)};
+				let fd = unsafe{std::os::fd::OwnedFd::from_raw_fd(drm.buffer_to_prime_fd(buffer.handle(), 0)?)};
 				let modifiers = 0u64;
 				params.add(&fd, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
 				params.create_immed(buffer_ref, buffer.size().0, buffer.size().1, buffer.format() as u32, 0);
@@ -359,6 +530,7 @@ impl App {
 				buffer_ref.destroy();
 				surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
 				surface.commit();
+				eprintln!("{:?}ms", time.elapsed().as_millis());
 			}
 		} // idle-event loop
 	}

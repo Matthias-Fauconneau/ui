@@ -14,6 +14,7 @@ text=['derive-more','text-size','unicode-segmentation','font','rustybuzz','glob'
 edit=['text','xcursor']
 plot=['text','itertools']
 graphic=['font','rustybuzz']
+vulkan=['ash']
 
 [dependencies]
 fehler='*'
@@ -40,6 +41,10 @@ unicode-segmentation={version='*', optional=true}
 rustybuzz={version='*', optional=true}
 glob={version='*', optional=true}
 xcursor={version='*', optional=true}
+ash={version='*', optional=true, default-features = false, features = ["linked", "debug"]}
 
 #[dev-dependencies]
 image-io={package='image', version='*', optional=true}
+
+[patch.'https://github.com/Matthias-Fauconneau/image']
+image={path='../image'}

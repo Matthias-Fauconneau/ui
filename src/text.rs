@@ -75,7 +75,7 @@ pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| s
 #[allow(non_upper_case_globals)] pub fn bold() -> [Attribute::<Style>; 1] { [Style{color: default_color(), style: FontStyle::Bold}.into()] }
 
 use {std::{sync::Mutex, collections::BTreeMap}, image::Image};
-pub static CACHE: Mutex<BTreeMap<(Ratio, GlyphId),(Image<Box<[u16]>>,Image<Box<[u16]>>,Image<Box<[f32]>>)>> = Mutex::new(BTreeMap::new());
+pub static CACHE: Mutex<BTreeMap<(Ratio, GlyphId),(Image<Box<[u8/*u16*/]>>,Image<Box<[u8/*u16*/]>>,Image<Box<[f32]>>)>> = Mutex::new(BTreeMap::new());
 
 pub struct View<'t, D> {
     pub font : Font<'t>,
@@ -171,7 +171,7 @@ impl<D:AsRef<str>> View<'_, D> {
 			.take_while(|&(_, x)| x <= position.x).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
 	}
-	pub fn paint_span(&self, target: &mut Target, scale: Ratio, offset: int2, span: Span, bgr: crate::color::bgr<bool>) {
+	/*pub fn paint_span(&self, target: &mut Target, scale: Ratio, offset: int2, span: Span, bgr: crate::color::bgr<bool>) {
 		let [min, max] = [span.min(), span.max()];
 		let mut invert = |r:Rect| Some(image::invert(&mut target.slice_mut_clip(scale*(-offset+r))?, bgr));
 		if min.line < max.line { invert(self.span(min,LineColumn{line: min.line, column: usize::MAX})); }
@@ -186,7 +186,7 @@ impl<D:AsRef<str>> View<'_, D> {
 			invert(self.span(LineColumn{line, column: 0},LineColumn{line, column: usize::MAX}));
 		}}
 		if max.line > min.line { invert(self.span(LineColumn{line: max.line, column: 0}, max)); }
-	}
+	}*/
 }
 
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
@@ -205,9 +205,11 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				}
 
 				let mut cache = CACHE.lock().unwrap();
-				let (_coverage_pq10, _one_minus_coverage_pq10, coverage) = cache.entry((scale, id)).or_insert_with(|| {
+				//let (coverage_pq10, _one_minus_coverage_pq10, coverage) = cache.entry((scale, id)).or_insert_with(|| {
+				let (coverage_sRGB8, one_minus_coverage_sRGB8, coverage) = cache.entry((scale, id)).or_insert_with(|| {
 					let linear = font::rasterize(face, scale, id, bbox);
-					(image::PQ10_from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::PQ10(1.-v))), linear)
+					//(image::PQ10_from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::PQ10(1.-v))), linear)
+					(image::sRGB8_from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::sRGB8(1.-v))), linear)
 				});
 
 				let position = xy{
@@ -224,7 +226,45 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				if size.x > 0 && size.y > 0 {
 					let size = size.unsigned();
 					let color = style.map(|x|x.attribute.color).unwrap_or(self.color);
-					image::blend(&coverage.slice(source_offset.unsigned(), size), &mut target.slice_mut(target_offset, size), color);
+					if true { // Interpolate in compressed instead of linear domain (approximation but avoid EOTF+OETF transfer function evaluation)
+						if color == crate::white {
+							let white = u32::from(crate::white);
+							target.slice_mut(target_offset, size).each_mut_zip_map(&coverage_sRGB8.slice(source_offset.unsigned(), size),
+								|target, &t| match t {
+									0 => {},
+									0xFF => *target = white,
+									_ => *target = image::bgr8::from(*target).map(|target| {
+										// using sRGB gamma compressed value as linear interpolation coefficient.
+										// Corrects interpolation for black background case (same as linear coefficient with linear domain points)
+										((255-t) as u16*(target as u16)/255) as u8 + t
+									}).into(),
+								}
+							);
+							/*target.slice_mut(target_offset, size).zip_map(&coverage.slice(source_offset.unsigned(), size),
+								|&target, &t| {
+									let t = (t*255.) as u8;
+									let tt = (255-t) as u16;
+									image::bgr8::from(target).map(|target| (tt*(target as u16)/255) as u8 + t).into()
+							});*/
+						} else {
+							panic!("{color:?}");
+							/*let color = image::bgr8::from(color); // sRGB8_OETF
+							//let time = std::time::Instant::now();
+							/*target.slice_mut(target_offset, size).zip_map(&coverage.slice(source_offset.unsigned(), size),
+								|&target, &t| image::bgr8::from(target).zip(color).map(|(target, color)| num::lerp(t, target as f32, color as f32) as u8).into());*/
+							target.slice_mut(target_offset, size).zip_map(&coverage.slice(source_offset.unsigned(), size),
+								|&target, &t| {
+									let t = (t*256.) as u16;
+									let tt = 256 - t;
+									let tc = t * (color as u16);
+									image::bgr8::from(target).zip(color).map(|(target, color)| ((tt * (target as u16) + tc)/256) as u8)).into()
+							});*/
+							//eprintln!("{:?}", time.elapsed());
+						}
+					} else {
+						panic!("{color:?}");
+						image::blend(&coverage.slice(source_offset.unsigned(), size), &mut target.slice_mut(target_offset, size), color);
+					}
 				}
 			}
 		}

@@ -32,11 +32,11 @@ pub fn generate_line(size: size, p: [vec2; 2]) -> impl Iterator<Item=(uint2, uin
 		yield f(xend as u32, yend as u32, xgap, fract_yend);
 	})
 }
-fn blend(target: &mut Image<&mut[u32]>, color: bgrf, p: uint2, coverage: f32) { if p < target.size { target[p] = image::lerp/*PQ10(PQ10⁻¹)*/(coverage, target[p], color); } }
-pub fn line(target: &mut Image<&mut[u32]>, p0: vec2, p1: vec2, color: bgrf) {
+fn blend(eotf: &[f32; 256], oetf: &[u8; 0x1000], target: &mut Image<&mut[u32]>, color: bgrf, p: uint2, coverage: f32) { if p < target.size { target[p] = image::lerp/*PQ10(PQ10⁻¹)*/(eotf, oetf, coverage, target[p], color); } }
+pub fn line(eotf: &[f32; 256], oetf: &[u8; 0x1000], target: &mut Image<&mut[u32]>, p0: vec2, p1: vec2, color: bgrf) {
 	assert!(p0 != p1);
 	let size = target.size;
-	let mut f = |p,c| blend(target, color, p, c);
+	let mut f = |p,c| blend(eotf, oetf, target, color, p, c);
 	for (p0, p1, cx, cy) in generate_line(size, [p0, p1]) { f(p0, cx*(1.-cy)); f(p1, cx*cy) }
 }
 pub fn parallelogram(target: &mut Image<&mut[f32]>, top_left: vec2, bottom_right: vec2, descending: bool, vertical_thickness: f32, opacity: f32) {
