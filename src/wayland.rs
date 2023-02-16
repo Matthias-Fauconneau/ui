@@ -179,12 +179,23 @@ pub  use compositor::Compositor;
 pub(crate) mod output {
 	pub const geometry: u16 = 0; pub const mode: u16 = 1; pub const done: u16 = 2; pub const scale: u16 = 3; pub const name: u16 = 4; pub const description: u16 = 5;
 	enum Requests { }
-	use super::{Server};
+	use super::Server;
 	pub struct Output<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Output<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Output<'_> {}
 }
 pub use output::Output;
+
+// callback: done(timestamp_ms)
+pub(crate) mod callback {
+	pub const done: u16 = 0;
+	use super::Server;
+	pub struct Callback<'t>{server: &'t Server, pub(crate) id: u32}
+	impl<'t> From<(&'t Server, u32)> for Callback<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
+	impl Callback<'_> {
+	}
+}
+pub use callback::Callback;
 
 // surface: enter(output); attach(buffer, x, y), commit, set_buffer_scale(factor), damage_buffer(x,y,w,h); enter(output), leave(output)
 pub(crate) mod surface {
@@ -195,6 +206,7 @@ pub(crate) mod surface {
 	impl<'t> From<(&'t Server, u32)> for Surface<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Surface<'_> {
 		#[track_caller] pub fn attach(&self, buffer: &Buffer, x: u32, y: u32) { self.server.request(self.id, Requests::attach as u16, [UInt(buffer.id),UInt(x),UInt(y)]); }
+		pub fn frame(&self, callback: &Callback) { self.server.request(self.id, Requests::frame as u16, [UInt(callback.id)]); }
 		pub fn commit(&self) { self.server.request(self.id, Requests::commit as u16, []); }
 		pub fn set_buffer_scale(&self, factor: u32) { self.server.request(self.id, Requests::set_buffer_scale as u16, [UInt(factor)]); }
 		pub fn damage_buffer(&self, x: u32, y: u32, w: u32, h: u32) { self.server.request(self.id, Requests::damage_buffer as u16, [UInt(x),UInt(y),UInt(w),UInt(h)]); }

@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use {std::{cmp::{min, max}, ops::Range}, crate::{throws, Error}, num::{zero, Ratio}, vector::{xy, uint2, int2, size, Rect}};
 use {image::bgrf as Color, crate::{foreground, font::{self, Face, GlyphId}}};
 pub mod unicode_segmentation;
@@ -206,7 +207,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 
 				let mut cache = CACHE.lock().unwrap();
 				//let (coverage_pq10, _one_minus_coverage_pq10, coverage) = cache.entry((scale, id)).or_insert_with(|| {
-				let (coverage_sRGB8, one_minus_coverage_sRGB8, coverage) = cache.entry((scale, id)).or_insert_with(|| {
+				let (coverage_sRGB8, _one_minus_coverage_sRGB8, coverage) = cache.entry((scale, id)).or_insert_with(|| {
 					let linear = font::rasterize(face, scale, id, bbox);
 					//(image::PQ10_from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::PQ10(1.-v))), linear)
 					(image::sRGB8_from_linear(&linear.as_ref()), Image::from_iter(linear.size, linear.data.iter().map(|&v| image::sRGB8(1.-v))), linear)
@@ -263,7 +264,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 						}
 					} else {
 						panic!("{color:?}");
-						image::blend(&coverage.slice(source_offset.unsigned(), size), &mut target.slice_mut(target_offset, size), color);
+						//image::blend(&coverage.slice(source_offset.unsigned(), size), &mut target.slice_mut(target_offset, size), color);
 					}
 				}
 			}

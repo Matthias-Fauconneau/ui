@@ -104,9 +104,11 @@ impl App {
 
 		let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"}); // or use Vulkan ext acquire drm display
 
-		let mut buffer = None;
 		let ref params : dmabuf::Params = server.new();
 		let ref buffer_ref : Buffer = server.new();
+		let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
+
+		let mut buffer = None;
 		let mut scale_factor = 0;
 		let mut configure_bounds = zero();
 		let mut size = zero();
@@ -116,7 +118,8 @@ impl App {
 		let mut mouse_buttons = 0;
 		let ref mut cursor = Cursor{name: "", pointer, serial: 0, dmabuf, compositor, surface: None};
 		let mut repeat : Option<(u64, char)> = None;
-		let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
+		let mut callback : Option<Callback> = None;
+		let mut done = true;
 
 		/*use {std::default::default, ash::{vk, extensions::ext::DebugUtils}};
 		let entry = ash::Entry::linked();
@@ -188,7 +191,7 @@ impl App {
 						)?;
 						fds.push(PollFd::new(&timerfd, PollFlags::IN));
 					}
-					rustix::io::poll(fds, if paint {0} else {-1})?;
+					rustix::io::poll(fds, if can_paint && done && paint {0} else {-1})?;
 					fds.iter().map(|fd| fd.revents().contains(PollFlags::IN)).collect::<Box<_>>()
 				};
 				//{static mut counter : std::sync::atomic::AtomicU64 = 0.into(); dbg!(&events, unsafe{&counter}.fetch_add(1, std::sync::atomic::Ordering::Relaxed));}
@@ -203,7 +206,9 @@ impl App {
 					}
 					else if id == display.id && opcode == display::delete_id {
 						let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-						assert!(id == params.id || id == buffer_ref.id); // Reused immediately
+						if callback.as_ref().is_some_and(|callback| id == callback.id) { /*println!("delete_id callback {}", callback.unwrap().id);*/ callback = None; } // Cannot reuse same id... :(
+						else { assert!(id == params.id || id == buffer_ref.id, "{id}"); } // Reused immediately
+						//println!("delete_id {}", id);
 					}
 					else if id == dmabuf.id && opcode == dmabuf::format {
 						let [UInt(format)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
@@ -361,6 +366,11 @@ impl App {
 							} else { repeat = None; }
 						}
 					}
+					else if let Some(ref callback) = callback && id == callback.id && opcode == callback::done {
+						let [UInt(_timestamp_ms)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+						done = true;
+						//println!("done {}", callback.id);
+					}
 					/*else if let Some(pool) = &cursor.pool && id == pool.buffer.id && opcode == buffer::release {
 					}*/
 					else if let Some(surface) = &cursor.surface && id == surface.id && opcode == surface::enter {
@@ -380,8 +390,8 @@ impl App {
 					repeat = Some((msec+33, key));
 				} else { break; }
 			} // event loop
-			if paint && can_paint {
-				let time = std::time::Instant::now();
+			if paint && can_paint && done {
+				//let time = std::time::Instant::now();
 				assert!(size.x > 0 && size.y > 0);
 				use drm::{control::Device as _, buffer::Buffer as _};
 				let mut buffer = buffer.get_or_insert_with(|| {
@@ -529,8 +539,15 @@ impl App {
 				surface.attach(&buffer_ref,0,0);
 				buffer_ref.destroy();
 				surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
+				assert!(done == true);
+				done = false;
+				assert!(callback.is_none());
+				callback = {let callback : Callback = server.new();
+					//println!("frame {}", callback.id);
+					surface.frame(&callback);
+					Some(callback)};
 				surface.commit();
-				eprintln!("{:?}ms", time.elapsed().as_millis());
+				//eprintln!("{:?}ms", time.elapsed().as_millis());
 			}
 		} // idle-event loop
 	}
