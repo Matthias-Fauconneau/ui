@@ -120,6 +120,9 @@ impl App {
 		let mut repeat : Option<(u64, char)> = None;
 		let mut callback : Option<Callback> = None;
 		let mut done = true;
+		let start = std::time::Instant::now();
+		let mut idle = std::time::Duration::ZERO;
+		let mut last_done_timestamp = 0;
 
 		/*use {std::default::default, ash::{vk, extensions::ext::DebugUtils}};
 		let entry = ash::Entry::linked();
@@ -191,7 +194,10 @@ impl App {
 						)?;
 						fds.push(PollFd::new(&timerfd, PollFlags::IN));
 					}
+					//println!("{:.0}%", (1.-idle.div_duration_f32(start.elapsed()))*100.);
+					let time = std::time::Instant::now();
 					rustix::io::poll(fds, if can_paint && done && paint {0} else {-1})?;
+					idle += time.elapsed();
 					fds.iter().map(|fd| fd.revents().contains(PollFlags::IN)).collect::<Box<_>>()
 				};
 				//{static mut counter : std::sync::atomic::AtomicU64 = 0.into(); dbg!(&events, unsafe{&counter}.fetch_add(1, std::sync::atomic::Ordering::Relaxed));}
@@ -368,6 +374,8 @@ impl App {
 					}
 					else if let Some(ref callback) = callback && id == callback.id && opcode == callback::done {
 						let [UInt(_timestamp_ms)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+						//println!("{}", _timestamp_ms-last_done_timestamp);
+						last_done_timestamp = _timestamp_ms;
 						done = true;
 						//println!("done {}", callback.id);
 					}
