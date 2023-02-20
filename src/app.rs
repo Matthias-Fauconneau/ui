@@ -120,9 +120,9 @@ impl App {
 		let mut repeat : Option<(u64, char)> = None;
 		let mut callback : Option<Callback> = None;
 		let mut done = true;
-		let start = std::time::Instant::now();
+		let _start = std::time::Instant::now();
 		let mut idle = std::time::Duration::ZERO;
-		let mut last_done_timestamp = 0;
+		let mut _last_done_timestamp = 0;
 
 		/*use {std::default::default, ash::{vk, extensions::ext::DebugUtils}};
 		let entry = ash::Entry::linked();
@@ -375,7 +375,7 @@ impl App {
 					else if let Some(ref callback) = callback && id == callback.id && opcode == callback::done {
 						let [UInt(_timestamp_ms)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						//println!("{}", _timestamp_ms-last_done_timestamp);
-						last_done_timestamp = _timestamp_ms;
+						_last_done_timestamp = _timestamp_ms;
 						done = true;
 						//println!("done {}", callback.id);
 					}

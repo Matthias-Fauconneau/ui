@@ -248,8 +248,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 									image::bgr8::from(target).map(|target| (tt*(target as u16)/255) as u8 + t).into()
 							});*/
 						} else {
-							panic!("{color:?}");
-							/*let color = image::bgr8::from(color); // sRGB8_OETF
+							let color = image::bgr8::from(color); // sRGB8_OETF: linear -> sRGB
 							//let time = std::time::Instant::now();
 							/*target.slice_mut(target_offset, size).zip_map(&coverage.slice(source_offset.unsigned(), size),
 								|&target, &t| image::bgr8::from(target).zip(color).map(|(target, color)| num::lerp(t, target as f32, color as f32) as u8).into());*/
@@ -257,9 +256,9 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 								|&target, &t| {
 									let t = (t*256.) as u16;
 									let tt = 256 - t;
-									let tc = t * (color as u16);
-									image::bgr8::from(target).zip(color).map(|(target, color)| ((tt * (target as u16) + tc)/256) as u8)).into()
-							});*/
+									image::bgr8::from(target).zip(color).map(|(target, color)| ((tt * (target as u16) + t * (color as u16))/256) as u8).into()
+								}
+							);
 							//eprintln!("{:?}", time.elapsed());
 						}
 					} else {

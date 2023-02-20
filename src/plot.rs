@@ -22,6 +22,8 @@ impl Plot {
 	pub fn need_update(&mut self) { self.last = 0; }
 }
 
+use image::{sRGB8_EOTF, sRGB8_OETF12};
+
 use crate::*;
 impl Widget for Plot {
 #[throws] fn paint(&mut self, mut target: &mut Target, _: size, _: int2) {
@@ -180,8 +182,9 @@ impl Widget for Plot {
 		let thickness = 1.; // FIXME: orthogonal to line not vertical
 		let thick_line = points.iter().map(|p| p-xy{x: 0., y: thickness/2.}).chain(points.iter().rev().map(|p| p+xy{x: 0., y: thickness/2.}));
 		let mut a = points[0]+xy{x: 0., y: 1.}; // Starts by closing the loop with left edge
+		let (eotf, oetf) = (&sRGB8_EOTF, &sRGB8_OETF12);
 		for b in thick_line {
-			crate::line(&mut target, a, b, color);
+			crate::line(eotf, oetf, &mut target, a, b, color);
 			a = b;
 		}
 	}
