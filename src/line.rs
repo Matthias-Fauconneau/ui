@@ -5,7 +5,7 @@ pub fn generate_line(size: size, p: [vec2; 2]) -> impl Iterator<Item=(uint2, uin
 	assert!(d.x != 0.); // p0==p1
 	let (p0, p1) = if p0.x > p1.x { (p1, p0) } else { (p0, p1) };
 	let gradient = d.y / d.x;
-	let f = move |x: u32, y: u32, cx: f32, cy: f32| if transpose { (xy{x: y, y: x}, xy{x: y+1, y: x}, cy, cx) } else { (xy{x,y},xy{x,y:y+1}, cx, cy) };
+	let f = move |x: u32, y: u32, cx: f32, cy: f32| if transpose { (xy{x: y, y: x}, xy{x: y+1, y: x}, cx, cy) } else { (xy{x,y},xy{x,y:y+1}, cx, cy) };
 	std::iter::from_generator(move || {
 		let (i0, intery) = {
 			let xend = f32::round(p0.x);

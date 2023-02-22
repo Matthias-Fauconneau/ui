@@ -70,7 +70,6 @@ impl Widget for Plot {
 
 	let size = target.size;
 	#[track_caller] fn linear_step(Range{start,end} : &Range<f64>, v: f64) -> f32 { assert!(start < end); ((v-start) / (end-start)) as f32 }
-	use crate::size;
 	#[track_caller] fn map_x(size: size, left: u32, right: u32, range: &Range<f64>, v: f64) -> f32 { left as f32+linear_step(range, v)*(size.x-left-right-1) as f32 }
 	#[track_caller] fn map_y(size: size, top: u32, bottom: u32, range: &Range<f64>, v: f64) -> f32 { (size.y-bottom-1) as f32-linear_step(range, v)*(size.y-top-bottom-1) as f32 }
 
@@ -82,15 +81,14 @@ impl Widget for Plot {
 
 		image::fill(&mut target, background().into());
 
-		let ref bold = [crate::text::Style{color: foreground(), style: crate::text::FontStyle::Bold}.into()];
-		let text = |text, style| crate::text::with_color(foreground(), text, style);
+		let ref bold = [text::Style{color: foreground(), style: text::FontStyle::Bold}.into()];
+		let text = |text, style| text::with_color(foreground(), text, style);
 
 		let labels = xy{x: map(&*axis.x.labels, |(_,label)| label.as_ref()), y: map(&*axis.y.labels, |(_,label)| label.as_ref())};
 		let mut ticks = labels.map(|labels| map(labels.iter(), |label| text(label, &[])));
 		let label_size = ticks.map_mut(|ticks| vector::max(ticks.iter_mut().map(|tick| tick.size())).unwrap());
 
-		let styles = map(&*colors, |&color| Box::from([color.into()]));
-		let mut key_labels = map(self.keys.iter().zip(&*styles), |(key,style)| text(key, style));
+		let mut key_labels = map(self.keys.iter().zip(&*colors), |(key, &color)| text::with_color(color, key, &[]));
 		let key_label_size = vector::max(key_labels.iter_mut().map(|label| label.size())).unwrap();
 
 		let x_label_scale = num::Ratio{num: size.x/(ticks.x.len() as u32*2).max(5)-1, div: label_size.x.x-1};
@@ -175,14 +173,14 @@ impl Widget for Plot {
 
 	let (left,right,top,bottom) = (self.left,self.right,self.top,self.bottom);
 	for (values, &color) in self.sets.iter().zip(&*colors) {
+		let (eotf, oetf) = (&sRGB8_EOTF, &sRGB8_OETF12);
 		let points = map(self.last.max(1)-1..self.x_values.len(), |i| xy{
 			x: map_x(size, left, right, &self.range.x, self.x_values[i]),
 			y: map_y(size, top, bottom, &self.range.y, values[i])
 		});
 		let thickness = 1.; // FIXME: orthogonal to line not vertical
-		let thick_line = points.iter().map(|p| p-xy{x: 0., y: thickness/2.}).chain(points.iter().rev().map(|p| p+xy{x: 0., y: thickness/2.}));
+		let thick_line = points.iter().copied();//.map(|p| p-xy{x: 0., y: thickness/2.}).chain(points.iter().rev().map(|p| p+xy{x: 0., y: thickness/2.}));
 		let mut a = points[0]+xy{x: 0., y: 1.}; // Starts by closing the loop with left edge
-		let (eotf, oetf) = (&sRGB8_EOTF, &sRGB8_OETF12);
 		for b in thick_line {
 			crate::line(eotf, oetf, &mut target, a, b, color);
 			a = b;

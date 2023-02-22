@@ -2,21 +2,21 @@
 use {std::{cmp::{min, max}, ops::Range}, crate::{throws, Error}, num::{zero, Ratio}, vector::{xy, uint2, int2, size, Rect}};
 use {image::bgrf as Color, crate::{foreground, font::{self, Face, GlyphId}}};
 pub mod unicode_segmentation;
-//use self::unicode_segmentation::{GraphemeIndex, UnicodeSegmentation};
+use self::unicode_segmentation::UnicodeSegmentation;
 type TextIndex = usize;//GraphemeIndex
 #[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, pub(crate) range: Range<TextIndex> }
 
 pub(crate) fn line_ranges<'t>(text: &'t str) -> impl Iterator<Item=LineRange<'t>> {
-	let mut iter = text./*grapheme_indices(true)*/bytes().enumerate().map(|(i,c)|(i,(i,c))).peekable();
+	let mut iter = text.grapheme_indices(true).map(|(_,c)| c)/*bytes()*/.enumerate().map(|(i,c)|(i,(i,c))).peekable();
 	std::iter::from_fn(move || {
 		let &(start, (byte_start,_)) = iter.peek()?;
-		let (end, byte_end) = iter.find(|&(_,(_,c))| c==/*"\n"*/'\n' as u8).map_or((text.len(),text.len()/*fixme*/), |(end,(byte_end,_))| (end, byte_end));
+		let (end, byte_end) = iter.find(|&(_,(_,c))| c=="\n"/*'\n' as u8*/).map_or((text.len(),text.len()/*fixme*/), |(end,(byte_end,_))| (end, byte_end));
 		Some(LineRange{line: &text[byte_start..byte_end], range: start..end})
 	})
 }
 
 pub type Font<'t> = [&'t Face<'t>; 2];
-#[derive(Clone,Copy)] pub struct Glyph<'t> {pub byte_index: usize, pub x: u32, face: &'t Face<'t>, pub id: GlyphId }
+/*#[derive(Clone,Copy)] pub struct Glyph<'t> {byte_index: usize, pub x: u32, face: &'t Face<'t>, pub id: GlyphId }
 pub fn layout<'t>(font: &'t Font<'t>, str: &'t str) -> impl 't+IntoIterator<Item=Glyph<'t>> {
 	let mut buffer = rustybuzz::UnicodeBuffer::new();
 	buffer.set_cluster_level(rustybuzz::BufferClusterLevel::Characters);
@@ -34,18 +34,35 @@ pub fn layout<'t>(font: &'t Font<'t>, str: &'t str) -> impl 't+IntoIterator<Item
 		*x += x_advance;
 		Some((next, x_advance))
 	}).peekable();
-	let layout = str./*graphemes(true).*/bytes().enumerate().scan((Glyph{byte_index:0, x:0, id:GlyphId(0), face:font[0]},0), move |(cluster,advance), (byte_index,_)| {
+	let layout = str.graphemes(true)./*bytes().*/enumerate().scan((Glyph{byte_index:0, x:0, id:GlyphId(0), face:font[0]},0), move |(cluster,advance), (byte_index,_)| {
 		let (next_cluster, next_advance) = clusters.next()?;
 		Some(if next_cluster.byte_index == byte_index {
 			(*cluster, *advance) = (next_cluster, next_advance);
 			*cluster
 		} else { // Divide cluster horizontally
-			let next_index = clusters.peek().map_or(str./*graphemes(true).count()*/len(), |(cluster,_)| cluster.byte_index);
+			let next_index = clusters.peek().map_or(str.graphemes(true).count()/*len()*/, |(cluster,_)| cluster.byte_index);
 			Glyph{byte_index, x: cluster.x+(byte_index-cluster.byte_index)as u32* (*advance as u32)/(next_index-cluster.byte_index) as u32, id: font[0].glyph_index(' ').unwrap(), face: font[0]}
 		})
 	}).collect::<Vec<_>>();
 	//assert!(!layout.is_empty());
 	layout
+}*/
+use self::unicode_segmentation::GraphemeIndex;
+#[derive(Clone,Copy)] pub struct Glyph<'t> {_index: GraphemeIndex, pub x: u32, face: &'t Face<'t>, pub id: GlyphId }
+pub fn layout<'t>(font: &'t Font<'t>, str: &'t str) -> impl 't+IntoIterator<Item=Glyph<'t>> {
+	pub fn layout<'t>(font: &'t Font<'t>, iter: impl Iterator<Item=(GraphemeIndex, &'t str)>+'t) -> impl 't+Iterator<Item=Glyph<'t>> {
+		iter.scan((None, 0), move |(last_id, x), (index, g)| {
+			let c = iter::Single::single(g.chars()).unwrap();
+			//let [c] = arrayvec::ArrayVec::from_iter(g.chars()).into_inner().unwrap();
+			let (face, id) = font.iter().find_map(|face| face.glyph_index(if c == '\t' { ' ' } else { c }).map(|id| (face, id))).unwrap_or_else(||panic!("Missing glyph for '{c}' {:x?}", c as u32));
+			//if let Some(last_id) = *last_id { *x += face.tables().kern.unwrap().subtables.into_iter().next().map_or(0, |x| x.glyphs_kerning(last_id, id).unwrap_or(0) as i32); }
+			*last_id = Some(id);
+			let next = Glyph{_index: index, x: *x, id, face};
+			*x += face.glyph_hor_advance(id)? as u32;
+			Some(next)
+		})
+	}
+	layout(font, str.graphemes(true).enumerate())
 }
 
 pub(crate) fn bbox<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> impl Iterator<Item=(Rect, Glyph<'t>)> { iter.filter_map(move |g| Some((g.face.bbox(g.id)?, g))) }
@@ -162,7 +179,7 @@ impl<D:AsRef<str>> View<'_, D> {
 	pub fn span(&self, min: LineColumn, max: LineColumn) -> Rect {
 		Rect{min: self.position(min).signed(), max: (self.position(max)+xy{x:0, y: self.font[0].height() as u32}).signed()}
 	}
-	pub fn cursor(&mut self, size: size, position: uint2) -> LineColumn {
+	/*pub fn cursor(&mut self, size: size, position: uint2) -> LineColumn {
 		let position = position / self.scale(size);
 		let View{font, ..} = &self;
 		let line = ((position.y/font[0].height() as u32) as usize).min(line_ranges(self.text()).count()-1);
@@ -171,7 +188,7 @@ impl<D:AsRef<str>> View<'_, D> {
 			.map(|Glyph{byte_index, x, id, face}| (byte_index, x+face.glyph_hor_advance(id).unwrap() as u32/2))
 			.take_while(|&(_, x)| x <= position.x).last().map(|(index,_)| index+1).unwrap_or(0)
 		}
-	}
+	}*/
 	/*pub fn paint_span(&self, target: &mut Target, scale: Ratio, offset: int2, span: Span, bgr: crate::color::bgr<bool>) {
 		let [min, max] = [span.min(), span.max()];
 		let mut invert = |r:Rect| Some(image::invert(&mut target.slice_mut_clip(scale*(-offset+r))?, bgr));
@@ -193,17 +210,17 @@ impl<D:AsRef<str>> View<'_, D> {
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 	pub fn paint(&mut self, target: &mut Target, size: size, scale: Ratio, offset: int2) {
 		let Self{font, data, ..} = &*self;
-		let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
+		//let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
 																						.take_while({let clip = (size.y/scale) as i32 - offset.y; move |&(line_index,_)| (((line_index as u32)*(font[0].height() as u32)) as i32) < clip}) {
-			for (bbox, Glyph{byte_index, x, id, face}) in bbox(layout(font, &line).into_iter()) {
-				let byte_index = line.range.start+byte_index;
-				style = style.filter(|style:&&Attribute<Style>| style.contains(&byte_index));
+			for (bbox, Glyph{/*byte_*/_index: _, x, id, face}) in bbox(layout(font, &line).into_iter()) {
+				//let byte_index = line.range.start+byte_index;
+				/*style = style.filter(|style:&&Attribute<Style>| style.contains(&byte_index));
 				while let Some(next) = styles.peek() {
 					if next.end <= byte_index { styles.next(); } // skips whitespace style
 					else if next.contains(&byte_index) { style = styles.next(); }
 					else { break; }
-				}
+				}*/
 
 				let mut cache = CACHE.lock().unwrap();
 				//let (coverage_pq10, _one_minus_coverage_pq10, coverage) = cache.entry((scale, id)).or_insert_with(|| {
@@ -226,7 +243,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 				let size = vector::component_wise_min(source_size, target_size);
 				if size.x > 0 && size.y > 0 {
 					let size = size.unsigned();
-					let color = style.map(|x|x.attribute.color).unwrap_or(self.color);
+					let color = /*style.map(|x|x.attribute.color)*/None.unwrap_or(self.color);
 					if true { // Interpolate in compressed instead of linear domain (approximation but avoid EOTF+OETF transfer function evaluation)
 						if color == crate::white {
 							let white = u32::from(crate::white);
