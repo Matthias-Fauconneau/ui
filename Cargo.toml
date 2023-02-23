@@ -33,7 +33,7 @@ linux-raw-sys='0.1'
 rustix={version='*', features=['fs','mm','time']}
 dirs='*'
 nix={version='*', default-features = false, features = ['socket','uio']}
-drm='*'
+drm={version='*', optional=true}
 
 image={git='https://github.com/Matthias-Fauconneau/image'}
 text-size={version='*', optional=true}

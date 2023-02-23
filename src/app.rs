@@ -69,8 +69,8 @@ impl Cursor<'_> {
 #[cfg(target_os="linux")] pub struct App(rustix::fd::OwnedFd);
 #[cfg(not(target_os="linux"))] pub struct App;
 impl App {
-	pub fn new() -> Result<Self> { Ok(Self(rustix::io::eventfd(0, rustix::io::EventfdFlags::empty())?)) }
-	pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
+	#[cfg(target_os="linux")] pub fn new() -> Result<Self> { Ok(Self(rustix::io::eventfd(0, rustix::io::EventfdFlags::empty())?)) }
+	#[cfg(target_os="linux")] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
 	#[cfg(feature="wayland")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result<()> {
 		let server = std::os::unix::net::UnixStream::connect({
 			let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
@@ -571,6 +571,7 @@ impl App {
 		let ref target : Vec<_> = target.iter().map(|&p| image::bgr8::from(p)).flatten().collect();
 		image_io::save_buffer("output.png", target, size.x, size.y, image_io::ColorType::Rgb8)?
     }
+	#[cfg(not(target_os="linux"))] pub fn new() -> Result<Self> { Ok(Self) }
 }
 impl Default for App { fn default() -> Self { Self::new().unwrap() } }
 pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> { App::new()?.run(title, widget) }

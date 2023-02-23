@@ -77,14 +77,15 @@ impl ttf_parser::OutlineBuilder for PathEncoder<'_> {
 
 pub struct MemoryMap{ ptr: *mut core::ffi::c_void, len: usize }
 impl MemoryMap {
-	fn map<Fd: std::os::fd::AsFd>(fd: Fd) -> rustix::io::Result<Self> { unsafe {
-		use rustix::{fs, mm};
-		let len = fs::fstat(&fd)?.st_size as usize;
-		Ok(Self{ptr: mm::mmap(std::ptr::null_mut(), len, mm::ProtFlags::READ, mm::MapFlags::SHARED, fd, 0)?, len})
+	#[cfg(target_os="linux")] fn map<Fd: std::os::fd::AsFd>(fd: Fd) -> rustix::io::Result<Self> {unsafe {
+			use rustix::{fs, mm};
+			let len = fs::fstat(&fd)?.st_size as usize;
+			Ok(Self{ptr: mm::mmap(std::ptr::null_mut(), len, mm::ProtFlags::READ, mm::MapFlags::SHARED, fd, 0)?, len})
 	}}
+	#[cfg(not(target_os="linux"))] fn map<Fd>(_: Fd) -> Result<Self, Box<dyn std::error::Error>> { unimplemented!("Need Linux for memory map") }
 }
 impl std::ops::Deref for MemoryMap { type Target = [u8]; fn deref(&self) -> &Self::Target { unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) } } }
-impl Drop for MemoryMap { fn drop(&mut self) { unsafe { rustix::mm::munmap(self.ptr, self.len).unwrap() } } }
+#[cfg(target_os="linux")] impl Drop for MemoryMap { fn drop(&mut self) { unsafe { rustix::mm::munmap(self.ptr, self.len).unwrap() } } }
 unsafe impl Sync for MemoryMap {}
 unsafe impl Send for MemoryMap {}
 
