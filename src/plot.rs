@@ -178,7 +178,7 @@ impl Widget for Plot {
 			x: map_x(size, left, right, &self.range.x, self.x_values[i]),
 			y: map_y(size, top, bottom, &self.range.y, values[i])
 		});
-		let thickness = 1.; // FIXME: orthogonal to line not vertical
+		let _thickness = 1.; // FIXME: orthogonal to line not vertical
 		let thick_line = points.iter().copied();//.map(|p| p-xy{x: 0., y: thickness/2.}).chain(points.iter().rev().map(|p| p+xy{x: 0., y: thickness/2.}));
 		let mut a = points[0]+xy{x: 0., y: 1.}; // Starts by closing the loop with left edge
 		for b in thick_line {

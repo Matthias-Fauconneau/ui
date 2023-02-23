@@ -1,17 +1,18 @@
 #![allow(non_upper_case_globals)]
+#[cfg(feature="drm")] mod drm {
+	pub struct DRM(std::fs::File);
+	impl DRM { pub fn new(path: &str) -> Self { Self(std::fs::OpenOptions::new().read(true).write(true).open(path).unwrap()) } }
+	impl std::os::fd::AsFd for DRM { fn as_fd(&self) -> std::os::fd::BorrowedFd { self.0.as_fd() } }
+	impl std::os::fd::AsRawFd for DRM { fn as_raw_fd(&self) -> std::os::fd::RawFd { self.0.as_raw_fd() } }
+	impl ::drm::Device for DRM {}
+	impl ::drm::control::Device for DRM {}
+	}
+#[cfg(feature="wayland")] #[path="wayland.rs"] pub mod wayland;
+use {num::zero, crate::{prelude::*, widget::Widget}};
+#[cfg(feature="drm")]  use drm::DRM;
+#[cfg(feature="wayland")] use {num::IsZero, vector::{xy, int2}, wayland::*, crate::{background, Event, EventContext, ModifiersState}};
 
-use crate::background;
-#[path="wayland.rs"] pub mod wayland;
-use {num::{zero,IsZero}, vector::{xy, int2}, /*image::bgra,*/ crate::{prelude::*, widget::{/*Target,*/ Widget, EventContext, ModifiersState, Event}}, wayland::*};
-
-pub struct DRM(std::fs::File);
-impl DRM { pub fn new(path: &str) -> Self { Self(std::fs::OpenOptions::new().read(true).write(true).open(path).unwrap()) } }
-impl std::os::fd::AsFd for DRM { fn as_fd(&self) -> std::os::fd::BorrowedFd { self.0.as_fd() } }
-impl std::os::fd::AsRawFd for DRM { fn as_raw_fd(&self) -> std::os::fd::RawFd { self.0.as_raw_fd() } }
-impl ::drm::Device for DRM {}
-impl ::drm::control::Device for DRM {}
-
-pub struct Cursor<'t> {
+/*pub struct Cursor<'t> {
 	name: &'static str,
 	#[allow(dead_code)] pointer: &'t Pointer<'t>,
 	#[allow(dead_code)] dmabuf: &'t DMABuf<'t>,
@@ -63,13 +64,14 @@ impl Cursor<'_> {
 	}
 	#[cfg(not(feature="xcursor"))] unreachable!()
 	}
-}
+}*/
 
-pub struct App(rustix::fd::OwnedFd);
+#[cfg(target_os="linux")] pub struct App(rustix::fd::OwnedFd);
+#[cfg(not(target_os="linux"))] pub struct App;
 impl App {
 	pub fn new() -> Result<Self> { Ok(Self(rustix::io::eventfd(0, rustix::io::EventfdFlags::empty())?)) }
 	pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
-	pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result<()> {
+	#[cfg(feature="wayland")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result<()> {
 		let server = std::os::unix::net::UnixStream::connect({
 			let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
 			path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
@@ -559,6 +561,29 @@ impl App {
 			}
 		} // idle-event loop
 	}
+	#[cfg(feature="softbuffer")] pub fn run<T:Widget+'static>(&self, _title: &str, widget: &'static mut T) -> ! {
+		use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
+		let event_loop = EventLoop::new();
+		let window = WindowBuilder::new().build(&event_loop).unwrap();
+		let context = unsafe { softbuffer::Context::new(&window) }.unwrap();
+		let mut surface = unsafe { softbuffer::Surface::new(&context, &window) }.unwrap();
+		event_loop.run(move |event, _, control_flow| {
+			*control_flow = ControlFlow::Wait;
+			match event {
+				Event::RedrawRequested(window_id) if window_id == window.id() => {
+					let size = {let size = window.inner_size(); vector::xy{x: size.width, y: size.height}};
+					let target = vec![0u32; (size.y*size.x) as usize];
+					let mut target = image::Image::new(size, target);
+					widget.paint(&mut target.as_mut(), size, zero()).unwrap();
+					surface.set_buffer(&target.data.as_slice(), size.x as u16, size.y as u16);
+				}
+				Event::WindowEvent{event: WindowEvent::CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,
+				_ => {}
+			}
+		})
+    }
 }
 impl Default for App { fn default() -> Self { Self::new().unwrap() } }
-pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> { App::new()?.run(title, widget) }
+#[cfg(not(feature="softbuffer"))] pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> { App::new()?.run(title, widget) }
+unsafe fn static_lifetime<'t, T>(t: &'t mut T) -> &'static mut T { std::mem::transmute::<&mut T, &'static mut T>(t)}
+#[cfg(feature="softbuffer")] pub fn run<T:Widget+'static>(title: &str, widget: &mut T) -> ! { App::new().unwrap().run(title, unsafe{static_lifetime(widget)}) }

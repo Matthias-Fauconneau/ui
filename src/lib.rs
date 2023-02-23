@@ -6,7 +6,7 @@ pub mod prelude { pub use super::{Result,Error,throws, size,int2, Target, Widget
 
 mod line; pub use line::{line, parallelogram};
 pub mod color; pub use color::{bgrf,black,white,dark,background,foreground};
-pub mod widget; pub use widget::{xy,size,int2, Widget, Target, Event,EventContext};
+pub mod widget; pub use widget::{xy,size,int2, Widget, Target, Event, EventContext};
 mod app; pub use app::{App, run};
 #[cfg(feature="font")] pub mod font;
 #[cfg(feature="text")] pub mod text; #[cfg(feature="text")] pub use text::{fit,Text,text};
