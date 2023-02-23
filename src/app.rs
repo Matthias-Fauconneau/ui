@@ -564,28 +564,25 @@ impl App {
 	#[throws] #[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, _title: &str, widget: &mut T) {
 		use winit::{event::{Event::*, WindowEvent::*}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
 		let mut event_loop = EventLoop::new();
-		let window = WindowBuilder::new().build(&event_loop).unwrap();
-		let context = unsafe { softbuffer::Context::new(&window) }.unwrap();
-		let mut surface = unsafe { softbuffer::Surface::new(&context, &window) }.unwrap();
+		let window = WindowBuilder::new().build(&event_loop)?;
+		let context = unsafe{softbuffer::Context::new(&window)}?;
+		let mut surface = unsafe{softbuffer::Surface::new(&context, &window)}?;
 		use winit::platform::run_return::EventLoopExtRunReturn;
-		event_loop.run_return(move |event, _, control_flow| {
-				*control_flow = ControlFlow::Wait;
-				match event {
-						RedrawRequested(window_id) if window_id == window.id() => {
-							let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
-							let target = vec![0u32; (size.y*size.x) as usize];
-							let mut target = image::Image::new(size, target);
-							widget.paint(&mut target.as_mut(), size, zero()).unwrap();
-							surface.set_buffer(&target.data.as_slice(), size.x as u16, size.y as u16);
-						}
-						WindowEvent{event: CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,
-						MainEventsCleared => {
-							let paint = widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Idle).unwrap();
-							if paint { window.request_redraw(); }
-						}
-						_ => {}
-				}
-               })
+		event_loop.run_return(move |event, _, control_flow| match event {
+			RedrawRequested(window_id) if window_id == window.id() => {
+				let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
+				let target = vec![0u32; (size.y*size.x) as usize];
+				let mut target = image::Image::new(size, target);
+				widget.paint(&mut target.as_mut(), size, zero()).unwrap();
+				surface.set_buffer(&target.data.as_slice(), size.x as u16, size.y as u16);
+			}
+			WindowEvent{event: CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,
+			MainEventsCleared => {
+				let paint = widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Idle).unwrap();
+				if paint { window.request_redraw(); }
+			}
+			_ => {}
+		})
     }
 	#[cfg(not(target_os="linux"))] pub fn new() -> Result<Self> { Ok(Self) }
 }

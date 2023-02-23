@@ -9,7 +9,7 @@ example=[
 ]
 
 [features]
-font=['derive-more','owning-ref','rustybuzz','kurbo']
+font=['derive-more','owning-ref','rustybuzz','kurbo','cfg-if']
 text=['derive-more','text-size','unicode-segmentation','font','rustybuzz','glob']
 edit=['text','xcursor']
 plot=['text','itertools']
@@ -21,6 +21,7 @@ softbuffer=['dep:softbuffer','dep:winit']
 fehler='*'
 derive-more={version='*', package='derive_more', optional=true}
 itertools={version='*', optional=true}
+cfg-if={version='*', optional=true}
 owning-ref={version='*', package='owning_ref', optional=true}
 bytemuck='*'
 
@@ -33,7 +34,6 @@ kurbo={version='*', optional=true}
 linux-raw-sys='0.1'
 rustix={version='*', features=['fs','mm','time']}
 dirs='*'
-nix={version='*', default-features = false, features = ['socket','uio']}
 drm={version='*', optional=true}
 
 image={git='https://github.com/Matthias-Fauconneau/image'}
@@ -46,6 +46,7 @@ ash={version='*', optional=true, default-features = false, features = ['linked',
 image-io={package='image', version='*', optional=true, default-features=false, features=['png']}
 winit={version='*', optional=true}
 softbuffer={git='https://github.com/rust-windowing/softbuffer', optional=true}
+font-kit={version='*', optional=true}
 
 [patch.'https://github.com/Matthias-Fauconneau/image']
 image={path='../image'}

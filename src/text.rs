@@ -83,9 +83,9 @@ pub type TextRange = std::ops::Range<usize>;
 impl const From<Style> for Attribute<Style> { fn from(attribute: Style) -> Self { Attribute{range: 0../*GraphemeIndex*/usize::MAX, attribute} } }
 impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { Style{color, style: FontStyle::Normal}.into() } }
 
-
-#[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(|| ["-Regular","Symbols-Regular"].map(|v| {
-	font::open(&glob::glob(&format!("/usr/share/fonts/**/noto/NotoSans{v}.ttf")).unwrap().next().unwrap().unwrap()).unwrap()
+#[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(|| ["-Regular","Symbols-Regular"].map(|_v| {
+	#[cfg(not(target_os="linux"))] return font::open(font_kit::source::SystemSource::new().select_best_match(&[font_kit::family_name::FamilyName::SansSerif], &Default::default()).unwrap().load().unwrap().copy_font_data().unwrap()).unwrap();
+	#[cfg(target_os="linux")] font::open(&glob::glob(&format!("/usr/share/fonts/**/noto/NotoSans{_v}.ttf")).unwrap().next().unwrap().unwrap()).unwrap()
 }));
 pub fn default_font() -> Font<'static> { default_font_files.each_ref().map(|x| std::ops::Deref::deref(x)) }
 
