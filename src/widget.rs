@@ -10,7 +10,7 @@ pub type Target<'t> = image::Image<&'t mut [u32]>;
 	pub modifiers_state: ModifiersState,
 	pub cursor: &'t mut crate::app::Cursor<'c>,
 }
-#[cfg(feature="softbuffer")] pub struct EventContext;
+#[cfg(not(feature="wayland"))] pub struct EventContext;
 
 pub type MouseButtons = u32;
 
