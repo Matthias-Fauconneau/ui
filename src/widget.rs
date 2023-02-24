@@ -1,7 +1,5 @@
 use super::Result;
 pub use vector::{size, int2, vec2, xy};
-//pub struct DMABuf {pub format: u32, pub fd: std::os::fd::OwnedFd, pub modifiers: u64, pub size: size}
-//pub type Target = Option<DMABuf>;
 pub type Target<'t> = image::Image<&'t mut [u32]>;
 #[derive(Default,Clone,Copy)] pub struct ModifiersState { pub shift: bool, pub ctrl: bool, pub logo: bool, pub alt: bool }
 

@@ -15,7 +15,8 @@ edit=['text','xcursor']
 plot=['text','itertools']
 graphic=['font','rustybuzz']
 vulkan=['ash']
-softbuffer=['dep:softbuffer','dep:winit']
+wayland=['nix','drm']
+default=['wayland']
 
 [dependencies]
 fehler='*'
@@ -34,6 +35,7 @@ kurbo={version='*', optional=true}
 linux-raw-sys='0.1'
 rustix={version='*', features=['fs','mm','time']}
 dirs='*'
+nix={version='*', default-features = false, features = ['socket','uio'], optional=true}
 drm={version='*', optional=true}
 
 image={git='https://github.com/Matthias-Fauconneau/image'}
@@ -43,10 +45,9 @@ rustybuzz={version='*', optional=true}
 glob={version='*', optional=true}
 xcursor={version='*', optional=true}
 ash={version='*', optional=true, default-features = false, features = ['linked','debug']}
+
+#[dev-dependencies]
 image-io={package='image', version='*', optional=true, default-features=false, features=['png']}
-winit={version='*', optional=true}
-softbuffer={git='https://github.com/rust-windowing/softbuffer', optional=true}
-font-kit={version='*', optional=true}
 
 [patch.'https://github.com/Matthias-Fauconneau/image']
 image={path='../image'}

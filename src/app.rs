@@ -6,13 +6,13 @@
 	impl std::os::fd::AsRawFd for DRM { fn as_raw_fd(&self) -> std::os::fd::RawFd { self.0.as_raw_fd() } }
 	impl ::drm::Device for DRM {}
 	impl ::drm::control::Device for DRM {}
-	}
+}
 #[cfg(feature="wayland")] #[path="wayland.rs"] pub mod wayland;
 use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event, EventContext}};
-#[cfg(feature="drm")]  use drm::DRM;
+#[cfg(feature="drm")] use self::drm::DRM;
 #[cfg(feature="wayland")] use {num::IsZero, vector::int2, wayland::*, crate::{background, ModifiersState}};
 
-/*pub struct Cursor<'t> {
+#[cfg(feature="wayland")] pub struct Cursor<'t> {
 	name: &'static str,
 	#[allow(dead_code)] pointer: &'t Pointer<'t>,
 	#[allow(dead_code)] dmabuf: &'t DMABuf<'t>,
@@ -21,7 +21,7 @@ use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event, EventCont
 	serial: u32,
 }
 
-impl Cursor<'_> {
+#[cfg(feature="wayland")] impl Cursor<'_> {
 	pub fn set(&mut self, name: &'static str) {
 		if self.name == name { return; }
 		#[cfg(feature="xcursor")] {
@@ -64,7 +64,7 @@ impl Cursor<'_> {
 	}
 	#[cfg(not(feature="xcursor"))] unreachable!()
 	}
-}*/
+}
 
 #[cfg(target_os="linux")] pub struct App(rustix::fd::OwnedFd);
 #[cfg(not(target_os="linux"))] pub struct App;
@@ -403,10 +403,10 @@ impl App {
 			if paint && can_paint && done {
 				//let time = std::time::Instant::now();
 				assert!(size.x > 0 && size.y > 0);
-				use drm::{control::Device as _, buffer::Buffer as _};
+				use ::drm::{control::Device as _, buffer::Buffer as _};
 				let mut buffer = buffer.get_or_insert_with(|| {
 					widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Stale).unwrap();
-					let mut buffer = drm.create_dumb_buffer(size.into(), drm::buffer::DrmFourcc::Xrgb8888 /*drm::buffer::DrmFourcc::Xrgb2101010*/, 32).unwrap();
+					let mut buffer = drm.create_dumb_buffer(size.into(), ::drm::buffer::DrmFourcc::Xrgb8888 /*drm::buffer::DrmFourcc::Xrgb2101010*/, 32).unwrap();
 					{
 						let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
 						let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
@@ -561,29 +561,6 @@ impl App {
 			}
 		} // idle-event loop
 	}
-	#[throws] #[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, _title: &str, widget: &mut T) {
-		use winit::{event::{Event::*, WindowEvent::*}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
-		let mut event_loop = EventLoop::new();
-		let window = WindowBuilder::new().build(&event_loop)?;
-		let context = unsafe{softbuffer::Context::new(&window)}?;
-		let mut surface = unsafe{softbuffer::Surface::new(&context, &window)}?;
-		use winit::platform::run_return::EventLoopExtRunReturn;
-		event_loop.run_return(move |event, _, control_flow| match event {
-			RedrawRequested(window_id) if window_id == window.id() => {
-				let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
-				let target = vec![0u32; (size.y*size.x) as usize];
-				let mut target = image::Image::new(size, target);
-				widget.paint(&mut target.as_mut(), size, zero()).unwrap();
-				surface.set_buffer(&target.data.as_slice(), size.x as u16, size.y as u16);
-			}
-			WindowEvent{event: CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,
-			MainEventsCleared => {
-				let paint = widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Idle).unwrap();
-				if paint { window.request_redraw(); }
-			}
-			_ => {}
-		})
-    }
 	#[cfg(not(target_os="linux"))] pub fn new() -> Result<Self> { Ok(Self) }
 }
 impl Default for App { fn default() -> Self { Self::new().unwrap() } }

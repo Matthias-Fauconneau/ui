@@ -78,7 +78,7 @@ impl ttf_parser::OutlineBuilder for PathEncoder<'_> {
 #[cfg(target_os="linux")] mod memory_map {
 	pub struct MemoryMap{ ptr: *mut core::ffi::c_void, len: usize }
 	impl MemoryMap {
-		fn map<Fd: std::os::fd::AsFd>(fd: Fd) -> rustix::io::Result<Self> {unsafe {
+		pub fn map<Fd: std::os::fd::AsFd>(fd: Fd) -> rustix::io::Result<Self> {unsafe {
 				use rustix::{fs, mm};
 				let len = fs::fstat(&fd)?.st_size as usize;
 				Ok(Self{ptr: mm::mmap(std::ptr::null_mut(), len, mm::ProtFlags::READ, mm::MapFlags::SHARED, fd, 0)?, len})
