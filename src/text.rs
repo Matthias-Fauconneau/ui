@@ -122,8 +122,9 @@ impl<D:AsRef<str>> View<'_, D> {
 			xy{x: max_width, y: line_count * (font[0].height() as u32)}
 		})
 	}
-	pub fn size_scale(&mut self, fit: size) -> (size, Ratio) {
+	#[track_caller] pub fn size_scale(&mut self, fit: size) -> (size, Ratio) {
 		let size = Self::size(self);
+		assert!(size > zero() && fit > zero(), "{size} {fit}");
 		(size, if fit.x*size.y < fit.y*size.x { Ratio{num: fit.x-1, div: size.x-1} } else { Ratio{num: fit.y-1, div: size.y-1} }) // Fit
 		//(size, if size.is_zero() { Ratio{num: 1, div: 1} } else { Ratio{num: fit.x-1, div: size.x-1} }) // Fit width
 	}

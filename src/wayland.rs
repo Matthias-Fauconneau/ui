@@ -11,7 +11,7 @@ unsafe impl bytemuck::Zeroable for Message {}
 unsafe impl bytemuck::Pod for Message {}
 
 pub(crate) fn message(s: &mut impl std::io::Read) -> Message {
-	let mut buf = [0; std::mem::size_of::<Message>()]; std::io::Read::read(s, &mut buf).unwrap(); *bytemuck::from_bytes(&buf)
+	let mut buf = [0; std::mem::size_of::<Message>()]; assert!(std::io::Read::read(s, &mut buf).unwrap() == buf.len()); *bytemuck::from_bytes(&buf)
 }
 
 pub(crate) enum Type { UInt, Int, Array, String }
@@ -62,7 +62,7 @@ impl Server {
 			sendmsg::<()>(self.server.borrow_mut().as_raw_fd(), &[std::io::IoSlice::new(&request)], &[ControlMessage::ScmRights(&[fd])], MsgFlags::empty(), None).unwrap();
 		} else {
 			if let Err(e) = {let mut server = self.server.borrow_mut(); let r = server.write(&request); drop(server); r} {
-				println!("{e}");
+				println!("Error: {e}");
 				loop {
 					let Message{id, opcode, ..} = message(&mut *self.server.borrow_mut());
 					/**/ if id == 1 && opcode == display::error {
@@ -208,7 +208,7 @@ pub(crate) mod surface {
 		#[track_caller] pub fn attach(&self, buffer: &Buffer, x: u32, y: u32) { self.server.request(self.id, Requests::attach as u16, [UInt(buffer.id),UInt(x),UInt(y)]); }
 		pub fn frame(&self, callback: &Callback) { self.server.request(self.id, Requests::frame as u16, [UInt(callback.id)]); }
 		pub fn commit(&self) { self.server.request(self.id, Requests::commit as u16, []); }
-		pub fn set_buffer_scale(&self, factor: u32) { self.server.request(self.id, Requests::set_buffer_scale as u16, [UInt(factor)]); }
+		#[track_caller] pub fn set_buffer_scale(&self, factor: u32) { self.server.request(self.id, Requests::set_buffer_scale as u16, [UInt(factor)]); }
 		pub fn damage_buffer(&self, x: u32, y: u32, w: u32, h: u32) { self.server.request(self.id, Requests::damage_buffer as u16, [UInt(x),UInt(y),UInt(w),UInt(h)]); }
 	}
 }
@@ -301,3 +301,34 @@ pub(crate) mod toplevel {
 	}
 }
 pub use toplevel::Toplevel;
+
+// shm: create_pool(shm_pool, fd, size); format(uint)
+pub(crate) mod shm {
+	pub const format: u16 = 0;
+	enum Requests { create_pool }
+	pub struct Shm<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
+	impl<'t> From<(&'t Server, u32)> for Shm<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
+	use super::{Arg::*, *};
+	impl Shm<'_> {
+		pub fn create_pool(&self, shm_pool: &ShmPool, fd: &impl std::os::unix::io::AsRawFd, size: u32) {
+			self.server.sendmsg(self.id, Requests::create_pool as u16, [UInt(shm_pool.id),UInt(size)], Some(fd.as_raw_fd()));
+		}
+	}
+}
+pub use shm::Shm;
+
+// shm_pool: create_buffer(buffer, offset, width, height, stride, shm.format), resize(size)
+pub mod shm_pool {
+	enum Requests { create_buffer, destroy, resize }
+	pub struct ShmPool<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
+	impl<'t> From<(&'t Server, u32)> for ShmPool<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
+	use super::{Arg::*, *};
+	impl ShmPool<'_> {
+		pub fn create_buffer(&self, buffer: &Buffer, offset: u32, width: u32, height: u32, stride: u32, format: Format) {
+			self.server.request(self.id, Requests::create_buffer as u16, [UInt(buffer.id),UInt(offset),UInt(width),UInt(height),UInt(stride),UInt(format as u32)]);
+		}
+		pub fn resize(&self, size: u32) { self.server.request(self.id, Requests::resize as u16, [UInt(size)]); }
+	}
+	pub enum Format { argb8888, xrgb8888 }
+}
+pub use shm_pool::ShmPool;
