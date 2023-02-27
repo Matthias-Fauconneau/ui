@@ -610,6 +610,7 @@ impl App {
 						let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
 						let target = vec![0u32; (size.y*size.x) as usize];
 						let mut target = image::Image::new(size, target);
+						widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Stale).unwrap();
 						widget.paint(&mut target.as_mut(), size, zero()).unwrap();
 						surface.set_buffer(&target.data.as_slice(), size.x as u16, size.y as u16);
 				}
