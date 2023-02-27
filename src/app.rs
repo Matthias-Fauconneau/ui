@@ -83,13 +83,13 @@ impl App {
 		let ref registry = server.new();
 		display.get_registry(registry);
 
-		let [compositor, wm_base, seat, output, /*dmabuf*/shm] = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","wl_output",/*"zwp_linux_dmabuf_v1"*/"wl_shm"]);
+		let [compositor, wm_base, seat, output, dmabuf/*shm*/] = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","wl_output","zwp_linux_dmabuf_v1"/*"wl_shm"*/]);
 		let ref compositor = Compositor{server, id: compositor};
 		let ref wm_base = WmBase{server, id: wm_base};
 		let ref seat = Seat{server, id: seat};
 		let ref output = Output{server, id: output};
-		//let ref dmabuf = DMABuf{server, id: dmabuf};
-		let ref shm = Shm{server, id: shm};
+		let ref dmabuf = DMABuf{server, id: dmabuf};
+		/*let ref shm = Shm{server, id: shm};
 		struct Pool<'t> {
 			file: rustix::fd::OwnedFd,
 			shm_pool: ShmPool<'t>,
@@ -100,7 +100,7 @@ impl App {
 		let shm_pool = server.new();
 		rustix::fs::ftruncate(&file, 4096).unwrap();
 		shm.create_pool(&shm_pool, &file, 4096);
-		let ref mut pool = Pool{file, shm_pool, buffer: server.new(), target: Target::new(zero(), &mut [])};
+		let ref mut pool = Pool{file, shm_pool, buffer: server.new(), target: Target::new(zero(), &mut [])};*/
 
 		let ref pointer = server.new();
 		seat.get_pointer(pointer);
@@ -118,11 +118,11 @@ impl App {
 
 		let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"}); // or use Vulkan ext acquire drm display
 
-		//let ref params : dmabuf::Params = server.new();
-		//let ref buffer_ref : Buffer = server.new();
+		let ref params : dmabuf::Params = server.new();
+		let ref buffer_ref : Buffer = server.new();
 		let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
 
-		//let mut buffer = None;
+		let mut buffer = None;
 		let mut scale_factor = 0;
 		let mut configure_bounds = zero();
 		let mut size = zero();
@@ -220,7 +220,7 @@ impl App {
 					paint = widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Trigger).unwrap(); // determines whether to wait for events
 				} else if events[1] {
 					let Message{id, opcode, ..} = message(&mut*server.server.borrow_mut());
-					println!("{id} {opcode} {:?}",[toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, /*dmabuf*/shm.id]);
+					//println!("{id} {opcode} {:?}",[toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, dmabuf/*shm*/.id]);
 					use Arg::*;
 					/**/ if id == display.id && opcode == display::error {
 						panic!("{:?}", server.args({use Type::*; [UInt, UInt, String]}));
@@ -229,22 +229,22 @@ impl App {
 						let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						if callback.as_ref().is_some_and(|callback| id == callback.id) { /*println!("delete_id callback {}", callback.unwrap().id);*/ callback = None; } // Cannot reuse same id... :(
 						else { // Reused immediately
-							//assert!(id == params.id || id == buffer_ref.id, "{id}");
-							assert!(id == pool.buffer.id); // Reused immediately
+							assert!(id == params.id || id == buffer_ref.id, "{id}");
+							//assert!(id == pool.buffer.id); // Reused immediately
 						}
 						//println!("delete_id {}", id);
 					}
-					/*else if id == dmabuf.id && opcode == dmabuf::format {
+					else if id == dmabuf.id && opcode == dmabuf::format {
 						let [UInt(format)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						println!("f {format:x}");
 					}
 					else if id == dmabuf.id && opcode == dmabuf::modifier {
 						let [UInt(modifier)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						println!("m {modifier:x}");
-					}*/
-					else if id == shm.id && opcode == shm::format {
+					}
+					/*else if id == shm.id && opcode == shm::format {
 						server.args({use Type::*; [UInt]});
-					} else if id == seat.id && opcode == seat::capabilities {
+					}*/ else if id == seat.id && opcode == seat::capabilities {
 						server.args({use Type::*; [UInt]});
 					}
 					else if id == seat.id && opcode == seat::name {
@@ -297,8 +297,8 @@ impl App {
 					else if id == surface.id && opcode == surface::leave {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
-					//else if id == buffer_ref.id && opcode == buffer::release {}
-					else if id == pool.buffer.id && opcode == buffer::release {}
+					else if id == buffer_ref.id && opcode == buffer::release {}
+					//else if id == pool.buffer.id && opcode == buffer::release {}
 					else if id == pointer.id && opcode == pointer::enter {
 						let [UInt(serial),_,_,_] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
 						cursor.serial = serial;
@@ -421,7 +421,7 @@ impl App {
 			if paint && can_paint && done {
 				//let time = std::time::Instant::now();
 				assert!(size.x > 0 && size.y > 0);
-				/*use ::drm::{control::Device as _, buffer::Buffer as _};
+				use ::drm::{control::Device as _, buffer::Buffer as _};
 				let mut buffer = buffer.get_or_insert_with(|| {
 					widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Stale).unwrap();
 					let mut buffer = drm.create_dumb_buffer(size.into(), ::drm::buffer::DrmFourcc::Xrgb8888 /*drm::buffer::DrmFourcc::Xrgb2101010*/, 32).unwrap();
@@ -431,8 +431,8 @@ impl App {
 						image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride).fill(background().into());
 					}
 					buffer
-				});*/
-				if pool.target.size != size {
+				});
+				/*if pool.target.size != size {
 					let old_length = (pool.target.size.y*pool.target.size.x*4) as usize;
 					let length = (size.y*size.x*4) as usize;
 					if length > old_length {
@@ -447,7 +447,7 @@ impl App {
 							rustix::mm::mmap(std::ptr::null_mut(), length, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &pool.file, 0).unwrap() as *mut u8,
 							length)};
 					pool.target = Target::new(size, bytemuck::cast_slice_mut(mmap));
-				}
+				}*/
 				/*{
 					use vk::*;
 					//VkImageDrmFormatModifierExplicitCreateInfoEXT and VkExternalMemoryImageCreateInfo onto VkImageCreateInfo
@@ -561,7 +561,7 @@ impl App {
 					}
 					res = vkBindImageMemory2(dev, mem_count, bindi);*/
 				}*/
-				/*{
+				{
 					let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
 					let mut map = drm.map_dumb_buffer(&mut buffer)?;
 					let mut target = image::Image::cast_slice_mut(map.as_mut(), size, stride);
@@ -582,11 +582,11 @@ impl App {
 				params.destroy();
 				surface.attach(&buffer_ref,0,0);
 				buffer_ref.destroy();
-				surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);*/
-				let size = pool.target.size;
+				surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
+				/*let size = pool.target.size;
 				widget.paint(&mut pool.target, size, zero())?;
 				surface.attach(&pool.buffer,0,0);
-				surface.damage_buffer(0, 0, pool.target.size.x, pool.target.size.y);
+				surface.damage_buffer(0, 0, pool.target.size.x, pool.target.size.y);*/
 				assert!(done == true);
 				done = false;
 				assert!(callback.is_none());

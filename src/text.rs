@@ -123,12 +123,13 @@ impl<D:AsRef<str>> View<'_, D> {
 		})
 	}
 	#[track_caller] pub fn size_scale(&mut self, fit: size) -> (size, Ratio) {
+		if self.data.as_ref().is_empty() { return (zero(), num::unit) }
 		let size = Self::size(self);
-		assert!(size > zero() && fit > zero(), "{size} {fit}");
+		assert!(size > zero() && fit > zero(), "{size} {fit} '{}'", self.data.as_ref());
 		(size, if fit.x*size.y < fit.y*size.x { Ratio{num: fit.x-1, div: size.x-1} } else { Ratio{num: fit.y-1, div: size.y-1} }) // Fit
 		//(size, if size.is_zero() { Ratio{num: 1, div: 1} } else { Ratio{num: fit.x-1, div: size.x-1} }) // Fit width
 	}
-	pub fn scale(&mut self, fit: size) -> Ratio { self.size_scale(fit).1 }
+	#[track_caller] pub fn scale(&mut self, fit: size) -> Ratio { self.size_scale(fit).1 }
 }
 
 impl<D:AsRef<str>> std::fmt::Debug for View<'_, D> { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.data.as_ref().fmt(f) } }
@@ -287,7 +288,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 			}
 		}
 	}
-	pub fn paint_fit(&mut self, target: &mut Target, size: size, offset: int2) -> Ratio {
+	#[track_caller] pub fn paint_fit(&mut self, target: &mut Target, size: size, offset: int2) -> Ratio {
 		let scale = self.scale(size);
 		self.paint(target, size, scale, offset);
 		scale
@@ -296,7 +297,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 use crate::widget::{Widget, Target};
 impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 	fn size(&mut self, size: size) -> size { fit(size/*fit_width(size.x*/, Self::size(self)) }
-	#[throws] fn paint(&mut self, target: &mut Target, size: size, offset: int2) { self.paint_fit(target, size, offset); }
+	#[track_caller] #[throws] fn paint(&mut self, target: &mut Target, size: size, offset: int2) { self.paint_fit(target, size, offset); }
 }
 
 pub struct Plain<T>(pub T);
