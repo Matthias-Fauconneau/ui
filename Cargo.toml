@@ -16,7 +16,8 @@ plot=['text','itertools']
 graphic=['font','rustybuzz']
 vulkan=['ash']
 wayland=['nix','drm']
-default=['wayland']
+softbuffer=['dep:softbuffer','dep:winit']
+default=['softbuffer']
 
 [dependencies]
 fehler='*'
@@ -45,6 +46,8 @@ rustybuzz={version='*', optional=true}
 glob={version='*', optional=true}
 xcursor={version='*', optional=true}
 ash={version='*', optional=true, default-features = false, features = ['linked','debug']}
+winit={version='*', optional=true}
+softbuffer={git='https://github.com/rust-windowing/softbuffer', optional=true}
 
 #[dev-dependencies]
 image-io={package='image', version='*', optional=true, default-features=false, features=['png']}

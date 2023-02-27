@@ -66,11 +66,10 @@ use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event, EventCont
 	}
 }
 
-#[cfg(target_os="linux")] pub struct App(rustix::fd::OwnedFd);
-#[cfg(not(target_os="linux"))] pub struct App;
+pub struct App(rustix::fd::OwnedFd);
 impl App {
-	#[cfg(target_os="linux")] pub fn new() -> Result<Self> { Ok(Self(rustix::io::eventfd(0, rustix::io::EventfdFlags::empty())?)) }
-	#[cfg(target_os="linux")] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
+	pub fn new() -> Result<Self> { Ok(Self(rustix::io::eventfd(0, rustix::io::EventfdFlags::empty())?)) }
+	pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
 	#[cfg(feature="wayland")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result<()> {
 		let server = std::os::unix::net::UnixStream::connect({
 			let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
@@ -599,7 +598,29 @@ impl App {
 			}
 		} // idle-event loop
 	}
-	#[cfg(not(target_os="linux"))] pub fn new() -> Result<Self> { Ok(Self) }
+	#[throws] #[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, _title: &str, widget: &mut T) {
+		use winit::{event::{Event::*, WindowEvent::*}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
+		let mut event_loop = EventLoop::new();
+		let window = WindowBuilder::new().build(&event_loop)?;
+		let context = unsafe{softbuffer::Context::new(&window)}?;
+		let mut surface = unsafe{softbuffer::Surface::new(&context, &window)}?;
+		use winit::platform::run_return::EventLoopExtRunReturn;
+		event_loop.run_return(move |event, _, control_flow| match event {
+				RedrawRequested(window_id) if window_id == window.id() => {
+						let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
+						let target = vec![0u32; (size.y*size.x) as usize];
+						let mut target = image::Image::new(size, target);
+						widget.paint(&mut target.as_mut(), size, zero()).unwrap();
+						surface.set_buffer(&target.data.as_slice(), size.x as u16, size.y as u16);
+				}
+				WindowEvent{event: CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,
+				MainEventsCleared => {
+						let paint = widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Idle).unwrap();
+						if paint { window.request_redraw(); }
+				}
+				_ => {}
+		})
+}
 }
 impl Default for App { fn default() -> Self { Self::new().unwrap() } }
 pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> { App::new()?.run(title, widget) }
