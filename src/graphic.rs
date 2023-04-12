@@ -24,7 +24,7 @@ pub struct Graphic<'t> {
 	pub glyphs: Vec<Glyph<'t>>,
 }
 
-use {num::zero, crate::{throws, Error, Result}, vector::{xy, size, vec2, ifloor, ceil}, image::{Image, bgr, PQ10}, crate::{font::rasterize, widget, Target, dark}};
+use {num::zero, crate::{throws, Error, Result}, vector::{xy, size, vec2, ifloor, ceil}, image::{Image, bgr, /*PQ10*/sRGB8}, crate::{font::rasterize, widget, Target, dark}};
 
 impl Graphic<'_> {
 	pub fn new(scale: Ratio) -> Self { Self{scale, rects: vec![], parallelograms: vec![], glyphs: vec![]} }
@@ -100,7 +100,7 @@ impl widget::Widget for View<'_> {
 			}
 			target
 		};
-		target.zip_map(&buffer, |_, &buffer| { let c = f32::min(1.,buffer); bgr::from(PQ10(if dark {c} else {1.-c})).into()});
+		target.zip_map(&buffer, |_, &buffer| { let c = f32::min(1.,buffer); bgr::from(/*PQ10*/sRGB8(if dark {c} else {1.-c})).into()});
 	}
 }
 
