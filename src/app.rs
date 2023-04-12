@@ -421,6 +421,7 @@ impl App {
 				//let time = std::time::Instant::now();
 				assert!(size.x > 0 && size.y > 0);
 				use ::drm::{control::Device as _, buffer::Buffer as _};
+				if buffer.is_some_and(|buffer: ::drm::control::dumbbuffer::DumbBuffer| {let (x, y) = buffer.size(); xy{x, y} != size}) { buffer = None; }
 				let mut buffer = buffer.get_or_insert_with(|| {
 					widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Stale).unwrap();
 					let mut buffer = drm.create_dumb_buffer(size.into(), ::drm::buffer::DrmFourcc::Xrgb8888 /*drm::buffer::DrmFourcc::Xrgb2101010*/, 32).unwrap();
@@ -563,6 +564,7 @@ impl App {
 				{
 					let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
 					let mut map = drm.map_dumb_buffer(&mut buffer)?;
+					assert!(stride * size.y <= map.as_mut().len() as u32, "{} {}", stride * size.y, map.as_mut().len());
 					let mut target = image::Image::cast_slice_mut(map.as_mut(), size, stride);
 					widget.paint(&mut target, size, zero())?;
 					/*// unimplemented wayland PQ. use vulkan ext hdr metadata ?
