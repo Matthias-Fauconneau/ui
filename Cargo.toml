@@ -17,6 +17,7 @@ graphic=['font','rustybuzz']
 vulkan=['ash']
 wayland=['nix','drm']
 #softbuffer=['dep:softbuffer','dep:winit']
+default=['wayland']
 
 [dependencies]
 fehler='*'
@@ -34,7 +35,7 @@ kurbo={version='*', optional=true}
 
 linux-raw-sys='0.1'
 rustix={version='*', features=['fs','mm','time']}
-dirs='*'
+#dirs='*'
 nix={version='*', default-features = false, features = ['socket','uio'], optional=true}
 drm={version='*', optional=true}
 
