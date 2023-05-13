@@ -1,12 +1,16 @@
 #![allow(non_snake_case)]
 pub use image::{bgr, bgrf};
 //let [black, white] : [Color; 2]  = [0., 1.].map(Into::into);
-#[allow(non_upper_case_globals)] pub const black : bgrf = (0.).into();
-#[allow(non_upper_case_globals)] pub const white : bgrf = (1.).into();
-#[allow(non_upper_case_globals)] pub static dark : bool = true;
+#[allow(non_upper_case_globals)] pub const black : bgrf = /*(0.).into()*/bgrf{b: 0., g: 0., r: 0.};
+#[allow(non_upper_case_globals)] pub const white : bgrf = /*(1.).into()*/bgrf{b: 1., g: 1., r: 1.};
+#[allow(non_upper_case_globals)] pub static dark : bool = false;
 //const [background, foreground] : [Color; 2] = if dark { [black, white] } else { [white, black] };
 #[allow(non_upper_case_globals)] pub fn background() -> bgrf { if dark { black } else { white } }
 #[allow(non_upper_case_globals)] pub fn foreground() -> bgrf { if dark { white } else { black } }
+
+#[allow(non_upper_case_globals)] pub const blue : bgrf = bgrf{b: 1., g: 0., r: 0.};
+#[allow(non_upper_case_globals)] pub const green : bgrf = bgrf{b: 0., g: 1., r: 0.};
+#[allow(non_upper_case_globals)] pub const red : bgrf = bgrf{b: 0., g: 0., r: 1.};
 
 use {num::{cos,sin,cb}, vector::xy};
 pub struct LCh { pub L: f32, pub C: f32, pub h: f32}

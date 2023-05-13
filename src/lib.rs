@@ -1,4 +1,5 @@
-#![feature(async_closure, lazy_cell, type_alias_impl_trait, array_methods, stmt_expr_attributes, closure_track_caller, let_chains, const_trait_impl, const_convert, array_windows, int_roundings, generic_arg_infer, array_zip, generators, iter_from_generator, default_free_fn, div_duration)]
+#![feature(async_closure, lazy_cell, type_alias_impl_trait, array_methods, stmt_expr_attributes, closure_track_caller, let_chains, const_trait_impl, array_windows, int_roundings, generic_arg_infer,
+	array_zip, generators, iter_from_generator, default_free_fn, div_duration/*, const_convert*/)]
 #![cfg_attr(feature="wayland", feature(unix_socket_ancillary_data))]
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T=(),E=Error> = std::result::Result<T, E>;
