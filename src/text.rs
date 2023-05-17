@@ -80,7 +80,7 @@ fn metrics<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> LineMetrics {
 #[derive(Clone,Copy,Default,Debug)] pub struct Style { pub color: Color, pub style: FontStyle }
 pub type TextRange = std::ops::Range<usize>;
 #[derive(Clone,derive_more::Deref,Debug)] pub struct Attribute<T> { #[deref] pub range: TextRange, pub attribute: T }
-impl const From<Style> for Attribute<Style> { fn from(attribute: Style) -> Self { Attribute{range: 0../*GraphemeIndex*/usize::MAX, attribute} } }
+impl /*const*/ From<Style> for Attribute<Style> { fn from(attribute: Style) -> Self { Attribute{range: 0../*GraphemeIndex*/usize::MAX, attribute} } }
 impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { Style{color, style: FontStyle::Normal}.into() } }
 
 #[allow(non_upper_case_globals)] pub static default_font_files : std::sync::LazyLock<[font::File<'static>; 2]> = std::sync::LazyLock::new(|| ["-Regular","Symbols-Regular"].map(|_v| {
