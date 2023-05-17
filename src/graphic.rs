@@ -27,7 +27,7 @@ pub struct Graphic<'t> {
 use {num::zero, crate::{throws, Error, Result}, vector::{xy, size, vec2, ifloor, ceil}, image::{Image, bgr, /*PQ10*/sRGB8}, crate::{font::rasterize, widget, Target, dark}};
 
 impl Graphic<'_> {
-	pub fn new(scale: Ratio) -> Self { Self{scale, rects: vec![], parallelograms: vec![], glyphs: vec![]} }
+	pub fn new(scale: Ratio) -> Self { Self{scale, rects: Vec::new(), parallelograms: Vec::new(), glyphs: Vec::new()} }
 	pub fn extend(&mut self, mut graphic: Self, position: int2) {
 		self.rects.extend(graphic.rects.drain(..).map(|(mut x, style)| { x.translate(position); (x, style) }));
 		self.parallelograms.extend(graphic.parallelograms.drain(..).map(|mut x| { x.translate(position); x }));

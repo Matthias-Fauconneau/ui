@@ -200,7 +200,7 @@ impl App {
 				let events = {
 					use {rustix::{io::{PollFd,PollFlags},time::{timerfd_settime,TimerfdTimerFlags,Itimerspec}}, linux_raw_sys::general::__kernel_timespec};
 					let server = server.server.borrow();
-					let ref mut fds = vec![PollFd::new(&self.0, PollFlags::IN), PollFd::new(&*server, PollFlags::IN)];
+					let ref mut fds = Vec::from([PollFd::new(&self.0, PollFlags::IN), PollFd::new(&*server, PollFlags::IN)]);
 					if let Some((msec, _)) = repeat {
 						timerfd_settime(&timerfd, TimerfdTimerFlags::ABSTIME,
 							&Itimerspec{it_interval:__kernel_timespec{tv_sec:0, tv_nsec:0}, it_value: __kernel_timespec{tv_sec:(msec/1000) as i64,tv_nsec:((msec%1000)*1000000) as i64}}
@@ -610,8 +610,7 @@ impl App {
 		event_loop.run_return(move |event, _, control_flow| match event {
 				RedrawRequested(window_id) if window_id == window.id() => {
 						let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
-						let target = vec![0u32; (size.y*size.x) as usize];
-						let mut target = image::Image::new(size, target);
+						let mut target = image::Image::new(size, [0u32; (size.y*size.x) as usize].into());
 						widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Stale).unwrap();
 						widget.paint(&mut target.as_mut(), size, zero()).unwrap();
 						surface.set_buffer(&target.data.as_slice(), size.x as u16, size.y as u16);
