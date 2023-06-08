@@ -1,12 +1,12 @@
-#![feature(async_closure, lazy_cell, type_alias_impl_trait, array_methods, stmt_expr_attributes, closure_track_caller, let_chains, const_trait_impl, array_windows, int_roundings, generic_arg_infer,
-	array_zip, generators, iter_from_generator, default_free_fn, div_duration/*, const_convert*/)]
-#![cfg_attr(feature="wayland", feature(unix_socket_ancillary_data))]
+//#![feature(async_closure, lazy_cell, type_alias_impl_trait, array_methods, stmt_expr_attributes, closure_track_caller, const_trait_impl, array_windows, 
+//						int_roundings, generic_arg_infer, generators, iter_from_generator, default_free_fn, div_duration/*, const_convert*/)]
+//#![cfg_attr(feature="wayland", feature(unix_socket_ancillary_data))]
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T=(),E=Error> = std::result::Result<T, E>;
 pub use fehler::throws;
 pub mod prelude { pub use super::{Result,Error,throws, size,int2, Target, Widget, App, run}; }
 
-mod line; pub use line::{line, parallelogram};
+//mod line; pub use line::{line, parallelogram};
 pub mod color; pub use color::{bgrf,black,white,dark,background,foreground};
 pub mod widget; pub use widget::{xy,size,int2, Widget, Target, Event, EventContext, ModifiersState};
 mod app; pub use app::{App, run};

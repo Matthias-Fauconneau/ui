@@ -66,12 +66,12 @@ use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event, EventCont
 	}
 }
 
-pub struct App(rustix::fd::OwnedFd);
+pub struct App(#[cfg(unix)] rustix::fd::OwnedFd);
 impl App {
-	pub fn new() -> Result<Self> { Ok(Self(rustix::io::eventfd(0, rustix::io::EventfdFlags::empty())?)) }
-	pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
+	pub fn new() -> Result<Self> { Ok(Self(#[cfg(unix)] rustix::io::eventfd(0, rustix::io::EventfdFlags::empty())?)) }
+	#[cfg(unix)] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
 	#[cfg(feature="wayland")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result<()> {
-		let server = std::os::unix::net::UnixStream::connect({
+		let server = rustix::net::SocketAddrUnix::new({
 			let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
 			path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
 			path
@@ -199,8 +199,8 @@ impl App {
 			loop {
 				let events = {
 					use {rustix::{io::{PollFd,PollFlags},time::{timerfd_settime,TimerfdTimerFlags,Itimerspec}}, linux_raw_sys::general::__kernel_timespec};
-					let server = server.server.borrow();
-					let ref mut fds = Vec::from([PollFd::new(&self.0, PollFlags::IN), PollFd::new(&*server, PollFlags::IN)]);
+					let ref server = server.server.borrow().0;
+					let ref mut fds = Vec::from([PollFd::new(&self.0, PollFlags::IN), PollFd::new(server, PollFlags::IN)]);
 					if let Some((msec, _)) = repeat {
 						timerfd_settime(&timerfd, TimerfdTimerFlags::ABSTIME,
 							&Itimerspec{it_interval:__kernel_timespec{tv_sec:0, tv_nsec:0}, it_value: __kernel_timespec{tv_sec:(msec/1000) as i64,tv_nsec:((msec%1000)*1000000) as i64}}
@@ -213,12 +213,11 @@ impl App {
 					idle += time.elapsed();
 					fds.iter().map(|fd| fd.revents().contains(PollFlags::IN)).collect::<Box<_>>()
 				};
-				//{static mut counter : std::sync::atomic::AtomicU64 = 0.into(); dbg!(&events, unsafe{&counter}.fetch_add(1, std::sync::atomic::Ordering::Relaxed));}
 				if events[0] {
 					assert!({let mut buf = [0; 8]; assert!(rustix::io::read(&self.0, &mut buf)? == buf.len()); let trigger_count = u64::from_ne_bytes(buf); trigger_count == 1});
 					paint = widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Trigger).unwrap(); // determines whether to wait for events
 				} else if events[1] {
-					let Message{id, opcode, ..} = message(&mut*server.server.borrow_mut());
+					let Message{id, opcode, ..} = message(&server.server.borrow().0);
 					//println!("{id} {opcode} {:?}",[toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, dmabuf/*shm*/.id]);
 					use Arg::*;
 					/**/ if id == display.id && opcode == display::error {
@@ -391,7 +390,7 @@ impl App {
 							} else { repeat = None; }
 						}
 					}
-					else if let Some(ref callback) = callback && id == callback.id && opcode == callback::done {
+					else if callback.is_some_and(|callback| id == callback.id) && opcode == callback::done {
 						let [UInt(_timestamp_ms)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						//println!("{}", _timestamp_ms-last_done_timestamp);
 						_last_done_timestamp = _timestamp_ms;
@@ -400,10 +399,10 @@ impl App {
 					}
 					/*else if let Some(pool) = &cursor.pool && id == pool.buffer.id && opcode == buffer::release {
 					}*/
-					else if let Some(surface) = &cursor.surface && id == surface.id && opcode == surface::enter {
+					else if surface.is_some_and(|surface| id == surface.id) && opcode == surface::enter {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
-					else if let Some(surface) = &cursor.surface && id == surface.id && opcode == surface::leave {
+					else if surface.is_some_and(|surface| id == surface.id) && opcode == surface::leave {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
 					else if id == toplevel.id && opcode == toplevel::close {
@@ -412,10 +411,12 @@ impl App {
 					}
 					else { panic!("{:?} {opcode:?} {:?}", id, [toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id/*, dmabuf.id*/]); }
 				}
-				else if events.len() > 2 && events[2] && let Some((msec, key)) = repeat {
+				else if events.len() > 2 && events[2] {
+					let (msec, key) = repeat.unwrap();
 					if widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Key(key))? { paint=true; }
 					repeat = Some((msec+33, key));
-				} else { break; }
+				} 
+				else { break; }
 			} // event loop
 			if paint && can_paint && done {
 				//let time = std::time::Instant::now();
@@ -575,10 +576,8 @@ impl App {
 					}*/
 				}
 				dmabuf.create_params(params);
-				use std::os::fd::FromRawFd;
-				let fd = unsafe{std::os::fd::OwnedFd::from_raw_fd(drm.buffer_to_prime_fd(buffer.handle(), 0)?)};
 				let modifiers = 0u64;
-				params.add(&fd, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
+				params.add(unsafe{rustix::fd::BorrowedFd::borrow_raw(drm.buffer_to_prime_fd(buffer.handle(), 0)?)}, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
 				params.create_immed(buffer_ref, buffer.size().0, buffer.size().1, buffer.format() as u32, 0);
 				params.destroy();
 				surface.attach(&buffer_ref,0,0);
@@ -604,16 +603,15 @@ impl App {
 		use winit::{event::{Event::*, WindowEvent::*}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
 		let mut event_loop = EventLoop::new();
 		let window = WindowBuilder::new().build(&event_loop)?;
-		let context = unsafe{softbuffer::Context::new(&window)}?;
-		let mut surface = unsafe{softbuffer::Surface::new(&context, &window)}?;
+		let context = unsafe{softbuffer::Context::new(&window)}.unwrap();
+		let mut surface = unsafe{softbuffer::Surface::new(&context, &window)}.unwrap();
 		use winit::platform::run_return::EventLoopExtRunReturn;
 		event_loop.run_return(move |event, _, control_flow| match event {
 				RedrawRequested(window_id) if window_id == window.id() => {
-						let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
-						let mut target = image::Image::new(size, [0u32; (size.y*size.x) as usize].into());
-						widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Stale).unwrap();
-						widget.paint(&mut target.as_mut(), size, zero()).unwrap();
-						surface.set_buffer(&target.data.as_slice(), size.x as u16, size.y as u16);
+					let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
+					widget.event(size, &mut Some(EventContext), &Event::Stale).unwrap();
+					surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
+					widget.paint(&mut image::Image::new(size, &mut surface.buffer_mut().unwrap()), size, zero()).unwrap();
 				}
 				WindowEvent{event: CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,
 				MainEventsCleared => {

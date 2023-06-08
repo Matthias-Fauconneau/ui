@@ -16,8 +16,8 @@ plot=['text','itertools']
 graphic=['font','rustybuzz']
 vulkan=['ash']
 wayland=['nix','drm']
-#softbuffer=['dep:softbuffer','dep:winit']
-default=['wayland']
+softbuffer=['dep:softbuffer','dep:winit']
+#default=['wayland']
 
 [dependencies]
 fehler='*'
@@ -34,7 +34,7 @@ trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 kurbo={version='*', optional=true}
 
 linux-raw-sys='*'
-rustix={version='*', features=['fs','mm','time']}
+rustix={version='*', features=['fs','mm','time','net']}
 #dirs='*'
 nix={version='*', default-features = false, features = ['socket','uio'], optional=true}
 drm={version='*', optional=true}
@@ -46,11 +46,13 @@ rustybuzz={version='*', optional=true}
 glob={version='*', optional=true}
 xcursor={version='*', optional=true}
 ash={version='*', optional=true, default-features = false, features = ['linked','debug']}
-#winit={version='*', optional=true}
-#softbuffer={git='https://github.com/rust-windowing/softbuffer', optional=true}
+winit={version='*', optional=true}
+softbuffer={git='https://github.com/rust-windowing/softbuffer', optional=true}
 
 #[dev-dependencies]
 image-io={package='image', version='*', optional=true, default-features=false, features=['png']}
 
-#[patch.'https://github.com/Matthias-Fauconneau/image']
-#image={path='../image'}
+[target.'cfg(not(target_os="windows"))'.features]
+default = ['wayland']
+[target.'cfg(target_os="windows")'.features]
+default = ["softbuffer"]
