@@ -611,7 +611,9 @@ impl App {
 					let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
 					widget.event(size, &mut Some(EventContext), &Event::Stale).unwrap();
 					surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
-					widget.paint(&mut image::Image::new(size, &mut surface.buffer_mut().unwrap()), size, zero()).unwrap();
+					let mut buffer = surface.buffer_mut().unwrap();
+					widget.paint(&mut image::Image::new(size, &mut buffer), size, zero()).unwrap();
+					buffer.present().unwrap();
 				}
 				WindowEvent{event: CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,
 				MainEventsCleared => {
