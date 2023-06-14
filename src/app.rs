@@ -437,15 +437,15 @@ impl App {
 					let old_length = (pool.target.size.y*pool.target.size.x*4) as usize;
 					let length = (size.y*size.x*4) as usize;
 					if length > old_length {
-							rustix::fs::ftruncate(&pool.file, length as u64).unwrap(); // It is the client's responsibility to ensure that the file is at least as big as the new pool size
+							rustix::fs::ftruncate(&pool.file, length as u64).unwrap();
 							pool.shm_pool.resize(length as u32); //  This request can only be used to make the pool bigger
 					}
 					if !pool.target.size.is_zero() { pool.buffer.destroy(); }
 					pool.shm_pool.create_buffer(&pool.buffer, 0, size.x, size.y, size.x*4, shm_pool::Format::xrgb8888);
 					//println!("create_buffer {size:?}");
-
+					use rustix::mm;
 					let mmap = unsafe{std::slice::from_raw_parts_mut(
-							rustix::mm::mmap(std::ptr::null_mut(), length, rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE, rustix::mm::MapFlags::SHARED, &pool.file, 0).unwrap() as *mut u8,
+							mm::mmap(std::ptr::null_mut(), length, mm::ProtFlags::READ | mm::ProtFlags::WRITE, mm::MapFlags::SHARED, &pool.file, 0).unwrap() as *mut u8,
 							length)};
 					pool.target = Target::new(size, bytemuck::cast_slice_mut(mmap));
 				}*/
@@ -467,7 +467,10 @@ impl App {
 						extent: Extent3D{width: size.x, height: size.y, depth: 1},
 						usage: ImageUsageFlags::COLOR_ATTACHMENT|ImageUsageFlags::TRANSFER_SRC|ImageUsageFlags::SAMPLED,
 						p_next: &ExternalMemoryImageCreateInfo{handle_types: ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
-							p_next: &ImageDrmFormatModifierExplicitCreateInfoEXT{drm_format_modifier_plane_count: 1, drm_format_modifier: 0, p_plane_layouts: &SubresourceLayout{offset: 0, row_pitch: buffer.pitch() as u64, size: 0, ..default()} as *const _, ..default()} as *const ImageDrmFormatModifierExplicitCreateInfoEXT as *const _, ..default()} as *const ExternalMemoryImageCreateInfo as *const _, ..default()}, None)}?;
+							p_next: &ImageDrmFormatModifierExplicitCreateInfoEXT{
+								drm_format_modifier_plane_count: 1, drm_format_modifier: 0, p_plane_layouts: &SubresourceLayout{offset: 0, row_pitch: buffer.pitch() as u64, 
+								size: 0, ..default()} as *const _, ..default()} as *const ImageDrmFormatModifierExplicitCreateInfoEXT as *const _, ..default()}
+								 as *const ExternalMemoryImageCreateInfo as *const _, ..default()}, None)}?;
 					panic!("{:?}", image);
 					/*unsigned mem_count = disjoint ? plane_count : 1u;
 					VkBindImageMemoryInfo bindi[WLR_DMABUF_MAX_PLANES] = {0};
@@ -577,7 +580,8 @@ impl App {
 				}
 				dmabuf.create_params(params);
 				let modifiers = 0u64;
-				params.add(unsafe{rustix::fd::BorrowedFd::borrow_raw(drm.buffer_to_prime_fd(buffer.handle(), 0)?)}, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
+				use rustix::fd::BorrowedFd;
+				params.add(unsafe{BorrowedFd::borrow_raw(drm.buffer_to_prime_fd(buffer.handle(), 0)?)}, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
 				params.create_immed(buffer_ref, buffer.size().0, buffer.size().1, buffer.format() as u32, 0);
 				params.destroy();
 				surface.attach(&buffer_ref,0,0);
@@ -600,7 +604,7 @@ impl App {
 		} // idle-event loop
 	}
 	#[throws] #[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, _title: &str, widget: &mut T) {
-		use winit::{event::{Event::*, WindowEvent::*}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
+		use winit::{event::{self, Event::*, WindowEvent::*, VirtualKeyCode, ElementState}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
 		let mut event_loop = EventLoop::new();
 		let window = WindowBuilder::new().build(&event_loop)?;
 		let context = unsafe{softbuffer::Context::new(&window)}.unwrap();
@@ -616,10 +620,12 @@ impl App {
 					buffer.present().unwrap();
 				}
 				WindowEvent{event: CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,
-				MainEventsCleared => {
-						let paint = widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Idle).unwrap();
-						if paint { window.request_redraw(); }
-				}
+				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(VirtualKeyCode::Escape), ..},..},..} => *control_flow = ControlFlow::Exit,
+				MainEventsCleared => if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Idle).unwrap() { window.request_redraw(); },
+				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(key@VirtualKeyCode::Space), state:ElementState::Pressed, ..},..},..} =>
+					if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key(match /*dbg!*/(key) {
+						VirtualKeyCode::Space => ' ', _ => unreachable!()})).unwrap() { window.request_redraw(); },
+					//if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key('⎙')).unwrap() { window.request_redraw(); },
 				_ => {}
 		})
 }
