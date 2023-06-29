@@ -66,10 +66,10 @@ use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event, EventCont
 	}
 }
 
-pub struct App(#[cfg(unix)] rustix::fd::OwnedFd);
+pub struct App(#[cfg(feature="rustix")] rustix::fd::OwnedFd);
 impl App {
-	pub fn new() -> Result<Self> { Ok(Self(#[cfg(unix)] rustix::io::eventfd(0, rustix::io::EventfdFlags::empty())?)) }
-	#[cfg(unix)] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
+	pub fn new() -> Result<Self> { Ok(Self(#[cfg(feature="rustix")] rustix::io::eventfd(0, rustix::io::EventfdFlags::empty())?)) }
+	#[cfg(feature="rustix")] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
 	#[cfg(feature="wayland")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result<()> {
 		let server = rustix::net::SocketAddrUnix::new({
 			let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
@@ -415,7 +415,7 @@ impl App {
 					let (msec, key) = repeat.unwrap();
 					if widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Key(key))? { paint=true; }
 					repeat = Some((msec+33, key));
-				} 
+				}
 				else { break; }
 			} // event loop
 			if paint && can_paint && done {
@@ -468,7 +468,7 @@ impl App {
 						usage: ImageUsageFlags::COLOR_ATTACHMENT|ImageUsageFlags::TRANSFER_SRC|ImageUsageFlags::SAMPLED,
 						p_next: &ExternalMemoryImageCreateInfo{handle_types: ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
 							p_next: &ImageDrmFormatModifierExplicitCreateInfoEXT{
-								drm_format_modifier_plane_count: 1, drm_format_modifier: 0, p_plane_layouts: &SubresourceLayout{offset: 0, row_pitch: buffer.pitch() as u64, 
+								drm_format_modifier_plane_count: 1, drm_format_modifier: 0, p_plane_layouts: &SubresourceLayout{offset: 0, row_pitch: buffer.pitch() as u64,
 								size: 0, ..default()} as *const _, ..default()} as *const ImageDrmFormatModifierExplicitCreateInfoEXT as *const _, ..default()}
 								 as *const ExternalMemoryImageCreateInfo as *const _, ..default()}, None)}?;
 					panic!("{:?}", image);
@@ -623,7 +623,7 @@ impl App {
 				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(VirtualKeyCode::Escape), ..},..},..} => *control_flow = ControlFlow::Exit,
 				MainEventsCleared => if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Idle).unwrap() { window.request_redraw(); },
 				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(key@VirtualKeyCode::Space), state:ElementState::Pressed, ..},..},..} =>
-					if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key(match /*dbg!*/(key) {
+					if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key(match key {
 						VirtualKeyCode::Space => ' ', _ => unreachable!()})).unwrap() { window.request_redraw(); },
 					//if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key('⎙')).unwrap() { window.request_redraw(); },
 				_ => {}
