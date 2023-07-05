@@ -163,6 +163,7 @@ impl Span {
 }
 
 pub(crate) mod iter;
+use image::bgr;
 use iter::NthOrLast;
 fn position(font: &Font<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 {
 	if text.is_empty() { assert!(line==0&&column==0); zero() } else {
@@ -275,7 +276,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 								|&target, &t| {
 									let t = (t*256.) as u16;
 									let tt = 256 - t;
-									image::bgr8::from(target).zip(color).map(|(target, color)| ((tt * (target as u16) + t * (color as u16))/256) as u8).into()
+									image::bgr8::from(target).zip(color).map(|(target, color)| ((tt * (target as u16) + t * (color as u16))/256) as u8).collect::<bgr<_>>().into()
 								}
 							);
 							//eprintln!("{:?}", time.elapsed());

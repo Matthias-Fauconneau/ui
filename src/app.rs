@@ -68,7 +68,7 @@ use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event, EventCont
 
 pub struct App(#[cfg(feature="rustix")] rustix::fd::OwnedFd);
 impl App {
-	pub fn new() -> Result<Self> { Ok(Self(#[cfg(feature="rustix")] rustix::io::eventfd(0, rustix::io::EventfdFlags::empty())?)) }
+	pub fn new() -> Result<Self> { Ok(Self(#[cfg(feature="rustix")] rustix::event::eventfd(0, rustix::event::EventfdFlags::empty())?)) }
 	#[cfg(feature="rustix")] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
 	#[cfg(feature="wayland")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result<()> {
 		let server = rustix::net::SocketAddrUnix::new({
@@ -616,7 +616,9 @@ impl App {
 					widget.event(size, &mut Some(EventContext), &Event::Stale).unwrap();
 					surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
 					let mut buffer = surface.buffer_mut().unwrap();
-					widget.paint(&mut image::Image::new(size, &mut buffer), size, zero()).unwrap();
+					let mut target = image::Image::new::<u32>(size, &mut *buffer);
+					target.fill(crate::background().into());
+					widget.paint(&mut target, size, zero()).unwrap();
 					buffer.present().unwrap();
 				}
 				WindowEvent{event: CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,

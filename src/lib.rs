@@ -1,3 +1,6 @@
+#![cfg_attr(feature="lazy_cell", feature(lazy_cell))]
+#![cfg_attr(feature="int_roundings", feature(int_roundings))]
+#![cfg_attr(feature="array_methods", feature(array_methods))]
 //#![feature(async_closure, lazy_cell, type_alias_impl_trait, array_methods, stmt_expr_attributes, closure_track_caller, const_trait_impl, array_windows, 
 //						int_roundings, generic_arg_infer, generators, iter_from_generator, default_free_fn, div_duration/*, const_convert*/)]
 //#![cfg_attr(feature="wayland", feature(unix_socket_ancillary_data))]
