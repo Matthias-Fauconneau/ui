@@ -606,7 +606,7 @@ impl App {
 	#[throws] #[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, _title: &str, widget: &mut T) {
 		use winit::{event::{self, Event::*, WindowEvent::*, VirtualKeyCode, ElementState}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
 		let mut event_loop = EventLoop::new();
-		let window = WindowBuilder::new().build(&event_loop)?;
+		let window = WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::<u32>::from(<(_,_)>::from(widget.size(xy{x: 3840, y: 2160})))).build(&event_loop)?;
 		let context = unsafe{softbuffer::Context::new(&window)}.unwrap();
 		let mut surface = unsafe{softbuffer::Surface::new(&context, &window)}.unwrap();
 		use winit::platform::run_return::EventLoopExtRunReturn;
@@ -624,9 +624,13 @@ impl App {
 				WindowEvent{event: CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,
 				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(VirtualKeyCode::Escape), ..},..},..} => *control_flow = ControlFlow::Exit,
 				MainEventsCleared => if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Idle).unwrap() { window.request_redraw(); },
-				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(key@VirtualKeyCode::Space), state:ElementState::Pressed, ..},..},..} =>
+				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(key), state:ElementState::Pressed, ..},..},..} =>
 					if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key(match key {
-						VirtualKeyCode::Space => ' ', _ => unreachable!()})).unwrap() { window.request_redraw(); },
+						VirtualKeyCode::Space => ' ',
+						VirtualKeyCode::B => 'b',
+						VirtualKeyCode::O => 'o',
+						_ => unimplemented!()
+					})).unwrap() { window.request_redraw(); },
 					//if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key('⎙')).unwrap() { window.request_redraw(); },
 				_ => {}
 		})
