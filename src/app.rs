@@ -627,8 +627,10 @@ impl App {
 				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(key), state:ElementState::Pressed, ..},..},..} =>
 					if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key(match key {
 						VirtualKeyCode::Space => ' ',
+						VirtualKeyCode::Return => '\n',
 						VirtualKeyCode::B => 'b',
 						VirtualKeyCode::O => 'o',
+						VirtualKeyCode::S => 's',
 						_ => unimplemented!()
 					})).unwrap() { window.request_redraw(); },
 					//if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key('⎙')).unwrap() { window.request_redraw(); },
