@@ -33,14 +33,16 @@ pub(crate) enum Type { UInt, Int, Array, String }
 }) }
 
 pub struct Server {
-	pub(super) server: std::cell::RefCell<(rustix::fd::OwnedFd, rustix::net::SocketAddrUnix)>,
+	pub(super) server: std::cell::RefCell<rustix::fd::OwnedFd>,
 	last_id: std::sync::atomic::AtomicU32,
 }
 impl Server {
-	pub(crate) fn from(addr: rustix::net::SocketAddrUnix) -> Self { 
-		let socket = rustix::net::socket(rustix::net::AddressFamily::UNIX, rustix::net::SocketType::STREAM, rustix::net::Protocol::RAW).unwrap();
+	pub fn connect() -> Self {
+		let socket = rustix::net::socket(rustix::net::AddressFamily::UNIX, rustix::net::SocketType::STREAM, None).unwrap();
+		let addr = rustix::net::SocketAddrUnix::new([std::env::var_os("XDG_RUNTIME_DIR").unwrap(), std::env::var_os("WAYLAND_DISPLAY").unwrap()].iter().collect::<std::path::PathBuf>()).unwrap();
 		rustix::net::connect_unix(&socket, &addr).unwrap();
-		Self{server: std::cell::RefCell::new((socket, addr)), last_id: std::sync::atomic::AtomicU32::new(2)} }
+		Self{server: std::cell::RefCell::new(socket), last_id: std::sync::atomic::AtomicU32::new(2)}
+	}
 	pub(crate) fn next_id(&self) -> u32 { self.last_id.fetch_add(1, std::sync::atomic::Ordering::/*Relaxed*/SeqCst) }
 	pub fn new<'s: 't, 't, T: From<(&'t Self, u32)>>(&'s self) -> T { (self, self.next_id()).into() }
 	#[track_caller] fn sendmsg<const N: usize>(&self, id: u32, opcode: u16, args: [Arg; N], fd: Option<rustix::fd::BorrowedFd>) {
@@ -61,17 +63,18 @@ impl Server {
 		}; }
 		assert!(request.len()==size as usize);
 		if let Some(fd) = fd {
-			let server = self.server.borrow();
-			let mut buffer = [0; 0];
-			let mut buffer = rustix::net::SendAncillaryBuffer::new(&mut buffer);
+			use rustix::net::SendAncillaryMessage::ScmRights;
 			let ref fds = [fd];
-			assert!(buffer.push(rustix::net::SendAncillaryMessage::ScmRights(fds)));
-			rustix::net::sendmsg_unix(&server.0, &server.1, &[rustix::io::IoSlice::new(&request)], &mut buffer, rustix::net::SendFlags::empty()).unwrap();
+			let mut buffer : [u8; _]= [0; 24];
+			assert_eq!(buffer.len(), rustix::cmsg_space!(ScmRights(fds.len())));
+			let mut buffer = rustix::net::SendAncillaryBuffer::new(&mut buffer);
+			assert!(buffer.push(ScmRights(fds)));
+			rustix::net::sendmsg(&*self.server.borrow(), &[rustix::io::IoSlice::new(&request)], &mut buffer, rustix::net::SendFlags::empty()).unwrap();
 		} else {
-			if let Err(e) = {let ref server = self.server.borrow().0; let r = rustix::io::write(server, &request); r} {
+			if let Err(e) = {let r = rustix::io::write(&*self.server.borrow(), &request); r} {
 				println!("Error: {e}");
 				loop {
-					let Message{id, opcode, ..} = message(&self.server.borrow().0);
+					let Message{id, opcode, ..} = message(&*self.server.borrow());
 					/**/ if id == 1 && opcode == display::error {
 						use Arg::*;
 						let [UInt(id), UInt(code), String(message)] = self.args({use Type::*; [UInt, UInt, String]}) else {unreachable!()};
@@ -82,11 +85,11 @@ impl Server {
 		}
 	}
 	#[track_caller] fn request<const N: usize>(&self, id: u32, opcode: u16, args: [Arg; N]) { self.sendmsg(id, opcode, args, None) }
-	pub(crate) fn args<const N: usize>(&self, types: [Type; N]) -> [Arg; N] { args(&self.server.borrow().0, types) }
-	pub(crate) fn globals<const N: usize>(&self, registry: &Registry, interfaces: [&str; N]) -> [u32; N] {
+	pub(crate) fn args<const N: usize>(&self, types: [Type; N]) -> [Arg; N] { args(&*self.server.borrow(), types) }
+	pub fn globals<const N: usize>(&self, registry: &Registry, interfaces: [&str; N]) -> [u32; N] {
 		let mut globals = [0; N];
 		while globals.iter().any(|&item| item==0) {
-			let Message{id, opcode, ..} = message(&self.server.borrow().0);
+			let Message{id, opcode, ..} = message(&*self.server.borrow());
 			assert!(id == registry.id && opcode == registry::global);
 			use Arg::*;
 			let args = {use Type::*; self.args([UInt, String, UInt])};
@@ -133,7 +136,7 @@ pub use registry::Registry;
 pub(crate) mod buffer {
 	pub const release: u16 = 0;
 	enum Requests { destroy }
-	use super::{Server};
+	use super::Server;
 	pub struct Buffer<'t>{server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Buffer<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Buffer<'_> {
@@ -159,7 +162,7 @@ pub(crate) mod dmabuf {
 		impl<'t> From<(&'t Server, u32)> for Params<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 		impl Params<'_> {
 			pub fn destroy(&self) { self.server.request(self.id, Requests::destroy as u16, []) }
-			pub fn add(&self, fd: rustix::fd::BorrowedFd, plane_index: u32, offset: u32, stride: u32, modifier_hi: u32, modifier_lo: u32) { self.server.sendmsg(self.id, Requests::add as u16, [UInt(plane_index),UInt(offset),UInt(stride),UInt(modifier_hi),UInt(modifier_lo)], Some(fd)) }
+			#[track_caller] pub fn add(&self, fd: rustix::fd::BorrowedFd, plane_index: u32, offset: u32, stride: u32, modifier_hi: u32, modifier_lo: u32) { self.server.sendmsg(self.id, Requests::add as u16, [UInt(plane_index),UInt(offset),UInt(stride),UInt(modifier_hi),UInt(modifier_lo)], Some(fd)) }
 			pub fn create_immed(&self, buffer: &Buffer, width: u32, height: u32, format_: u32, flags: u32) { self.server.request(self.id, Requests::create_immed as u16, [UInt(buffer.id), UInt(width),UInt(height),UInt(format_),UInt(flags)]) }
 		}
 	}
@@ -259,7 +262,7 @@ pub use pointer::Pointer;
 pub(crate) mod keyboard {
 	pub const keymap: u16 = 0; pub const enter: u16 = 1; pub const leave: u16 = 2; pub const key: u16 = 3; pub const modifiers: u16 = 4; pub const repeat_info: u16 = 5;
 	enum Requests {  }
-	use super::{Server};
+	use super::Server;
 	pub struct Keyboard<'t>{server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Keyboard<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Keyboard<'_> {}

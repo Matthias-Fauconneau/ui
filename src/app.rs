@@ -17,7 +17,7 @@ use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event, EventCont
 	#[allow(dead_code)] pointer: &'t Pointer<'t>,
 	//#[allow(dead_code)] dmabuf: &'t DMABuf<'t>,
 	#[allow(dead_code)] compositor: &'t Compositor<'t>,
-	surface: Option<Surface<'t>>,
+	#[allow(dead_code)] surface: Option<Surface<'t>>,
 	serial: u32,
 }
 
@@ -71,14 +71,8 @@ impl App {
 	pub fn new() -> Result<Self> { Ok(Self(#[cfg(feature="rustix")] rustix::event::eventfd(0, rustix::event::EventfdFlags::empty())?)) }
 	#[cfg(feature="rustix")] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
 	#[cfg(feature="wayland")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result<()> {
-		let server = rustix::net::SocketAddrUnix::new({
-			let mut path = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
-			path.push(std::env::var_os("WAYLAND_DISPLAY").unwrap());
-			path
-		})?;
-		let ref server = Server::from(server);
+		let ref server = Server::connect();
 		let display = Display{server, id: 1};
-
 		let ref registry = server.new();
 		display.get_registry(registry);
 
@@ -198,18 +192,18 @@ impl App {
 			// ^ could also trigger eventfd instead
 			loop {
 				let events = {
-					use {rustix::{io::{PollFd,PollFlags},time::{timerfd_settime,TimerfdTimerFlags,Itimerspec}}, linux_raw_sys::general::__kernel_timespec};
-					let ref server = server.server.borrow().0;
+					use rustix::{event::{PollFd,PollFlags},time::{timerfd_settime,TimerfdTimerFlags,Itimerspec,Timespec}};
+					let server = &*server.server.borrow();
 					let ref mut fds = Vec::from([PollFd::new(&self.0, PollFlags::IN), PollFd::new(server, PollFlags::IN)]);
 					if let Some((msec, _)) = repeat {
 						timerfd_settime(&timerfd, TimerfdTimerFlags::ABSTIME,
-							&Itimerspec{it_interval:__kernel_timespec{tv_sec:0, tv_nsec:0}, it_value: __kernel_timespec{tv_sec:(msec/1000) as i64,tv_nsec:((msec%1000)*1000000) as i64}}
+							&Itimerspec{it_interval: Timespec{tv_sec:0, tv_nsec:0}, it_value: Timespec{tv_sec:(msec/1000) as i64,tv_nsec:((msec%1000)*1000000) as i64}}
 						)?;
 						fds.push(PollFd::new(&timerfd, PollFlags::IN));
 					}
 					//println!("{:.0}%", (1.-idle.div_duration_f32(start.elapsed()))*100.);
 					let time = std::time::Instant::now();
-					rustix::io::poll(fds, if can_paint && done && paint {0} else {-1})?;
+					rustix::event::poll(fds, if can_paint && done && paint {0} else {-1})?;
 					idle += time.elapsed();
 					fds.iter().map(|fd| fd.revents().contains(PollFlags::IN)).collect::<Box<_>>()
 				};
@@ -217,7 +211,7 @@ impl App {
 					assert!({let mut buf = [0; 8]; assert!(rustix::io::read(&self.0, &mut buf)? == buf.len()); let trigger_count = u64::from_ne_bytes(buf); trigger_count == 1});
 					paint = widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Trigger).unwrap(); // determines whether to wait for events
 				} else if events[1] {
-					let Message{id, opcode, ..} = message(&server.server.borrow().0);
+					let Message{id, opcode, ..} = message(&*server.server.borrow());
 					//println!("{id} {opcode} {:?}",[toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, dmabuf/*shm*/.id]);
 					use Arg::*;
 					/**/ if id == display.id && opcode == display::error {
@@ -278,7 +272,8 @@ impl App {
 						if size.is_zero() {
 							assert!(configure_bounds.x > 0 && configure_bounds.y > 0);
 							size = widget.size(configure_bounds);
-							size = size.map(|x| x.next_multiple_of(3));
+							#[cfg(feature="int_roundings")] { size = size.map(|x| x.next_multiple_of(3)); }
+							#[cfg(not(feature="int_roundings"))] { size = size.map(|x| x+2/3 ); }
 							assert!(size.x % scale_factor == 0 && size.y % scale_factor == 0);
 						}
 						assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
@@ -383,14 +378,14 @@ impl App {
 							if state > 0 {
 								if key == '⎋' { return Ok(()); }
 								if widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Key(key))? { paint=true; }
-								let linux_raw_sys::general::__kernel_timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
+								let rustix::time::Timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
 								let base = tv_sec as u64*1000+tv_nsec as u64/1000000;
 								//let time = base&0xFFFFFFFF_00000000 + key_time as u64;
 								repeat = Some((base+150, key));
 							} else { repeat = None; }
 						}
 					}
-					else if callback.is_some_and(|callback| id == callback.id) && opcode == callback::done {
+					else if callback.as_ref().is_some_and(|callback| id == callback.id) && opcode == callback::done {
 						let [UInt(_timestamp_ms)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						//println!("{}", _timestamp_ms-last_done_timestamp);
 						_last_done_timestamp = _timestamp_ms;
@@ -399,10 +394,10 @@ impl App {
 					}
 					/*else if let Some(pool) = &cursor.pool && id == pool.buffer.id && opcode == buffer::release {
 					}*/
-					else if surface.is_some_and(|surface| id == surface.id) && opcode == surface::enter {
+					else if id == surface.id && opcode == surface::enter {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
-					else if surface.is_some_and(|surface| id == surface.id) && opcode == surface::leave {
+					else if id == surface.id && opcode == surface::leave {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
 					else if id == toplevel.id && opcode == toplevel::close {
@@ -429,7 +424,7 @@ impl App {
 					{
 						let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
 						let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
-						image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride).fill(background().into());
+						image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride).fill(image::bgr8::from(background()).into());
 					}
 					buffer
 				});
@@ -599,7 +594,7 @@ impl App {
 					surface.frame(&callback);
 					Some(callback)};
 				surface.commit();
-				//eprintln!("{:?}ms", time.elapsed().as_millis());
+				//eprintln!("{:?}ms", time.elapsed().as_millis());*/
 			}
 		} // idle-event loop
 	}

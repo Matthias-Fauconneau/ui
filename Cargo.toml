@@ -9,23 +9,23 @@ example=[
 ]
 
 [features]
-font=['derive-more','owning-ref','rustybuzz','kurbo','cfg-if','int_roundings','rustix','image/lazy_cell','image/new_uninit','image/slice_take']
-text=['derive-more','text-size','unicode-segmentation','font','rustybuzz','glob','lazy_cell','array_methods']
+font=['fehler','derive-more','owning-ref','rustybuzz','kurbo','cfg-if','int_roundings','rustix','image/lazy_cell','image/new_uninit','image/slice_take']
+text=['fehler','derive-more','text-size','unicode-segmentation','font','rustybuzz','glob','lazy_cell','array_methods']
 edit=['text','xcursor']
 plot=['text','itertools']
 graphic=['font','rustybuzz']
 vulkan=['ash']
-wayland=['rustix/net','nix','drm']
+wayland=['rustix/net','nix','drm','image/lazy_cell']
 softbuffer=['dep:softbuffer','dep:winit']
-default=['softbuffer','text']
+default=['wayland']
 
 int_roundings=['vector/int_roundings']
 lazy_cell=[]
 array_methods=[]
 
 [dependencies]
-fehler='*'
-derive-more={version='*', package='derive_more', optional=true}
+fehler={version='*', optional=true}
+derive-more={version='*', package='derive_more', optional=true, features=['deref']}
 itertools={version='*', optional=true}
 cfg-if={version='*', optional=true}
 owning-ref={version='*', package='owning_ref', optional=true}
@@ -38,7 +38,7 @@ trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 kurbo={version='*', optional=true}
 
 linux-raw-sys='*'
-rustix={version='*', features=['fs','mm','time','event'], optional=true}
+rustix={version='*', features=['fs','mm','time','event','use-libc'], optional=true} # Currently broken without libc
 #dirs='*'
 nix={version='*', default-features = false, features = ['socket','uio'], optional=true}
 drm={version='*', optional=true}
