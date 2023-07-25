@@ -2,6 +2,7 @@
 #![cfg_attr(feature="int_roundings", feature(int_roundings))]
 #![cfg_attr(feature="array_methods", feature(array_methods))]
 #![cfg_attr(feature="wayland", feature(generic_arg_infer))]
+#![cfg_attr(feature="generators", feature(generators,iter_from_generator))]
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T=(),E=Error> = std::result::Result<T, E>;
 #[cfg(feature="fehler")] pub use fehler::throws;
@@ -10,7 +11,7 @@ pub mod prelude {
 	#[cfg(feature="fehler")] pub use super::throws;
 }
 
-//mod line; pub use line::{line, parallelogram};
+#[cfg(feature="generators")] pub mod line; //pub use line::{line, parallelogram};
 pub mod color; pub use color::{bgrf,black,white,dark,background,foreground};
 pub mod widget; pub use widget::{xy,size,int2, Widget, Target, Event, EventContext, ModifiersState};
 mod app; pub use app::{App, run};

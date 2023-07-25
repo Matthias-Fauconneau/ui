@@ -16,12 +16,13 @@ plot=['text','itertools']
 graphic=['font','rustybuzz']
 vulkan=['ash']
 wayland=['rustix/net','nix','drm','image/lazy_cell']
-softbuffer=['dep:softbuffer','dep:winit']
+softbuffer=['dep:softbuffer','dep:winit','image/lazy_cell']
 default=['wayland']
 
 int_roundings=['vector/int_roundings']
 lazy_cell=[]
 array_methods=[]
+generators=[]
 
 [dependencies]
 fehler={version='*', optional=true}

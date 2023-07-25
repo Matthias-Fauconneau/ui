@@ -35,16 +35,21 @@ pub(crate) enum Type { UInt, Int, Array, String }
 pub struct Server {
 	pub(super) server: std::cell::RefCell<rustix::fd::OwnedFd>,
 	last_id: std::sync::atomic::AtomicU32,
+	pub(super) names: std::sync::Mutex<Vec<(u32, &'static str)>>,
 }
 impl Server {
 	pub fn connect() -> Self {
 		let socket = rustix::net::socket(rustix::net::AddressFamily::UNIX, rustix::net::SocketType::STREAM, None).unwrap();
 		let addr = rustix::net::SocketAddrUnix::new([std::env::var_os("XDG_RUNTIME_DIR").unwrap(), std::env::var_os("WAYLAND_DISPLAY").unwrap()].iter().collect::<std::path::PathBuf>()).unwrap();
 		rustix::net::connect_unix(&socket, &addr).unwrap();
-		Self{server: std::cell::RefCell::new(socket), last_id: std::sync::atomic::AtomicU32::new(2)}
+		Self{server: std::cell::RefCell::new(socket), last_id: std::sync::atomic::AtomicU32::new(2), names: std::sync::Mutex::new(Vec::new())}
 	}
-	pub(crate) fn next_id(&self) -> u32 { self.last_id.fetch_add(1, std::sync::atomic::Ordering::/*Relaxed*/SeqCst) }
-	pub fn new<'s: 't, 't, T: From<(&'t Self, u32)>>(&'s self) -> T { (self, self.next_id()).into() }
+	pub(crate) fn next_id(&self, name: &'static str) -> u32 { 
+		let id = self.last_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+		self.names.lock().unwrap().push((id, name));
+		id
+	}
+	pub fn new<'s: 't, 't, T: From<(&'t Self, u32)>>(&'s self, name: &'static str) -> T { (self, self.next_id(name)).into() }
 	#[track_caller] fn sendmsg<const N: usize>(&self, id: u32, opcode: u16, args: [Arg; N], fd: Option<rustix::fd::BorrowedFd>) {
 		assert!(opcode < 10);
 		let mut request = Vec::new();
@@ -86,7 +91,7 @@ impl Server {
 	}
 	#[track_caller] fn request<const N: usize>(&self, id: u32, opcode: u16, args: [Arg; N]) { self.sendmsg(id, opcode, args, None) }
 	pub(crate) fn args<const N: usize>(&self, types: [Type; N]) -> [Arg; N] { args(&*self.server.borrow(), types) }
-	pub fn globals<const N: usize>(&self, registry: &Registry, interfaces: [&str; N]) -> [u32; N] {
+	pub fn globals<const N: usize>(&self, registry: &Registry, interfaces: [&'static str; N]) -> [u32; N] {
 		let mut globals = [0; N];
 		while globals.iter().any(|&item| item==0) {
 			let Message{id, opcode, ..} = message(&*self.server.borrow());
@@ -95,11 +100,12 @@ impl Server {
 			let args = {use Type::*; self.args([UInt, String, UInt])};
 			let [UInt(name), String(interface), UInt(version)] = args else { panic!("{args:?}") };
 			if let Some(index) = interfaces.iter().position(|&item| item==interface) {
-				let id = self.next_id();
+				let id = self.next_id(interfaces[index]);
 				registry.bind(name, &interface, version, id);
 				globals[index] = id;
 			}
 		}
+		//println!("{globals:?} {interfaces:?}");
 		globals
 	}
 }

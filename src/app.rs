@@ -70,10 +70,10 @@ pub struct App(#[cfg(feature="rustix")] rustix::fd::OwnedFd);
 impl App {
 	pub fn new() -> Result<Self> { Ok(Self(#[cfg(feature="rustix")] rustix::event::eventfd(0, rustix::event::EventfdFlags::empty())?)) }
 	#[cfg(feature="rustix")] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
-	#[cfg(feature="wayland")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result<()> {
+	#[cfg(feature="wayland")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result {
 		let ref server = Server::connect();
 		let display = Display{server, id: 1};
-		let ref registry = server.new();
+		let ref registry = server.new("registry");
 		display.get_registry(registry);
 
 		let [compositor, wm_base, seat, output, dmabuf/*shm*/] = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","wl_output","zwp_linux_dmabuf_v1"/*"wl_shm"*/]);
@@ -95,24 +95,24 @@ impl App {
 		shm.create_pool(&shm_pool, &file, 4096);
 		let ref mut pool = Pool{file, shm_pool, buffer: server.new(), target: Target::new(zero(), &mut [])};*/
 
-		let ref pointer = server.new();
+		let ref pointer = server.new("pointer");
 		seat.get_pointer(pointer);
-		let ref keyboard = server.new();
+		let ref keyboard = server.new("keyboard");
 		seat.get_keyboard(keyboard);
 
-		let ref surface = server.new();
+		let ref surface = server.new("surface");
 		compositor.create_surface(surface);
-		let ref xdg_surface = server.new();
+		let ref xdg_surface = server.new("xdg_surface");
 		wm_base.get_xdg_surface(xdg_surface, surface);
-		let ref toplevel = server.new();
+		let ref toplevel = server.new("toplevel");
 		xdg_surface.get_toplevel(toplevel);
 		toplevel.set_title(title);
 		surface.commit();
 
 		let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"}); // or use Vulkan ext acquire drm display
 
-		let ref params : dmabuf::Params = server.new();
-		let ref buffer_ref : Buffer = server.new();
+		let ref params : dmabuf::Params = server.new("params");
+		let ref buffer_ref : Buffer = server.new("buffer_ref");
 		let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
 
 		let mut buffer = None;
@@ -214,7 +214,9 @@ impl App {
 					let Message{id, opcode, ..} = message(&*server.server.borrow());
 					//println!("{id} {opcode} {:?}",[toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, dmabuf/*shm*/.id]);
 					use Arg::*;
-					/**/ if id == display.id && opcode == display::error {
+					/**/ if id == registry.id && opcode == registry::global {
+						server.args({use Type::*; [UInt, String, UInt]});
+					} else if id == display.id && opcode == display::error {
 						panic!("{:?}", server.args({use Type::*; [UInt, UInt, String]}));
 					}
 					else if id == display.id && opcode == display::delete_id {
@@ -391,6 +393,7 @@ impl App {
 						_last_done_timestamp = _timestamp_ms;
 						done = true;
 						//println!("done {}", callback.id);
+						println!("done");
 					}
 					/*else if let Some(pool) = &cursor.pool && id == pool.buffer.id && opcode == buffer::release {
 					}*/
@@ -404,7 +407,7 @@ impl App {
 						//println!("close");
 						return Ok(());
 					}
-					else { panic!("{:?} {opcode:?} {:?}", id, [toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id/*, dmabuf.id*/]); }
+					else { panic!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id/*, dmabuf.id*/], server.names); }
 				}
 				else if events.len() > 2 && events[2] {
 					let (msec, key) = repeat.unwrap();
@@ -413,6 +416,7 @@ impl App {
 				}
 				else { break; }
 			} // event loop
+			println!("{paint} {can_paint} {done}");
 			if paint && can_paint && done {
 				//let time = std::time::Instant::now();
 				assert!(size.x > 0 && size.y > 0);
@@ -565,7 +569,9 @@ impl App {
 					let mut map = drm.map_dumb_buffer(&mut buffer)?;
 					assert!(stride * size.y <= map.as_mut().len() as u32, "{} {}", stride * size.y, map.as_mut().len());
 					let mut target = image::Image::cast_slice_mut(map.as_mut(), size, stride);
+					println!("paint");
 					widget.paint(&mut target, size, zero())?;
+					println!("present");
 					/*// unimplemented wayland PQ. use vulkan ext hdr metadata ?
 					if !crate::dark {
 						pub const PQ10_to_linear10 : std::sync::LazyLock<[u16; 0x400]> = std::sync::LazyLock::new(|| image::PQ10_EOTF.map(|pq| (pq*0x3FF as f32) as u16));
@@ -589,16 +595,17 @@ impl App {
 				assert!(done == true);
 				done = false;
 				assert!(callback.is_none());
-				callback = {let callback : Callback = server.new();
+				callback = {let callback : Callback = server.new("callback");
 					//println!("frame {}", callback.id);
 					surface.frame(&callback);
 					Some(callback)};
 				surface.commit();
+				println!("commit {:?}", buffer.size());
 				//eprintln!("{:?}ms", time.elapsed().as_millis());*/
 			}
 		} // idle-event loop
 	}
-	#[throws] #[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, _title: &str, widget: &mut T) {
+	#[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, _title: &str, widget: &mut T) -> Result {
 		use winit::{event::{self, Event::*, WindowEvent::*, VirtualKeyCode, ElementState}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
 		let mut event_loop = EventLoop::new();
 		let window = WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::<u32>::from(<(_,_)>::from(widget.size(xy{x: 3840, y: 2160})))).build(&event_loop)?;
@@ -612,7 +619,7 @@ impl App {
 					surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
 					let mut buffer = surface.buffer_mut().unwrap();
 					let mut target = image::Image::new::<u32>(size, &mut *buffer);
-					target.fill(crate::background().into());
+					target.fill(image::bgr8::from(crate::background()).into());
 					widget.paint(&mut target, size, zero()).unwrap();
 					buffer.present().unwrap();
 				}
@@ -623,15 +630,29 @@ impl App {
 					if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key(match key {
 						VirtualKeyCode::Space => ' ',
 						VirtualKeyCode::Return => '\n',
+						VirtualKeyCode::A => 'a',
 						VirtualKeyCode::B => 'b',
+						VirtualKeyCode::C => 'c',
+						VirtualKeyCode::D => 'd',
+						VirtualKeyCode::E => 'e',
+						VirtualKeyCode::F => 'f',
+						VirtualKeyCode::H => 'h',
+						VirtualKeyCode::I => 'i',
+						VirtualKeyCode::L => 'l',
+						VirtualKeyCode::M => 'm',
+						VirtualKeyCode::N => 'n',
 						VirtualKeyCode::O => 'o',
+						VirtualKeyCode::P => 'p',
+						VirtualKeyCode::Q => 'q',
 						VirtualKeyCode::S => 's',
-						_ => unimplemented!()
+						VirtualKeyCode::F12 => '\u{F70C}',
+						_ => return if false {println!("{key:?}");} else {}
 					})).unwrap() { window.request_redraw(); },
 					//if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key('⎙')).unwrap() { window.request_redraw(); },
 				_ => {}
-		})
+		});
+		Ok(())
 }
 }
 impl Default for App { fn default() -> Self { Self::new().unwrap() } }
-pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result<()> { App::new()?.run(title, widget) }
+pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result { App::new()?.run(title, widget) }
