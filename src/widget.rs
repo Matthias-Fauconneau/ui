@@ -8,7 +8,7 @@ pub type Target<'t> = image::Image<&'t mut [u32]>;
 	pub modifiers_state: ModifiersState,
 	pub cursor: &'t mut crate::app::Cursor<'c>,
 }
-#[cfg(not(feature="wayland"))] pub struct EventContext;
+#[cfg(not(feature="wayland"))] pub type EventContext = winit::window::Window;
 
 pub type MouseButtons = u32;
 
@@ -25,5 +25,5 @@ pub enum Event {
 pub trait Widget {
     fn size(&mut self, size: size) -> size { size }
     fn paint(&mut self, target: &mut Target, size: size, offset: int2) -> Result;
-    fn event(&mut self, size: size, context: &mut Option<EventContext>, event: &Event) -> Result<bool> { (size, context, event); Ok(false) }
+    fn event(&mut self, size: size, context: &mut EventContext, event: &Event) -> Result<bool> { (size, context, event); Ok(false) }
 }

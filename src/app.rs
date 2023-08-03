@@ -608,14 +608,14 @@ impl App {
 	#[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, _title: &str, widget: &mut T) -> Result {
 		use winit::{event::{self, Event::*, WindowEvent::*, VirtualKeyCode, ElementState}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
 		let mut event_loop = EventLoop::new();
-		let window = WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::<u32>::from(<(_,_)>::from(widget.size(xy{x: 3840, y: 2160})))).build(&event_loop)?;
+		let mut window = WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::<u32>::from(<(_,_)>::from(widget.size(xy{x: 3840, y: 2160})))).build(&event_loop)?;
 		let context = unsafe{softbuffer::Context::new(&window)}.unwrap();
 		let mut surface = unsafe{softbuffer::Surface::new(&context, &window)}.unwrap();
 		use winit::platform::run_return::EventLoopExtRunReturn;
 		event_loop.run_return(move |event, _, control_flow| match event {
 				RedrawRequested(window_id) if window_id == window.id() => {
 					let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
-					widget.event(size, &mut Some(EventContext), &Event::Stale).unwrap();
+					widget.event(size, &mut window, &Event::Stale).unwrap();
 					surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
 					let mut buffer = surface.buffer_mut().unwrap();
 					let mut target = image::Image::new::<u32>(size, &mut *buffer);
@@ -625,9 +625,9 @@ impl App {
 				}
 				WindowEvent{event: CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,
 				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(VirtualKeyCode::Escape), ..},..},..} => *control_flow = ControlFlow::Exit,
-				MainEventsCleared => if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Idle).unwrap() { window.request_redraw(); },
+				MainEventsCleared => if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut window, &Event::Idle).unwrap() { window.request_redraw(); },
 				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(key), state:ElementState::Pressed, ..},..},..} =>
-					if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key(match key {
+					if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut window, &Event::Key(match key {
 						VirtualKeyCode::Space => ' ',
 						VirtualKeyCode::Return => '\n',
 						VirtualKeyCode::A => 'a',
@@ -636,15 +636,26 @@ impl App {
 						VirtualKeyCode::D => 'd',
 						VirtualKeyCode::E => 'e',
 						VirtualKeyCode::F => 'f',
+						VirtualKeyCode::G => 'g',
 						VirtualKeyCode::H => 'h',
 						VirtualKeyCode::I => 'i',
+						VirtualKeyCode::J => 'j',
+						VirtualKeyCode::K => 'k',
 						VirtualKeyCode::L => 'l',
 						VirtualKeyCode::M => 'm',
 						VirtualKeyCode::N => 'n',
 						VirtualKeyCode::O => 'o',
 						VirtualKeyCode::P => 'p',
 						VirtualKeyCode::Q => 'q',
+						VirtualKeyCode::R => 'r',
 						VirtualKeyCode::S => 's',
+						VirtualKeyCode::T => 't',
+						VirtualKeyCode::U => 'u',
+						VirtualKeyCode::V => 'v',
+						VirtualKeyCode::W => 'w',
+						VirtualKeyCode::X => 'x',
+						VirtualKeyCode::Y => 'y',
+						VirtualKeyCode::Z => 'z',
 						VirtualKeyCode::F12 => '\u{F70C}',
 						_ => return if false {println!("{key:?}");} else {}
 					})).unwrap() { window.request_redraw(); },
