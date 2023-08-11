@@ -25,7 +25,7 @@ mod app; pub use app::{App, run};
 pub fn time<T>(id: &str, task: impl FnOnce() -> T) -> T {
 	let time = std::time::Instant::now();
 	let result = task();
-	eprintln!("{:?}: {:?}", id, time.elapsed());
+	eprintln!("{id}: {:?}", time.elapsed());
 	result
 }
 #[macro_export] macro_rules! time { ($arg:expr) => { $crate::time(stringify!($arg), || $arg) } }

@@ -8,7 +8,7 @@
 	impl ::drm::control::Device for DRM {}
 }
 #[cfg(feature="wayland")] #[path="wayland.rs"] pub mod wayland;
-use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event, EventContext}};
+use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event}};
 #[cfg(feature="drm")] use self::drm::DRM;
 #[cfg(feature="wayland")] use {num::IsZero, vector::int2, wayland::*, crate::{background, ModifiersState}};
 
@@ -605,15 +605,16 @@ impl App {
 			}
 		} // idle-event loop
 	}
-	#[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, _title: &str, widget: &mut T) -> Result {
-		use winit::{event::{self, Event::*, WindowEvent::*, VirtualKeyCode, ElementState}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
+	#[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result {
+		use winit::{event::{self, Event::*, WindowEvent::*, VirtualKeyCode, ElementState}, event_loop::{ControlFlow, EventLoop}, window::{WindowBuilder, Fullscreen}};
 		let mut event_loop = EventLoop::new();
-		let mut window = WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::<u32>::from(<(_,_)>::from(widget.size(xy{x: 3840, y: 2160})))).build(&event_loop)?;
+		//let mut window = WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::<u32>::from(<(_,_)>::from(widget.size(xy{x: 3840, y: 2160})))).with_title(title).build(&event_loop)?;
+		let mut window = WindowBuilder::new().with_fullscreen(Some(Fullscreen::Borderless(Some(event_loop.available_monitors().skip(1).next().unwrap())))).build(&event_loop)?; // FIXME
 		let context = unsafe{softbuffer::Context::new(&window)}.unwrap();
 		let mut surface = unsafe{softbuffer::Surface::new(&context, &window)}.unwrap();
 		use winit::platform::run_return::EventLoopExtRunReturn;
 		event_loop.run_return(move |event, _, control_flow| match event {
-				RedrawRequested(window_id) if window_id == window.id() => {
+			WindowEvent {event: ScaleFactorChanged{..}, .. } | RedrawRequested(_) /*if window_id == window.id()*/ => {
 					let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
 					widget.event(size, &mut window, &Event::Stale).unwrap();
 					surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
