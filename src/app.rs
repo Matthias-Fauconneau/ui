@@ -609,59 +609,77 @@ impl App {
 		use winit::{event::{self, Event::*, WindowEvent::*, VirtualKeyCode, ElementState}, event_loop::{ControlFlow, EventLoop}, window::{WindowBuilder, Fullscreen}};
 		let mut event_loop = EventLoop::new();
 		//let mut window = WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::<u32>::from(<(_,_)>::from(widget.size(xy{x: 3840, y: 2160})))).with_title(title).build(&event_loop)?;
-		let mut window = WindowBuilder::new().with_fullscreen(Some(Fullscreen::Borderless(Some(event_loop.available_monitors().skip(1).next().unwrap())))).build(&event_loop)?; // FIXME
-		let context = unsafe{softbuffer::Context::new(&window)}.unwrap();
-		let mut surface = unsafe{softbuffer::Surface::new(&context, &window)}.unwrap();
+		let near_eye = event_loop.available_monitors().find(|o| o.size()==[1920,1080].into()).map(|near_eye| WindowBuilder::new().with_fullscreen(Some(Fullscreen::Borderless(Some(near_eye)))).with_title(title).build(&event_loop).unwrap()); // HACK
+		let mirror = Some(WindowBuilder::new().with_title(title).build(&event_loop).unwrap());
+		let mut windows = [near_eye, mirror].into_iter().filter_map(|w| w).map(|window| {
+			let context = unsafe{softbuffer::Context::new(&window)}.unwrap();
+			let surface = unsafe{softbuffer::Surface::new(&context, &window)}.unwrap();
+			(window, context, surface)
+		}).collect::<Box<_>>();
+		let mut mirror : Option<Box<[u32]>> = None;
 		use winit::platform::run_return::EventLoopExtRunReturn;
 		event_loop.run_return(move |event, _, control_flow| match event {
-			WindowEvent {event: ScaleFactorChanged{..}, .. } | RedrawRequested(_) /*if window_id == window.id()*/ => {
-					let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
-					widget.event(size, &mut window, &Event::Stale).unwrap();
+			WindowEvent {event: ScaleFactorChanged{..}, window_id} | RedrawRequested(window_id) => {
+				let windows_len = windows.len();
+				let (ref mut window, _, surface) = windows.iter_mut().find(|(window,_,_)| window_id == window.id()).unwrap();
+				let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
+				if let Some(mirror) = mirror.as_mut() {
 					surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
 					let mut buffer = surface.buffer_mut().unwrap();
-					let mut target = image::Image::new::<u32>(size, &mut *buffer);
-					target.fill(image::bgr8::from(crate::background()).into());
-					widget.paint(&mut target, size, zero()).unwrap();
+					//assert_eq!(buffer.stride, mirror.stride);
+					if buffer.len() == mirror.len() { buffer.copy_from_slice(&*mirror); } // WORKAROUND: winit starts with wrong scale factors / buffer sizes
 					buffer.present().unwrap();
 				}
-				WindowEvent{event: CloseRequested, window_id} if window_id == window.id() => *control_flow = ControlFlow::Exit,
-				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(VirtualKeyCode::Escape), ..},..},..} => *control_flow = ControlFlow::Exit,
-				MainEventsCleared => if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut window, &Event::Idle).unwrap() { window.request_redraw(); },
-				WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(key), state:ElementState::Pressed, ..},..},..} =>
-					if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut window, &Event::Key(match key {
-						VirtualKeyCode::Space => ' ',
-						VirtualKeyCode::Return => '\n',
-						VirtualKeyCode::A => 'a',
-						VirtualKeyCode::B => 'b',
-						VirtualKeyCode::C => 'c',
-						VirtualKeyCode::D => 'd',
-						VirtualKeyCode::E => 'e',
-						VirtualKeyCode::F => 'f',
-						VirtualKeyCode::G => 'g',
-						VirtualKeyCode::H => 'h',
-						VirtualKeyCode::I => 'i',
-						VirtualKeyCode::J => 'j',
-						VirtualKeyCode::K => 'k',
-						VirtualKeyCode::L => 'l',
-						VirtualKeyCode::M => 'm',
-						VirtualKeyCode::N => 'n',
-						VirtualKeyCode::O => 'o',
-						VirtualKeyCode::P => 'p',
-						VirtualKeyCode::Q => 'q',
-						VirtualKeyCode::R => 'r',
-						VirtualKeyCode::S => 's',
-						VirtualKeyCode::T => 't',
-						VirtualKeyCode::U => 'u',
-						VirtualKeyCode::V => 'v',
-						VirtualKeyCode::W => 'w',
-						VirtualKeyCode::X => 'x',
-						VirtualKeyCode::Y => 'y',
-						VirtualKeyCode::Z => 'z',
-						VirtualKeyCode::F12 => '\u{F70C}',
-						_ => return if false {println!("{key:?}");} else {}
-					})).unwrap() { window.request_redraw(); },
-					//if widget.event({let size = window.inner_size(); xy{x: size.width, y: size.height}}, &mut Some(EventContext), &Event::Key('⎙')).unwrap() { window.request_redraw(); },
-				_ => {}
+				mirror = None; // FIXME: generalize to >2 windows
+				widget.event(size, window, &Event::Stale).unwrap();
+				surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
+				let mut buffer = surface.buffer_mut().unwrap();
+				let mut target = image::Image::new::<u32>(size, &mut *buffer);
+				target.fill(image::bgr8::from(crate::background()).into());
+				widget.paint(&mut target, size, zero()).unwrap();
+				if mirror.is_none() && windows_len>1 { mirror = Some(Box::<[u32]>::from(&*buffer)) }
+				buffer.present().unwrap();
+			}
+			WindowEvent{event: CloseRequested, ..} => *control_flow = ControlFlow::Exit,
+			WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(VirtualKeyCode::Escape), ..},..},..} => *control_flow = ControlFlow::Exit,
+			MainEventsCleared => if widget.event({let size = windows[0].0.inner_size(); xy{x: size.width, y: size.height}}, &mut windows[0].0, &Event::Idle).unwrap() { 
+				for (window,_,_) in windows.iter() { window.request_redraw(); }
+			},
+			WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(key), state:ElementState::Pressed, ..},..},..} =>
+				if widget.event({let size = windows[0].0.inner_size(); xy{x: size.width, y: size.height}}, &mut windows[0].0, &Event::Key(match key {
+					VirtualKeyCode::Space => ' ',
+					VirtualKeyCode::Return => '\n',
+					VirtualKeyCode::A => 'a',
+					VirtualKeyCode::B => 'b',
+					VirtualKeyCode::C => 'c',
+					VirtualKeyCode::D => 'd',
+					VirtualKeyCode::E => 'e',
+					VirtualKeyCode::F => 'f',
+					VirtualKeyCode::G => 'g',
+					VirtualKeyCode::H => 'h',
+					VirtualKeyCode::I => 'i',
+					VirtualKeyCode::J => 'j',
+					VirtualKeyCode::K => 'k',
+					VirtualKeyCode::L => 'l',
+					VirtualKeyCode::M => 'm',
+					VirtualKeyCode::N => 'n',
+					VirtualKeyCode::O => 'o',
+					VirtualKeyCode::P => 'p',
+					VirtualKeyCode::Q => 'q',
+					VirtualKeyCode::R => 'r',
+					VirtualKeyCode::S => 's',
+					VirtualKeyCode::T => 't',
+					VirtualKeyCode::U => 'u',
+					VirtualKeyCode::V => 'v',
+					VirtualKeyCode::W => 'w',
+					VirtualKeyCode::X => 'x',
+					VirtualKeyCode::Y => 'y',
+					VirtualKeyCode::Z => 'z',
+					VirtualKeyCode::F12 => '\u{F70C}',
+					VirtualKeyCode::Back => '⌫',
+					_ => return if false {println!("{key:?}");} else {}
+				})).unwrap() { for (window,_,_) in windows.iter() { window.request_redraw(); } },
+			_ => {}
 		});
 		Ok(())
 }
