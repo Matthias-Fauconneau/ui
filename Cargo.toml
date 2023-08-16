@@ -58,7 +58,7 @@ softbuffer={git='https://github.com/rust-windowing/softbuffer', optional=true, d
 #[dev-dependencies]
 image-io={package='image', version='*', optional=true, default-features=false, features=['png']}
 
-[target.'cfg(not(target_os="windows"))'.features]
-default = ['wayland']
-[target.'cfg(target_os="windows")'.features]
-default = ["softbuffer"]
+#[target.'cfg(not(target_os="windows"))'.features]
+#default = ['wayland']
+#[target.'cfg(target_os="windows")'.features]
+#default = ["softbuffer"]

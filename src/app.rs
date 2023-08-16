@@ -10,7 +10,7 @@
 #[cfg(feature="wayland")] #[path="wayland.rs"] pub mod wayland;
 use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event}};
 #[cfg(feature="drm")] use self::drm::DRM;
-#[cfg(feature="wayland")] use {num::IsZero, vector::int2, wayland::*, crate::{background, ModifiersState}};
+#[cfg(feature="wayland")] use {num::IsZero, vector::int2, wayland::*, crate::{EventContext, background, ModifiersState}};
 
 #[cfg(feature="wayland")] pub struct Cursor<'t> {
 	name: &'static str,
@@ -100,14 +100,29 @@ impl App {
 		let ref keyboard = server.new("keyboard");
 		seat.get_keyboard(keyboard);
 
-		let ref surface = server.new("surface");
-		compositor.create_surface(surface);
-		let ref xdg_surface = server.new("xdg_surface");
-		wm_base.get_xdg_surface(xdg_surface, surface);
-		let ref toplevel = server.new("toplevel");
-		xdg_surface.get_toplevel(toplevel);
-		toplevel.set_title(title);
-		surface.commit();
+		struct Surface<'t> {
+			surface: wayland::Surface<'t>,
+			xdg_surface: XdgSurface<'t>,
+			toplevel: Toplevel<'t>,
+			can_paint: bool,
+			callback : Option<Callback<'t>>,
+			done: bool,
+		}
+		impl<'t> Surface<'t> {
+			fn new(server: &'t wayland::Server, compositor: &Compositor<'t>, wm_base: &WmBase<'t>, title: &str) -> Self {
+				let surface = server.new("surface");
+				compositor.create_surface(&surface);
+				let xdg_surface = server.new("xdg_surface");
+				wm_base.get_xdg_surface(&xdg_surface, &surface);
+				let toplevel = server.new("toplevel");
+				xdg_surface.get_toplevel(&toplevel);
+				toplevel.set_title(title);
+				surface.commit();
+				Self{surface, xdg_surface, toplevel, can_paint: false, callback: None, done: true}
+			}
+		}
+		let mut windows = Vec::new();
+		windows.push(Surface::new(server, compositor, wm_base, title));
 
 		let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"}); // or use Vulkan ext acquire drm display
 
@@ -119,14 +134,11 @@ impl App {
 		let mut scale_factor = 0;
 		let mut configure_bounds = zero();
 		let mut size = zero();
-		let mut can_paint = false;
 		let mut modifiers_state = ModifiersState::default();
 		let mut pointer_position = int2::default();
 		let mut mouse_buttons = 0;
 		let ref mut cursor = Cursor{name: "", pointer, serial: 0, /*dmabuf,*/ compositor, surface: None};
 		let mut repeat : Option<(u64, char)> = None;
-		let mut callback : Option<Callback> = None;
-		let mut done = true;
 		let _start = std::time::Instant::now();
 		let mut idle = std::time::Duration::ZERO;
 		let mut _last_done_timestamp = 0;
@@ -188,7 +200,7 @@ impl App {
 			.unwrap();*/
 
 		loop {
-			let mut paint = widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Idle).unwrap(); // determines whether to wait for events
+			let mut need_paint = widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Idle).unwrap(); // determines whether to wait for events
 			// ^ could also trigger eventfd instead
 			loop {
 				let events = {
@@ -203,13 +215,13 @@ impl App {
 					}
 					//println!("{:.0}%", (1.-idle.div_duration_f32(start.elapsed()))*100.);
 					let time = std::time::Instant::now();
-					rustix::event::poll(fds, if can_paint && done && paint {0} else {-1})?;
+					rustix::event::poll(fds, if windows.iter().any(|window| window.can_paint && window.done) && need_paint {0} else {-1})?;
 					idle += time.elapsed();
 					fds.iter().map(|fd| fd.revents().contains(PollFlags::IN)).collect::<Box<_>>()
 				};
 				if events[0] {
 					assert!({let mut buf = [0; 8]; assert!(rustix::io::read(&self.0, &mut buf)? == buf.len()); let trigger_count = u64::from_ne_bytes(buf); trigger_count == 1});
-					paint = widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Trigger).unwrap(); // determines whether to wait for events
+					need_paint = widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Trigger).unwrap(); // determines whether to wait for events
 				} else if events[1] {
 					let Message{id, opcode, ..} = message(&*server.server.borrow());
 					//println!("{id} {opcode} {:?}",[toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, dmabuf/*shm*/.id]);
@@ -221,7 +233,7 @@ impl App {
 					}
 					else if id == display.id && opcode == display::delete_id {
 						let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-						if callback.as_ref().is_some_and(|callback| id == callback.id) { /*println!("delete_id callback {}", callback.unwrap().id);*/ callback = None; } // Cannot reuse same id... :(
+						if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) { /*println!("delete_id callback {}", callback.unwrap().id);*/ window.callback = None; } // Cannot reuse same id... :(
 						else { // Reused immediately
 							assert!(id == params.id || id == buffer_ref.id, "{id}");
 							//assert!(id == pool.buffer.id); // Reused immediately
@@ -250,11 +262,12 @@ impl App {
 					else if id == output.id && opcode == output::mode {
 						let [_, UInt(x), UInt(y), _] = server.args({use Type::*; [UInt, UInt, UInt, UInt]}) else {unreachable!()};
 						configure_bounds = xy{x,y};
+						if configure_bounds==(xy{x: 1920, y: 1080}) { windows.push(Surface::new(server, compositor, wm_base, title)); } // HACK: duplicate window if HMD is present
 					}
 					else if id == output.id && opcode == output::scale {
 						let [UInt(factor)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						scale_factor = factor;
-						surface.set_buffer_scale(scale_factor);
+						windows[0].surface.set_buffer_scale(scale_factor);
 					}
 					else if id == output.id && opcode == output::name {
 						server.args({use Type::*; [String]});
@@ -264,10 +277,10 @@ impl App {
 					}
 					else if id == output.id && opcode == output::done {
 					}
-					else if id == toplevel.id && opcode == toplevel::configure_bounds {
+					else if windows.iter().any(|window| id == window.toplevel.id) && opcode == toplevel::configure_bounds {
 						let [UInt(_width),UInt(_height)] = server.args({use Type::*; [UInt,UInt]}) else {unreachable!()};
 					}
-					else if id == toplevel.id && opcode == toplevel::configure {
+					else if windows.iter().any(|window| id == window.toplevel.id) && opcode == toplevel::configure {
 						let [UInt(x),UInt(y),_] = server.args({use Type::*; [UInt,UInt,Array]}) else {unreachable!()};
 						//buffer = None;
 						size = xy{x: x*scale_factor, y: y*scale_factor};
@@ -280,16 +293,16 @@ impl App {
 						}
 						assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
 					}
-					else if id == xdg_surface.id && opcode == xdg_surface::configure {
+					else if let Some(window) = windows.iter_mut().find(|window| id == window.xdg_surface.id) && opcode == xdg_surface::configure {
 						let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-						xdg_surface.ack_configure(serial);
-						can_paint = true;
-						paint = true;
+						window.xdg_surface.ack_configure(serial);
+						window.can_paint = true;
+						need_paint = true;
 					}
-					else if id == surface.id && opcode == surface::enter {
+					else if windows.iter().any(|window| id == window.surface.id) && opcode == surface::enter {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
-					else if id == surface.id && opcode == surface::leave {
+					else if windows.iter().any(|window| id == window.surface.id) && opcode == surface::leave {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
 					else if id == buffer_ref.id && opcode == buffer::release {}
@@ -304,21 +317,21 @@ impl App {
 					else if id == pointer.id && opcode == pointer::motion {
 						let [_,Int(x),Int(y)] = server.args({use Type::*; [UInt,Int,Int]}) else {unreachable!()};
 						pointer_position = xy{x: x*scale_factor as i32/256,y: y*scale_factor as i32/256};
-						if widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Motion{position: pointer_position, mouse_buttons})? { paint=true }
+						if widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Motion{position: pointer_position, mouse_buttons})? { need_paint=true }
 					}
 					else if id == pointer.id && opcode == pointer::button {
 						let [_,_,UInt(button),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
 						#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [272, 111];
 						let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
 						if state>0 { mouse_buttons |= 1<<button; } else { mouse_buttons &= !(1<<button); }
-						if widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
-							paint=true;
+						if widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
+							need_paint=true;
 						}
 					}
 					else if id == pointer.id && opcode == pointer::axis {
 						let [_,UInt(axis),Int(value)] = server.args({use Type::*; [UInt,UInt,Int]}) else {unreachable!()};
 						if axis != 0 { continue; }
-						if widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Scroll(value*scale_factor as i32/256))? { paint=true; }
+						if widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Scroll(value*scale_factor as i32/256))? { need_paint=true; }
 					}
 					else if id == pointer.id && opcode == pointer::frame {
 						server.args([]);
@@ -379,7 +392,7 @@ impl App {
 								'�',',','�','�','¥','◆','◆','⎄'][key as usize];
 							if state > 0 {
 								if key == '⎋' { return Ok(()); }
-								if widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Key(key))? { paint=true; }
+								if widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Key(key))? { need_paint=true; }
 								let rustix::time::Timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
 								let base = tv_sec as u64*1000+tv_nsec as u64/1000000;
 								//let time = base&0xFFFFFFFF_00000000 + key_time as u64;
@@ -387,43 +400,43 @@ impl App {
 							} else { repeat = None; }
 						}
 					}
-					else if callback.as_ref().is_some_and(|callback| id == callback.id) && opcode == callback::done {
+					else if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) && opcode == callback::done {
 						let [UInt(_timestamp_ms)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						//println!("{}", _timestamp_ms-last_done_timestamp);
 						_last_done_timestamp = _timestamp_ms;
-						done = true;
+						window.done = true;
 						//println!("done {}", callback.id);
-						println!("done");
+						//println!("done");
 					}
 					/*else if let Some(pool) = &cursor.pool && id == pool.buffer.id && opcode == buffer::release {
 					}*/
-					else if id == surface.id && opcode == surface::enter {
+					else if windows.iter().any(|window| id == window.surface.id) && opcode == surface::enter {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
-					else if id == surface.id && opcode == surface::leave {
+					else if windows.iter().any(|window| id == window.surface.id) && opcode == surface::leave {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
-					else if id == toplevel.id && opcode == toplevel::close {
+					else if windows.iter().any(|window| id == window.surface.id) && opcode == toplevel::close {
 						//println!("close");
 						return Ok(());
 					}
-					else { panic!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id/*, dmabuf.id*/], server.names); }
+					else { panic!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, output.id, seat.id, display.id/*, dmabuf.id*/], server.names); }
 				}
 				else if events.len() > 2 && events[2] {
 					let (msec, key) = repeat.unwrap();
-					if widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Key(key))? { paint=true; }
+					if widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Key(key))? { need_paint=true; }
 					repeat = Some((msec+33, key));
 				}
 				else { break; }
 			} // event loop
-			println!("{paint} {can_paint} {done}");
-			if paint && can_paint && done {
+			//println!("{paint} {can_paint} {done}");
+			if need_paint && windows.iter().any(|window|window.can_paint && window.done) {
 				//let time = std::time::Instant::now();
 				assert!(size.x > 0 && size.y > 0);
 				use ::drm::{control::Device as _, buffer::Buffer as _};
 				if buffer.is_some_and(|buffer: ::drm::control::dumbbuffer::DumbBuffer| {let (x, y) = buffer.size(); xy{x, y} != size}) { buffer = None; }
 				let mut buffer = buffer.get_or_insert_with(|| {
-					widget.event(size, &mut Some(EventContext{toplevel, modifiers_state, cursor}), &Event::Stale).unwrap();
+					widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Stale).unwrap();
 					let mut buffer = drm.create_dumb_buffer(size.into(), ::drm::buffer::DrmFourcc::Xrgb8888 /*drm::buffer::DrmFourcc::Xrgb2101010*/, 32).unwrap();
 					{
 						let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
@@ -569,9 +582,9 @@ impl App {
 					let mut map = drm.map_dumb_buffer(&mut buffer)?;
 					assert!(stride * size.y <= map.as_mut().len() as u32, "{} {}", stride * size.y, map.as_mut().len());
 					let mut target = image::Image::cast_slice_mut(map.as_mut(), size, stride);
-					println!("paint");
+					//println!("paint");
 					widget.paint(&mut target, size, zero())?;
-					println!("present");
+					//println!("present");
 					/*// unimplemented wayland PQ. use vulkan ext hdr metadata ?
 					if !crate::dark {
 						pub const PQ10_to_linear10 : std::sync::LazyLock<[u16; 0x400]> = std::sync::LazyLock::new(|| image::PQ10_EOTF.map(|pq| (pq*0x3FF as f32) as u16));
@@ -585,22 +598,24 @@ impl App {
 				params.add(unsafe{BorrowedFd::borrow_raw(drm.buffer_to_prime_fd(buffer.handle(), 0)?)}, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
 				params.create_immed(buffer_ref, buffer.size().0, buffer.size().1, buffer.format() as u32, 0);
 				params.destroy();
-				surface.attach(&buffer_ref,0,0);
+				for window in &windows { window.surface.attach(&buffer_ref,0,0); }
 				buffer_ref.destroy();
-				surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
-				/*let size = pool.target.size;
-				widget.paint(&mut pool.target, size, zero())?;
-				surface.attach(&pool.buffer,0,0);
-				surface.damage_buffer(0, 0, pool.target.size.x, pool.target.size.y);*/
-				assert!(done == true);
-				done = false;
-				assert!(callback.is_none());
-				callback = {let callback : Callback = server.new("callback");
-					//println!("frame {}", callback.id);
-					surface.frame(&callback);
-					Some(callback)};
-				surface.commit();
-				println!("commit {:?}", buffer.size());
+				for window in &mut windows { 
+					window.surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1); 
+					/*let size = pool.target.size;
+					widget.paint(&mut pool.target, size, zero())?;
+					surface.attach(&pool.buffer,0,0);
+					surface.damage_buffer(0, 0, pool.target.size.x, pool.target.size.y);*/
+					//assert!(window.done == true);
+					window.done = false;
+					//assert!(window.callback.is_none());
+					window.callback = {let callback : Callback = server.new("callback");
+						//println!("frame {}", callback.id);
+						window.surface.frame(&callback);
+						Some(callback)};
+					window.surface.commit();
+					//println!("commit {:?}", buffer.size());
+				}
 				//eprintln!("{:?}ms", time.elapsed().as_millis());*/
 			}
 		} // idle-event loop
