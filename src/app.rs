@@ -75,15 +75,14 @@ impl App {
 		let display = Display{server, id: 1};
 		let ref registry = server.new("registry");
 		display.get_registry(registry);
-
-		dbg!();
-		let ([compositor, wm_base, seat, dmabuf, drm_lease_device], [outputs]) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1","wp_drm_lease_device_v1"], ["wl_output"]);
+		let ([compositor, wm_base, seat, dmabuf, lease_device], [outputs]) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1","wp_drm_lease_device_v1"], ["wl_output"]);
 		let ref compositor = Compositor{server, id: compositor};
 		let ref wm_base = WmBase{server, id: wm_base};
 		let ref seat = Seat{server, id: seat};
 		let outputs = outputs.iter().map(|&id| Output{server, id}).collect::<Box<_>>();
 		assert_eq!(outputs.len(), 2);
 		let ref dmabuf = DMABuf{server, id: dmabuf};
+		let ref lease_device = LeaseDevice{server, id: lease_device};
 		
 		let ref pointer = server.new("pointer");
 		seat.get_pointer(pointer);
@@ -95,7 +94,7 @@ impl App {
 			xdg_surface: XdgSurface<'t>,
 			toplevel: Toplevel<'t>,
 			can_paint: bool,
-			callback : Option<Callback<'t>>,
+			//callback : Option<Callback<'t>>,
 			done: bool,
 		}
 		impl<'t> Surface<'t> {
@@ -108,7 +107,7 @@ impl App {
 				xdg_surface.get_toplevel(&toplevel);
 				toplevel.set_title(title);
 				surface.commit();
-				Self{surface, xdg_surface, toplevel, can_paint: false, callback: None, done: true}
+				Self{surface, xdg_surface, toplevel, can_paint: false, /*callback: None,*/ done: true}
 			}
 		}
 		let mut windows = Vec::new();
@@ -132,7 +131,8 @@ impl App {
 		let _start = std::time::Instant::now();
 		let mut idle = std::time::Duration::ZERO;
 		let mut _last_done_timestamp = 0;
-	
+		let ref lease_request : LeaseRequest = server.new("lease_request");
+		
 		loop {
 			let mut need_paint = widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Idle).unwrap(); // determines whether to wait for events
 			// ^ could also trigger eventfd instead
@@ -162,12 +162,12 @@ impl App {
 						server.args({use Type::*; [UInt, String, UInt]});
 					} else if id == display.id && opcode == display::error {
 						let [UInt(id),UInt(code),String(message)] = server.args({use Type::*; [UInt, UInt, String]}) else {unreachable!()};
-						panic!("{id} {code} {message} {:?}", server.names.lock().unwrap().iter().find(|(e,_)| *e==id).map(|(_,name)| name));
+						panic!("{id} {code} {message} {:?}", server.names.lock().unwrap()/*.iter().find(|(e,_)| *e==id).map(|(_,name)| name)*/);
 					}
 					else if id == display.id && opcode == display::delete_id {
 						let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-						if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) { window.callback = None; } // Cannot reuse same id... :(
-						else { // Reused immediately
+						/*if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) { window.callback = None; } // Cannot reuse same id... :(
+						else*/ { // Reused immediately
 							assert!(id == params.id || id == buffer_ref.id, "{id}");
 						}
 					}
@@ -191,7 +191,7 @@ impl App {
 					else if outputs.iter().any(|o| o.id == id) && opcode == output::mode {
 						let [_, UInt(x), UInt(y), _] = server.args({use Type::*; [UInt, UInt, UInt, UInt]}) else {unreachable!()};
 						configure_bounds = dbg!(xy{x,y});
-						if configure_bounds==(xy{x: 1920, y: 1080}) { windows.push(Surface::new(server, compositor, wm_base, title)); } // HACK: duplicate window if HMD is present
+						//if configure_bounds==(xy{x: 1920, y: 1080}) { windows.push(Surface::new(server, compositor, wm_base, title)); } // HACK: duplicate window if HMD is present
 					}
 					else if outputs.iter().any(|o| o.id == id) && opcode == output::scale {
 						let [UInt(factor)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
@@ -329,14 +329,14 @@ impl App {
 							} else { repeat = None; }
 						}
 					}
-					else if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) && opcode == callback::done {
+					/*else if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) && opcode == callback::done {
 						let [UInt(_timestamp_ms)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						//println!("{}", _timestamp_ms-last_done_timestamp);
 						_last_done_timestamp = _timestamp_ms;
 						window.done = true;
 						//println!("done {}", callback.id);
 						//println!("done");
-					}
+					}*/
 					/*else if let Some(pool) = &cursor.pool && id == pool.buffer.id && opcode == buffer::release {
 					}*/
 					else if windows.iter().any(|window| id == window.surface.id) && opcode == surface::enter {
@@ -349,14 +349,16 @@ impl App {
 						//println!("close");
 						return Ok(());
 					}
-					else if id == drm_lease_device && opcode == drm_lease_device::drm_fd {
+					else if id == lease_device.id && opcode == drm_lease_device::drm_fd {
 					}
-					else if id == drm_lease_device && opcode == drm_lease_device::connector {
+					else if id == lease_device.id && opcode == drm_lease_device::connector {
+						println!("connector");
 						let [UInt(_connector)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+						lease_device.create_lease_request(lease_request);
 					}
-					else if id == drm_lease_device && opcode == drm_lease_device::done {
+					else if id == lease_device.id && opcode == drm_lease_device::done {
 					}
-					else if id == drm_lease_device && opcode == drm_lease_device::released {
+					else if id == lease_device.id && opcode == drm_lease_device::released {
 					}
 					else { panic!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
 				}
@@ -399,11 +401,11 @@ impl App {
 				for window in &mut windows { 
 					window.surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
 					window.done = false;
-					window.callback = {
+					/*window.callback = {
 						let callback : Callback = server.new("callback");
 						window.surface.frame(&callback);
 						Some(callback)
-					};
+					};*/window.done = true;
 					window.surface.commit();
 				}
 			}

@@ -77,7 +77,7 @@ impl Server {
 		let socket = rustix::net::socket(rustix::net::AddressFamily::UNIX, rustix::net::SocketType::STREAM, None).unwrap();
 		let addr = rustix::net::SocketAddrUnix::new([std::env::var_os("XDG_RUNTIME_DIR").unwrap(), std::env::var_os("WAYLAND_DISPLAY").unwrap()].iter().collect::<std::path::PathBuf>()).unwrap();
 		rustix::net::connect_unix(&socket, &addr).unwrap();
-		Self{server: std::cell::RefCell::new(socket), last_id: std::sync::atomic::AtomicU32::new(2), names: std::sync::Mutex::new(Vec::new())}
+		Self{server: std::cell::RefCell::new(socket), last_id: std::sync::atomic::AtomicU32::new(2), names: std::sync::Mutex::new([(1,"display")].into())}
 	}
 	pub(crate) fn next_id(&self, name: &'static str) -> u32 { 
 		let id = self.last_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -358,15 +358,55 @@ pub(crate) mod toplevel {
 }
 pub use toplevel::Toplevel;
 
-// wp_drm_lease_device_v1: ; drm_fd(fd), connector(connector), done, released
-pub(crate) mod drm_lease_device {
-	pub const drm_fd: u16 = 0; pub const connector: u16 = 1; pub const done: u16 = 2; pub const released: u16 = 3;
-	enum Requests {}
+// wp_drm_lease_connector_v1: destroy; name(string), description(string), connector_id(uint), done, withdrawn
+pub(crate) mod drm_lease_connector {
+	const name: u16 = 0; const description: u16 = 1; const connector_id: u16 = 2; const done: u16 = 3; const withdrawn: u16 = 4;
+	enum Requests { destroy }
 	use super::{Server, Arg::*};
-	pub struct DRMLeaseDevice<'t>{server: &'t Server, pub(crate) id: u32}
-	impl<'t> From<(&'t Server, u32)> for DRMLeaseDevice<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
-	impl DRMLeaseDevice<'_> {
-		//pub fn set_title(&self, title: &str) { self.server.request(self.id, Requests::set_title as u16, [String(title.into())]); }
+	pub struct Connector<'t>{server: &'t Server, pub(crate) id: u32}
+	impl<'t> From<(&'t Server, u32)> for Connector<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
+	impl Connector<'_> {
+		pub fn destroy(&self) { self.server.request(self.id, Requests::destroy as u16, []); }
 	}
 }
-pub use drm_lease_device::DRMLeaseDevice;
+pub use drm_lease_connector::Connector;
+
+// wp_drm_lease_v1: destroy, lease_fd(fd), finished
+pub(crate) mod drm_lease {
+	const lease_fd: u16 = 0; const finished: u16 = 1;
+	enum Requests { destroy }
+	use super::{Server, Arg::*};
+	pub struct Lease<'t>{server: &'t Server, pub(crate) id: u32}
+	impl<'t> From<(&'t Server, u32)> for Lease<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
+	impl Lease<'_> {
+		pub fn destroy(&self) { self.server.request(self.id, Requests::destroy as u16, []); }
+	}
+}
+pub use drm_lease::Lease;
+
+// wp_drm_lease_request_v1: request_connector(connector), submit(lease)
+pub(crate) mod drm_lease_request {
+	enum Requests { request_connector, submit }
+	use super::{Server, Arg::*, *};
+	pub struct LeaseRequest<'t>{server: &'t Server, pub(crate) id: u32}
+	impl<'t> From<(&'t Server, u32)> for LeaseRequest<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
+	impl LeaseRequest<'_> {
+		pub fn request_connector(&self, connector: &Connector) { self.server.request(self.id, Requests::request_connector as u16, [UInt(connector.id)]); }
+		pub fn submit(&self, lease: &Lease) { self.server.request(self.id, Requests::submit as u16, [UInt(lease.id)]); }
+	}
+}
+pub use drm_lease_request::LeaseRequest;
+
+// wp_drm_lease_device_v1: create_lease_request(id), release; drm_fd(fd), connector(connector), done, released
+pub(crate) mod drm_lease_device {
+	pub const drm_fd: u16 = 0; pub const connector: u16 = 1; pub const done: u16 = 2; pub const released: u16 = 3;
+	enum Requests { create_lease_request, release }
+	use super::{Server, Arg::*, *};
+	pub struct LeaseDevice<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
+	impl<'t> From<(&'t Server, u32)> for LeaseDevice<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
+	impl LeaseDevice<'_> {
+		pub fn create_lease_request(&self, lease_request: &LeaseRequest) { self.server.request(self.id, Requests::create_lease_request as u16, [UInt(lease_request.id)]); }
+		pub fn release(&self) { self.server.request(self.id, Requests::release as u16, []); }
+	}
+}
+pub use drm_lease_device::LeaseDevice;
