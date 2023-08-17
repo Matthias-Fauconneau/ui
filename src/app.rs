@@ -76,11 +76,14 @@ impl App {
 		let ref registry = server.new("registry");
 		display.get_registry(registry);
 
+		dbg!();
 		let ([compositor, wm_base, seat, dmabuf/*shm*/], [outputs]) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1"], ["wl_output"]);
+		dbg!();
 		let ref compositor = Compositor{server, id: compositor};
 		let ref wm_base = WmBase{server, id: wm_base};
 		let ref seat = Seat{server, id: seat};
-		let ref output = Output{server, id: output};
+		let outputs = outputs.iter().map(|&id| Output{server, id}).collect::<Box<_>>();
+		assert_eq!(outputs.len(), 2);
 		let ref dmabuf = DMABuf{server, id: dmabuf};
 		
 		let ref pointer = server.new("pointer");
@@ -112,7 +115,7 @@ impl App {
 		let mut windows = Vec::new();
 		windows.push(Surface::new(server, compositor, wm_base, title));
 
-		let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"}); // or use Vulkan ext acquire drm display
+		let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
 
 		let ref params : dmabuf::Params = server.new("params");
 		let ref buffer_ref : Buffer = server.new("buffer_ref");
@@ -159,7 +162,8 @@ impl App {
 					/**/ if id == registry.id && opcode == registry::global {
 						server.args({use Type::*; [UInt, String, UInt]});
 					} else if id == display.id && opcode == display::error {
-						panic!("{:?}", server.args({use Type::*; [UInt, UInt, String]}));
+						let [UInt(id),UInt(code),String(message)] = server.args({use Type::*; [UInt, UInt, String]}) else {unreachable!()};
+						panic!("{id} {code} {message} {:?}", server.names.lock().unwrap().iter().find(|(e,_)| *e==id).map(|(_,name)| name));
 					}
 					else if id == display.id && opcode == display::delete_id {
 						let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
@@ -182,26 +186,26 @@ impl App {
 					else if id == seat.id && opcode == seat::name {
 						server.args({use Type::*; [String]});
 					}
-					else if outputs.contains(&id) && opcode == output::geometry {
+					else if outputs.iter().any(|o| o.id == id) && opcode == output::geometry {
 						server.args({use Type::*; [UInt, UInt, UInt, UInt, UInt, String, String, UInt]});
 					}
-					else if outputs.contains(&id) && opcode == output::mode {
+					else if outputs.iter().any(|o| o.id == id) && opcode == output::mode {
 						let [_, UInt(x), UInt(y), _] = server.args({use Type::*; [UInt, UInt, UInt, UInt]}) else {unreachable!()};
 						configure_bounds = dbg!(xy{x,y});
 						if configure_bounds==(xy{x: 1920, y: 1080}) { windows.push(Surface::new(server, compositor, wm_base, title)); } // HACK: duplicate window if HMD is present
 					}
-					else if outputs.contains(&id) && opcode == output::scale {
+					else if outputs.iter().any(|o| o.id == id) && opcode == output::scale {
 						let [UInt(factor)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						scale_factor = factor;
 						windows[0].surface.set_buffer_scale(scale_factor);
 					}
-					else if outputs.contains(&id) && opcode == output::name {
+					else if outputs.iter().any(|o| o.id == id) && opcode == output::name {
 						server.args({use Type::*; [String]});
 					}
-					else if outputs.contains(&id) && opcode == output::description {
+					else if outputs.iter().any(|o| o.id == id) && opcode == output::description {
 						server.args({use Type::*; [String]});
 					}
-					else if outputs.contains(&id) && opcode == output::done {
+					else if outputs.iter().any(|o| o.id == id) && opcode == output::done {
 					}
 					else if windows.iter().any(|window| id == window.toplevel.id) && opcode == toplevel::configure_bounds {
 						let [UInt(_width),UInt(_height)] = server.args({use Type::*; [UInt,UInt]}) else {unreachable!()};
@@ -346,7 +350,7 @@ impl App {
 						//println!("close");
 						return Ok(());
 					}
-					else { panic!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, output.id, seat.id, display.id/*, dmabuf.id*/], server.names); }
+					else { panic!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
 				}
 				else if events.len() > 2 && events[2] {
 					let (msec, key) = repeat.unwrap();

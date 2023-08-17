@@ -38,8 +38,6 @@ pub struct Server {
 	pub(super) names: std::sync::Mutex<Vec<(u32, &'static str)>>,
 }
 
-pub(crate) struct Global { pub(crate) name: u32, pub(crate) interface: String, pub(crate) version: u32,  pub(crate) id: u32 }
-
 impl Server {
 	pub fn connect() -> Self {
 		let socket = rustix::net::socket(rustix::net::AddressFamily::UNIX, rustix::net::SocketType::STREAM, None).unwrap();
@@ -94,27 +92,27 @@ impl Server {
 	}
 	#[track_caller] fn request<const N: usize>(&self, id: u32, opcode: u16, args: [Arg; N]) { self.sendmsg(id, opcode, args, None) }
 	pub(crate) fn args<const N: usize>(&self, types: [Type; N]) -> [Arg; N] { args(&*self.server.borrow(), types) }
-	pub(crate) fn globals<const N: usize>(&self, registry: &Registry, single: [&'static str; N], multiple: [&'static str; N]) -> ([u32; N], Box<[Global]>) {
-		let mut globals = [0; N];
-		let mut dynamic = Vec::new();
-		while globals.iter().any(|&item| item==0) {
+	pub(crate) fn globals<const M: usize, const N: usize>(&self, registry: &Registry, single_interfaces: [&'static str; M], multiple_interfaces: [&'static str; N]) -> ([u32; M], [Box<[u32]>; N]) {
+		let mut single = [0; M];
+		let mut multiple = [();N].map(|_| Vec::new());
+		while single.iter().any(|&id| id==0) || multiple.iter().any(|ids| ids.len()<2/*FIXME .is_empty()*/) {
 			let Message{id, opcode, ..} = message(&*self.server.borrow());
 			assert!(id == registry.id && opcode == registry::global);
 			use Arg::*;
 			let args = {use Type::*; self.args([UInt, String, UInt])};
 			let [UInt(name), String(interface), UInt(version)] = args else { panic!("{args:?}") };
-			if let Some(index) = interfaces.iter().position(|&item| item==interface) {
-				let id = self.next_id(interfaces[index]);
+			if let Some(index) = single_interfaces.iter().position(|&item| item==interface) {
+				let id = self.next_id(single_interfaces[index]);
 				registry.bind(name, &interface, version, id);
-				globals[index] = id;
-			} else {
-				let id = self.next_id("dynamic");
+				single[index] = id;
+			} else if let Some(index) = multiple_interfaces.iter().position(|&item| item==interface) {
+				let id = self.next_id(multiple_interfaces[index]);
 				registry.bind(name, &interface, version, id);
-				dynamic.push(Global{name, interface, version, id});
+				multiple[index].push(id);
 			}
 		}
 		//println!("{globals:?} {interfaces:?}");
-		(globals, dynamic.into_boxed_slice())
+		(single, multiple.map(|v| v.into_boxed_slice()))
 	}
 }
 
