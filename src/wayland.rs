@@ -37,6 +37,9 @@ pub struct Server {
 	last_id: std::sync::atomic::AtomicU32,
 	pub(super) names: std::sync::Mutex<Vec<(u32, &'static str)>>,
 }
+
+pub(crate) struct Global { pub(crate) name: u32, pub(crate) interface: String, pub(crate) version: u32,  pub(crate) id: u32 }
+
 impl Server {
 	pub fn connect() -> Self {
 		let socket = rustix::net::socket(rustix::net::AddressFamily::UNIX, rustix::net::SocketType::STREAM, None).unwrap();
@@ -91,8 +94,9 @@ impl Server {
 	}
 	#[track_caller] fn request<const N: usize>(&self, id: u32, opcode: u16, args: [Arg; N]) { self.sendmsg(id, opcode, args, None) }
 	pub(crate) fn args<const N: usize>(&self, types: [Type; N]) -> [Arg; N] { args(&*self.server.borrow(), types) }
-	pub fn globals<const N: usize>(&self, registry: &Registry, interfaces: [&'static str; N]) -> [u32; N] {
+	pub(crate) fn globals<const N: usize>(&self, registry: &Registry, single: [&'static str; N], multiple: [&'static str; N]) -> ([u32; N], Box<[Global]>) {
 		let mut globals = [0; N];
+		let mut dynamic = Vec::new();
 		while globals.iter().any(|&item| item==0) {
 			let Message{id, opcode, ..} = message(&*self.server.borrow());
 			assert!(id == registry.id && opcode == registry::global);
@@ -103,10 +107,14 @@ impl Server {
 				let id = self.next_id(interfaces[index]);
 				registry.bind(name, &interface, version, id);
 				globals[index] = id;
+			} else {
+				let id = self.next_id("dynamic");
+				registry.bind(name, &interface, version, id);
+				dynamic.push(Global{name, interface, version, id});
 			}
 		}
 		//println!("{globals:?} {interfaces:?}");
-		globals
+		(globals, dynamic.into_boxed_slice())
 	}
 }
 

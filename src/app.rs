@@ -1,5 +1,5 @@
 #![allow(non_upper_case_globals)]
-#[cfg(feature="drm")] mod drm {
+mod drm {
 	pub struct DRM(std::fs::File);
 	impl DRM { pub fn new(path: &str) -> Self { Self(std::fs::OpenOptions::new().read(true).write(true).open(path).unwrap()) } }
 	impl std::os::fd::AsFd for DRM { fn as_fd(&self) -> std::os::fd::BorrowedFd { self.0.as_fd() } }
@@ -7,12 +7,12 @@
 	impl ::drm::Device for DRM {}
 	impl ::drm::control::Device for DRM {}
 }
-#[cfg(feature="wayland")] #[path="wayland.rs"] pub mod wayland;
+#[path="wayland.rs"] pub mod wayland;
 use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event}};
-#[cfg(feature="drm")] use self::drm::DRM;
-#[cfg(feature="wayland")] use {num::IsZero, vector::int2, wayland::*, crate::{EventContext, background, ModifiersState}};
+use self::drm::DRM;
+use {num::IsZero, vector::int2, wayland::*, crate::{EventContext, background, ModifiersState}};
 
-#[cfg(feature="wayland")] pub struct Cursor<'t> {
+pub struct Cursor<'t> {
 	name: &'static str,
 	#[allow(dead_code)] pointer: &'t Pointer<'t>,
 	//#[allow(dead_code)] dmabuf: &'t DMABuf<'t>,
@@ -21,7 +21,7 @@ use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event}};
 	serial: u32,
 }
 
-#[cfg(feature="wayland")] impl Cursor<'_> {
+impl Cursor<'_> {
 	pub fn set(&mut self, name: &'static str) {
 		if self.name == name { return; }
 		#[cfg(feature="xcursor")] {
@@ -66,35 +66,23 @@ use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event}};
 	}
 }
 
-pub struct App(#[cfg(feature="rustix")] rustix::fd::OwnedFd);
+pub struct App(rustix::fd::OwnedFd);
 impl App {
 	pub fn new() -> Result<Self> { Ok(Self(#[cfg(feature="rustix")] rustix::event::eventfd(0, rustix::event::EventfdFlags::empty())?)) }
-	#[cfg(feature="rustix")] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
-	#[cfg(feature="wayland")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result {
+	pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
+	pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result {
 		let ref server = Server::connect();
 		let display = Display{server, id: 1};
 		let ref registry = server.new("registry");
 		display.get_registry(registry);
 
-		let [compositor, wm_base, seat, output, dmabuf/*shm*/] = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","wl_output","zwp_linux_dmabuf_v1"/*"wl_shm"*/]);
+		let ([compositor, wm_base, seat, dmabuf/*shm*/], [outputs]) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1"], ["wl_output"]);
 		let ref compositor = Compositor{server, id: compositor};
 		let ref wm_base = WmBase{server, id: wm_base};
 		let ref seat = Seat{server, id: seat};
 		let ref output = Output{server, id: output};
 		let ref dmabuf = DMABuf{server, id: dmabuf};
-		/*let ref shm = Shm{server, id: shm};
-		struct Pool<'t> {
-			file: rustix::fd::OwnedFd,
-			shm_pool: ShmPool<'t>,
-			buffer: Buffer<'t>,
-			target: Target<'t>,
-		}
-		let file = rustix::fs::memfd_create("target", rustix::fs::MemfdFlags::empty()).unwrap();
-		let shm_pool = server.new();
-		rustix::fs::ftruncate(&file, 4096).unwrap();
-		shm.create_pool(&shm_pool, &file, 4096);
-		let ref mut pool = Pool{file, shm_pool, buffer: server.new(), target: Target::new(zero(), &mut [])};*/
-
+		
 		let ref pointer = server.new("pointer");
 		seat.get_pointer(pointer);
 		let ref keyboard = server.new("keyboard");
@@ -142,63 +130,7 @@ impl App {
 		let _start = std::time::Instant::now();
 		let mut idle = std::time::Duration::ZERO;
 		let mut _last_done_timestamp = 0;
-
-		/*use {std::default::default, ash::{vk, extensions::ext::DebugUtils}};
-		let entry = ash::Entry::linked();
-		let ref name = std::ffi::CString::new(title)?;
-		let instance = unsafe{entry.create_instance(&vk::InstanceCreateInfo::builder()
-			.application_info(&vk::ApplicationInfo::builder().api_version(vk::make_api_version(0, 1, 5, 0)).application_name(name).application_version(0).engine_name(name))
-			.enabled_layer_names(&[std::ffi::CStr::from_bytes_with_nul(b"VK_LAYER_KHRONOS_validation\0")?.as_ptr()])
-			.enabled_extension_names(&[DebugUtils::name().as_ptr()])
-			.push_next(&mut vk::ValidationFeaturesEXT::builder().enabled_validation_features(&[vk::ValidationFeatureEnableEXT::DEBUG_PRINTF]))
-			, None)}?;
-		let debug_utils = DebugUtils::new(&entry, &instance);
-		unsafe extern "system" fn vulkan_debug_callback(severity: vk::DebugUtilsMessageSeverityFlagsEXT, r#type: vk::DebugUtilsMessageTypeFlagsEXT, data: *const vk::DebugUtilsMessengerCallbackDataEXT, _user_data: *mut std::os::raw::c_void) -> vk::Bool32 {
-			let data = *data;
-			if severity == vk::DebugUtilsMessageSeverityFlagsEXT::INFO &&
-					r#type == vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION &&
-					std::ffi::CStr::from_ptr(data.p_message_id_name).to_str().unwrap() == "UNASSIGNED-DEBUG-PRINTF"
-			{
-				let message = std::ffi::CStr::from_ptr(data.p_message).to_str().unwrap();
-				let [_, _, message]:[&str;3] = *{let t:Box<_> = message.split(" | ").collect::<Box<_>>().try_into().unwrap(); t};
-				if let Some(message) = message.strip_suffix("nan") { panic!("{message}"); }
-				println!("{message}");
-			} else /*if severity != vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE && severity != vk::DebugUtilsMessageSeverityFlagsEXT::INFO*/ {
-				println!("{:?} {:?} [{:?}] : {:?}", severity, r#type, Some(data.p_message_id_name).filter(|p| !p.is_null()).map(|p| std::ffi::CStr::from_ptr(p)).unwrap_or_default(), Some(data.p_message).filter(|p| !p.is_null()).map(|p| std::ffi::CStr::from_ptr(p)).unwrap_or_default() );
-			}
-			vk::FALSE
-		}
-		let _debug_utils_messenger = unsafe{debug_utils.create_debug_utils_messenger(&vk::DebugUtilsMessengerCreateInfoEXT{
-			message_severity: vk::DebugUtilsMessageSeverityFlagsEXT::ERROR|vk::DebugUtilsMessageSeverityFlagsEXT::WARNING|vk::DebugUtilsMessageSeverityFlagsEXT::INFO|vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE,
-			message_type: vk::DebugUtilsMessageTypeFlagsEXT::GENERAL|vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION|vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE, pfn_user_callback: Some(vulkan_debug_callback), ..default()}, None)?};*/
-
-		/*let device = unsafe{instance.enumerate_physical_devices()?.into_iter().find(|device| instance.get_physical_device_properties(*device).device_type == vk::PhysicalDeviceType::INTEGRATED_GPU)}.unwrap();
-		let queue_family_index = unsafe{instance.get_physical_device_queue_family_properties(device)}.iter().position(|p| p.queue_flags.contains(vk::QueueFlags::GRAPHICS)).unwrap() as u32;*/
-		/*let device = unsafe{instance.create_device(device, &vk::DeviceCreateInfo::builder()
-			.queue_create_infos(&[vk::DeviceQueueCreateInfo::builder().queue_family_index(queue_family_index).queue_priorities(&[1.]).build()])
-			/*.enabled_extension_names(&[Swapchain::name().as_ptr()])*/, None)}?;*/
-		/*let queue = unsafe{device.get_device_queue(queue_family_index, 0)};
-		let command_pool = unsafe{device.create_command_pool(&vk::CommandPoolCreateInfo{flags: vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER, queue_family_index, ..default()}, None)}?;*/
-
-		/*let swapchain = Swapchain::new(&instance, &device);
-		let swapchain_create_info = vk::SwapchainCreateInfoKHR::default()
-			.surface(surface)
-			.min_image_count(desired_image_count)
-			.image_color_space(surface_format.color_space)
-			.image_format(surface_format.format)
-			.image_extent(surface_resolution)
-			.image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-			.image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-			.pre_transform(pre_transform)
-			.composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-			.present_mode(present_mode)
-			.clipped(true)
-			.image_array_layers(1);
-
-		let swapchain = swapchain_loader
-			.create_swapchain(&swapchain_create_info, None)
-			.unwrap();*/
-
+	
 		loop {
 			let mut need_paint = widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Idle).unwrap(); // determines whether to wait for events
 			// ^ could also trigger eventfd instead
@@ -213,7 +145,6 @@ impl App {
 						)?;
 						fds.push(PollFd::new(&timerfd, PollFlags::IN));
 					}
-					//println!("{:.0}%", (1.-idle.div_duration_f32(start.elapsed()))*100.);
 					let time = std::time::Instant::now();
 					rustix::event::poll(fds, if windows.iter().any(|window| window.can_paint && window.done) && need_paint {0} else {-1})?;
 					idle += time.elapsed();
@@ -224,7 +155,6 @@ impl App {
 					need_paint = widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Trigger).unwrap(); // determines whether to wait for events
 				} else if events[1] {
 					let Message{id, opcode, ..} = message(&*server.server.borrow());
-					//println!("{id} {opcode} {:?}",[toplevel.id, surface.id, keyboard.id, pointer.id, output.id, seat.id, display.id, dmabuf/*shm*/.id]);
 					use Arg::*;
 					/**/ if id == registry.id && opcode == registry::global {
 						server.args({use Type::*; [UInt, String, UInt]});
@@ -233,12 +163,10 @@ impl App {
 					}
 					else if id == display.id && opcode == display::delete_id {
 						let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-						if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) { /*println!("delete_id callback {}", callback.unwrap().id);*/ window.callback = None; } // Cannot reuse same id... :(
+						if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) { window.callback = None; } // Cannot reuse same id... :(
 						else { // Reused immediately
 							assert!(id == params.id || id == buffer_ref.id, "{id}");
-							//assert!(id == pool.buffer.id); // Reused immediately
 						}
-						//println!("delete_id {}", id);
 					}
 					else if id == dmabuf.id && opcode == dmabuf::format {
 						let [UInt(format)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
@@ -248,34 +176,32 @@ impl App {
 						let [UInt(modifier)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						println!("m {modifier:x}");
 					}
-					/*else if id == shm.id && opcode == shm::format {
-						server.args({use Type::*; [UInt]});
-					}*/ else if id == seat.id && opcode == seat::capabilities {
+					else if id == seat.id && opcode == seat::capabilities {
 						server.args({use Type::*; [UInt]});
 					}
 					else if id == seat.id && opcode == seat::name {
 						server.args({use Type::*; [String]});
 					}
-					else if id == output.id && opcode == output::geometry {
+					else if outputs.contains(&id) && opcode == output::geometry {
 						server.args({use Type::*; [UInt, UInt, UInt, UInt, UInt, String, String, UInt]});
 					}
-					else if id == output.id && opcode == output::mode {
+					else if outputs.contains(&id) && opcode == output::mode {
 						let [_, UInt(x), UInt(y), _] = server.args({use Type::*; [UInt, UInt, UInt, UInt]}) else {unreachable!()};
-						configure_bounds = xy{x,y};
+						configure_bounds = dbg!(xy{x,y});
 						if configure_bounds==(xy{x: 1920, y: 1080}) { windows.push(Surface::new(server, compositor, wm_base, title)); } // HACK: duplicate window if HMD is present
 					}
-					else if id == output.id && opcode == output::scale {
+					else if outputs.contains(&id) && opcode == output::scale {
 						let [UInt(factor)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						scale_factor = factor;
 						windows[0].surface.set_buffer_scale(scale_factor);
 					}
-					else if id == output.id && opcode == output::name {
+					else if outputs.contains(&id) && opcode == output::name {
 						server.args({use Type::*; [String]});
 					}
-					else if id == output.id && opcode == output::description {
+					else if outputs.contains(&id) && opcode == output::description {
 						server.args({use Type::*; [String]});
 					}
-					else if id == output.id && opcode == output::done {
+					else if outputs.contains(&id) && opcode == output::done {
 					}
 					else if windows.iter().any(|window| id == window.toplevel.id) && opcode == toplevel::configure_bounds {
 						let [UInt(_width),UInt(_height)] = server.args({use Type::*; [UInt,UInt]}) else {unreachable!()};
