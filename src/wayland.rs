@@ -1,6 +1,6 @@
 #![allow(non_camel_case_types,non_upper_case_globals, dead_code)]
 
-#[derive(Debug)] pub(crate) enum Arg { UInt(u32), Int(i32), Array(Box<[u8]>), String(std::string::String), Fd(std::os::fd::OwnedFd)}
+#[derive(Debug)] pub(crate) enum Arg { UInt(u32), Int(i32), Array(Box<[u8]>), String(std::string::String)}
 
 #[repr(C)] #[derive(Clone, Copy, Debug)] pub(crate) struct Message {
 	pub(crate) id: u32,
@@ -12,7 +12,6 @@ unsafe impl bytemuck::Pod for Message {}
 
 fn recvmsg(fd: impl rustix::fd::AsFd, buffer: &mut [u8], ancillary: &mut rustix::net::RecvAncillaryBuffer) -> usize {
 	let rustix::net::RecvMsgReturn{bytes, ..} = rustix::net::recvmsg(fd, &mut [rustix::io::IoSliceMut::new(buffer)], ancillary, rustix::net::RecvFlags::empty()).unwrap();
-	assert!(ancillary.drain().next().is_none());
 	bytes
 }
 
@@ -25,23 +24,31 @@ fn recvmsg(fd: impl rustix::fd::AsFd, buffer: &mut [u8], ancillary: &mut rustix:
 	bytes
 }
 
-pub(crate) fn message(fd: impl rustix::fd::AsFd) -> Message {
-	let mut buf = [0; std::mem::size_of::<Message>()]; assert!(read(fd, &mut buf) == buf.len()); *bytemuck::from_bytes(&buf)
+pub(crate) fn message(fd: impl rustix::fd::AsFd) -> (Message, Option<std::os::fd::OwnedFd>) {
+	let mut ancillary : [u8; _]= [0; 24];
+	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
+	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
+	use rustix::net::RecvAncillaryMessage::ScmRights;
+	let mut buffer = [0; std::mem::size_of::<Message>()];
+	assert!(recvmsg(fd, &mut buffer, &mut ancillary) == buffer.len()); 
+	let message = *bytemuck::from_bytes(&buffer);
+	let any_fd = ancillary.drain().next().map(|msg| {
+		let ScmRights(mut fds) = msg else {unreachable!()};
+		fds.next().unwrap()
+	});
+	(message, any_fd)
 }
 
-pub(crate) enum Type { UInt, Int, Array, String, Fd }
+pub(crate) enum Type { UInt, Int, Array, String }
 #[track_caller] fn args<const N: usize>(ref fd: impl rustix::fd::AsFd, types: [Type; N]) -> [Arg; N] { types.map(|r#type| {
-	let mut buffer : [u8; _]= [0; 24];
-	assert_eq!(buffer.len(), rustix::cmsg_space!(ScmRights(1)));
-	let mut buffer = rustix::net::RecvAncillaryBuffer::new(&mut buffer);
+	let mut ancillary : [u8; _]= [0; 24];
+	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
+	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	use rustix::net::RecvAncillaryMessage::ScmRights;
-	let mut read = |buf: &mut [u8]| {
-		rustix::net::recvmsg(fd, &mut [rustix::io::IoSliceMut::new(buf)], &mut buffer, rustix::net::RecvFlags::empty()).unwrap();
-		assert!(buffer.drain().next().is_none());
-	};
-	let mut buf = [0; 4];
-	read(&mut buf);
-	let u32 = ||*bytemuck::from_bytes::<u32>(&buf);
+	let mut read = |buffer: &mut [u8]| recvmsg(fd, buffer, &mut ancillary);
+	let mut buffer = [0; 4];
+	read(&mut buffer);
+	let u32 = ||*bytemuck::from_bytes::<u32>(&buffer);
 	use Type::*;
 	match r#type {
 		UInt => Arg::UInt(u32()),
@@ -55,10 +62,6 @@ pub(crate) enum Type { UInt, Int, Array, String, Fd }
 			let len = u32();
 			let string = {let mut buf = {let mut vec = Vec::new(); vec.resize((len as usize+3)/4*4, 0); vec}; read(&mut buf); buf.truncate(len as usize-1); buf};
 			Arg::String(std::string::String::from_utf8(string).unwrap())
-		}
-		Fd => {
-			let ScmRights(mut fds) = buffer.drain().next().unwrap() else {unreachable!()};
-			Arg::Fd(fds.next().unwrap())
 		}
 	}
 }) }
@@ -111,7 +114,7 @@ impl Server {
 			if let Err(e) = {let r = rustix::io::write(&*self.server.borrow(), &request); r} {
 				println!("Error: {e}");
 				loop {
-					let Message{id, opcode, ..} = message(&*self.server.borrow());
+					let (Message{id, opcode, ..}, None) = message(&*self.server.borrow()) else {unreachable!()};
 					/**/ if id == 1 && opcode == display::error {
 						use Arg::*;
 						let [UInt(id), UInt(code), String(message)] = self.args({use Type::*; [UInt, UInt, String]}) else {unreachable!()};
@@ -127,7 +130,7 @@ impl Server {
 		let mut single = [0; M];
 		let mut multiple = [();N].map(|_| Vec::new());
 		while single.iter().any(|&id| id==0) || multiple.iter().any(|ids| ids.len()<2/*FIXME .is_empty()*/) {
-			let Message{id, opcode, ..} = message(&*self.server.borrow());
+			let (Message{id, opcode, ..}, None) = message(&*self.server.borrow()) else {unreachable!()};
 			assert!(id == registry.id && opcode == registry::global);
 			use Arg::*;
 			let args = {use Type::*; self.args([UInt, String, UInt])};

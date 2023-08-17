@@ -156,7 +156,7 @@ impl App {
 					assert!({let mut buf = [0; 8]; assert!(rustix::io::read(&self.0, &mut buf)? == buf.len()); let trigger_count = u64::from_ne_bytes(buf); trigger_count == 1});
 					need_paint = widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Trigger).unwrap(); // determines whether to wait for events
 				} else if events[1] {
-					let Message{id, opcode, ..} = message(&*server.server.borrow());
+					let (Message{id, opcode, ..}, any_fd) = message(&*server.server.borrow());
 					use Arg::*;
 					/**/ if id == registry.id && opcode == registry::global {
 						server.args({use Type::*; [UInt, String, UInt]});
@@ -350,7 +350,6 @@ impl App {
 						return Ok(());
 					}
 					else if id == drm_lease_device && opcode == drm_lease_device::drm_fd {
-						let [Fd(_fd)] = server.args({use Type::*; [Fd]}) else {unreachable!()};
 					}
 					else if id == drm_lease_device && opcode == drm_lease_device::connector {
 						let [UInt(_connector)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
