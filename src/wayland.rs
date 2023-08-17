@@ -10,35 +10,55 @@
 unsafe impl bytemuck::Zeroable for Message {}
 unsafe impl bytemuck::Pod for Message {}
 
+fn recvmsg(fd: impl rustix::fd::AsFd, buffer: &mut [u8], ancillary: &mut rustix::net::RecvAncillaryBuffer) -> usize {
+	let rustix::net::RecvMsgReturn{bytes, ..} = rustix::net::recvmsg(fd, &mut [rustix::io::IoSliceMut::new(buffer)], ancillary, rustix::net::RecvFlags::empty()).unwrap();
+	assert!(ancillary.drain().next().is_none());
+	bytes
+}
+
+#[track_caller] fn read(fd: impl rustix::fd::AsFd, buffer: &mut [u8]) -> usize {
+	let mut ancillary : [u8; _]= [0; 24];
+	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
+	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
+	let rustix::net::RecvMsgReturn{bytes, ..} = rustix::net::recvmsg(fd, &mut [rustix::io::IoSliceMut::new(buffer)], &mut ancillary, rustix::net::RecvFlags::empty()).unwrap();
+	assert!(ancillary.drain().next().is_none());
+	bytes
+}
+
 pub(crate) fn message(fd: impl rustix::fd::AsFd) -> Message {
-	let mut buf = [0; std::mem::size_of::<Message>()]; assert!(rustix::io::read(fd, &mut buf).unwrap() == buf.len()); *bytemuck::from_bytes(&buf)
+	let mut buf = [0; std::mem::size_of::<Message>()]; assert!(read(fd, &mut buf) == buf.len()); *bytemuck::from_bytes(&buf)
 }
 
 pub(crate) enum Type { UInt, Int, Array, String, Fd }
 #[track_caller] fn args<const N: usize>(ref fd: impl rustix::fd::AsFd, types: [Type; N]) -> [Arg; N] { types.map(|r#type| {
+	let mut buffer : [u8; _]= [0; 24];
+	assert_eq!(buffer.len(), rustix::cmsg_space!(ScmRights(1)));
+	let mut buffer = rustix::net::RecvAncillaryBuffer::new(&mut buffer);
+	use rustix::net::RecvAncillaryMessage::ScmRights;
+	let mut read = |buf: &mut [u8]| {
+		rustix::net::recvmsg(fd, &mut [rustix::io::IoSliceMut::new(buf)], &mut buffer, rustix::net::RecvFlags::empty()).unwrap();
+		assert!(buffer.drain().next().is_none());
+	};
+	let mut buf = [0; 4];
+	read(&mut buf);
+	let u32 = ||*bytemuck::from_bytes::<u32>(&buf);
 	use Type::*;
-	if let Fd = r#type {
-		use rustix::net::RecvAncillaryMessage::ScmRights;
-		let mut buffer : [u8; _]= [0; 24];
-		assert_eq!(buffer.len(), rustix::cmsg_space!(ScmRights(1)));
-		let mut buffer = rustix::net::RecvAncillaryBuffer::new(&mut buffer);
-		rustix::net::recvmsg(fd, &mut [], &mut buffer, rustix::net::RecvFlags::empty()).unwrap();
-		let ScmRights(mut fds) = buffer.drain().next().unwrap() else {unreachable!()};
-		Arg::Fd(fds.next().unwrap())
-	} else {
-		let arg = {let mut buf = [0; 4]; rustix::io::read(fd, &mut buf).unwrap(); *bytemuck::from_bytes::<u32>(&buf)};
-		match r#type {
-			UInt => Arg::UInt(arg),
-			Int => Arg::Int(arg as i32),
-			Array => {
-				let array = {let mut buf = {let mut vec = Vec::new(); vec.resize((arg as usize+3)/4*4, 0); vec}; rustix::io::read(fd, &mut buf).unwrap(); buf.truncate(arg as usize); buf};
-				Arg::Array(array.into_boxed_slice())
-			},
-			String => {
-				let string = {let mut buf = {let mut vec = Vec::new(); vec.resize((arg as usize+3)/4*4, 0); vec}; rustix::io::read(fd, &mut buf).unwrap(); buf.truncate(arg as usize-1); buf};
-				Arg::String(std::string::String::from_utf8(string).unwrap())
-			}
-			_ => unreachable!()
+	match r#type {
+		UInt => Arg::UInt(u32()),
+		Int => Arg::Int(u32() as i32),
+		Array => {
+			let len = u32();
+			let array = {let mut buf = {let mut vec = Vec::new(); vec.resize((len as usize+3)/4*4, 0); vec}; read(&mut buf); buf.truncate(len as usize); buf};
+			Arg::Array(array.into_boxed_slice())
+		},
+		String => {
+			let len = u32();
+			let string = {let mut buf = {let mut vec = Vec::new(); vec.resize((len as usize+3)/4*4, 0); vec}; read(&mut buf); buf.truncate(len as usize-1); buf};
+			Arg::String(std::string::String::from_utf8(string).unwrap())
+		}
+		Fd => {
+			let ScmRights(mut fds) = buffer.drain().next().unwrap() else {unreachable!()};
+			Arg::Fd(fds.next().unwrap())
 		}
 	}
 }) }
