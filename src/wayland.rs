@@ -1,6 +1,6 @@
 #![allow(non_camel_case_types,non_upper_case_globals, dead_code)]
 
-#[derive(Debug)] pub(crate) enum Arg { UInt(u32), Int(i32), Array(Box<[u8]>), String(std::string::String) }
+#[derive(Debug)] pub(crate) enum Arg { UInt(u32), Int(i32), Array(Box<[u8]>), String(std::string::String), Fd(std::os::fd::OwnedFd)}
 
 #[repr(C)] #[derive(Clone, Copy, Debug)] pub(crate) struct Message {
 	pub(crate) id: u32,
@@ -14,20 +14,31 @@ pub(crate) fn message(fd: impl rustix::fd::AsFd) -> Message {
 	let mut buf = [0; std::mem::size_of::<Message>()]; assert!(rustix::io::read(fd, &mut buf).unwrap() == buf.len()); *bytemuck::from_bytes(&buf)
 }
 
-pub(crate) enum Type { UInt, Int, Array, String }
+pub(crate) enum Type { UInt, Int, Array, String, Fd }
 #[track_caller] fn args<const N: usize>(ref fd: impl rustix::fd::AsFd, types: [Type; N]) -> [Arg; N] { types.map(|r#type| {
-	let arg = {let mut buf = [0; 4]; rustix::io::read(fd, &mut buf).unwrap(); *bytemuck::from_bytes::<u32>(&buf)};
 	use Type::*;
-	match r#type {
-		UInt => Arg::UInt(arg),
-		Int => Arg::Int(arg as i32),
-		Array => {
-			let array = {let mut buf = {let mut vec = Vec::new(); vec.resize((arg as usize+3)/4*4, 0); vec}; rustix::io::read(fd, &mut buf).unwrap(); buf.truncate(arg as usize); buf};
-			Arg::Array(array.into_boxed_slice())
-		},
-		String => {
-			let string = {let mut buf = {let mut vec = Vec::new(); vec.resize((arg as usize+3)/4*4, 0); vec}; rustix::io::read(fd, &mut buf).unwrap(); buf.truncate(arg as usize-1); buf};
-			Arg::String(std::string::String::from_utf8(string).unwrap())
+	if let Fd = r#type {
+		use rustix::net::RecvAncillaryMessage::ScmRights;
+		let mut buffer : [u8; _]= [0; 24];
+		assert_eq!(buffer.len(), rustix::cmsg_space!(ScmRights(1)));
+		let mut buffer = rustix::net::RecvAncillaryBuffer::new(&mut buffer);
+		rustix::net::recvmsg(fd, &mut [], &mut buffer, rustix::net::RecvFlags::empty()).unwrap();
+		let ScmRights(mut fds) = buffer.drain().next().unwrap() else {unreachable!()};
+		Arg::Fd(fds.next().unwrap())
+	} else {
+		let arg = {let mut buf = [0; 4]; rustix::io::read(fd, &mut buf).unwrap(); *bytemuck::from_bytes::<u32>(&buf)};
+		match r#type {
+			UInt => Arg::UInt(arg),
+			Int => Arg::Int(arg as i32),
+			Array => {
+				let array = {let mut buf = {let mut vec = Vec::new(); vec.resize((arg as usize+3)/4*4, 0); vec}; rustix::io::read(fd, &mut buf).unwrap(); buf.truncate(arg as usize); buf};
+				Arg::Array(array.into_boxed_slice())
+			},
+			String => {
+				let string = {let mut buf = {let mut vec = Vec::new(); vec.resize((arg as usize+3)/4*4, 0); vec}; rustix::io::read(fd, &mut buf).unwrap(); buf.truncate(arg as usize-1); buf};
+				Arg::String(std::string::String::from_utf8(string).unwrap())
+			}
+			_ => unreachable!()
 		}
 	}
 }) }
@@ -324,33 +335,15 @@ pub(crate) mod toplevel {
 }
 pub use toplevel::Toplevel;
 
-// shm: create_pool(shm_pool, fd, size); format(uint)
-pub(crate) mod shm {
-	pub const format: u16 = 0;
-	enum Requests { create_pool }
-	pub struct Shm<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
-	impl<'t> From<(&'t Server, u32)> for Shm<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
-	use super::{Arg::*, *};
-	impl Shm<'_> {
-		pub fn create_pool(&self, shm_pool: &ShmPool, fd: rustix::fd::BorrowedFd, size: u32) {
-			self.server.sendmsg(self.id, Requests::create_pool as u16, [UInt(shm_pool.id),UInt(size)], Some(fd));
-		}
+// wp_drm_lease_device_v1: ; drm_fd(fd), connector(connector), done, released
+pub(crate) mod drm_lease_device {
+	pub const drm_fd: u16 = 0; pub const connector: u16 = 1; pub const done: u16 = 2; pub const released: u16 = 3;
+	enum Requests {}
+	use super::{Server, Arg::*};
+	pub struct DRMLeaseDevice<'t>{server: &'t Server, pub(crate) id: u32}
+	impl<'t> From<(&'t Server, u32)> for DRMLeaseDevice<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
+	impl DRMLeaseDevice<'_> {
+		//pub fn set_title(&self, title: &str) { self.server.request(self.id, Requests::set_title as u16, [String(title.into())]); }
 	}
 }
-pub use shm::Shm;
-
-// shm_pool: create_buffer(buffer, offset, width, height, stride, shm.format), resize(size)
-pub mod shm_pool {
-	enum Requests { create_buffer, destroy, resize }
-	pub struct ShmPool<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
-	impl<'t> From<(&'t Server, u32)> for ShmPool<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
-	use super::{Arg::*, *};
-	impl ShmPool<'_> {
-		pub fn create_buffer(&self, buffer: &Buffer, offset: u32, width: u32, height: u32, stride: u32, format: Format) {
-			self.server.request(self.id, Requests::create_buffer as u16, [UInt(buffer.id),UInt(offset),UInt(width),UInt(height),UInt(stride),UInt(format as u32)]);
-		}
-		pub fn resize(&self, size: u32) { self.server.request(self.id, Requests::resize as u16, [UInt(size)]); }
-	}
-	pub enum Format { argb8888, xrgb8888 }
-}
-pub use shm_pool::ShmPool;
+pub use drm_lease_device::DRMLeaseDevice;

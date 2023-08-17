@@ -77,8 +77,7 @@ impl App {
 		display.get_registry(registry);
 
 		dbg!();
-		let ([compositor, wm_base, seat, dmabuf/*shm*/], [outputs]) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1"], ["wl_output"]);
-		dbg!();
+		let ([compositor, wm_base, seat, dmabuf, drm_lease_device], [outputs]) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1","wp_drm_lease_device_v1"], ["wl_output"]);
 		let ref compositor = Compositor{server, id: compositor};
 		let ref wm_base = WmBase{server, id: wm_base};
 		let ref seat = Seat{server, id: seat};
@@ -350,6 +349,16 @@ impl App {
 						//println!("close");
 						return Ok(());
 					}
+					else if id == drm_lease_device && opcode == drm_lease_device::drm_fd {
+						let [Fd(_fd)] = server.args({use Type::*; [Fd]}) else {unreachable!()};
+					}
+					else if id == drm_lease_device && opcode == drm_lease_device::connector {
+						let [UInt(_connector)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+					}
+					else if id == drm_lease_device && opcode == drm_lease_device::done {
+					}
+					else if id == drm_lease_device && opcode == drm_lease_device::released {
+					}
 					else { panic!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
 				}
 				else if events.len() > 2 && events[2] {
@@ -359,9 +368,7 @@ impl App {
 				}
 				else { break; }
 			} // event loop
-			//println!("{paint} {can_paint} {done}");
 			if need_paint && windows.iter().any(|window|window.can_paint && window.done) {
-				//let time = std::time::Instant::now();
 				assert!(size.x > 0 && size.y > 0);
 				use ::drm::{control::Device as _, buffer::Buffer as _};
 				if buffer.is_some_and(|buffer: ::drm::control::dumbbuffer::DumbBuffer| {let (x, y) = buffer.size(); xy{x, y} != size}) { buffer = None; }
@@ -375,152 +382,12 @@ impl App {
 					}
 					buffer
 				});
-				/*if pool.target.size != size {
-					let old_length = (pool.target.size.y*pool.target.size.x*4) as usize;
-					let length = (size.y*size.x*4) as usize;
-					if length > old_length {
-							rustix::fs::ftruncate(&pool.file, length as u64).unwrap();
-							pool.shm_pool.resize(length as u32); //  This request can only be used to make the pool bigger
-					}
-					if !pool.target.size.is_zero() { pool.buffer.destroy(); }
-					pool.shm_pool.create_buffer(&pool.buffer, 0, size.x, size.y, size.x*4, shm_pool::Format::xrgb8888);
-					//println!("create_buffer {size:?}");
-					use rustix::mm;
-					let mmap = unsafe{std::slice::from_raw_parts_mut(
-							mm::mmap(std::ptr::null_mut(), length, mm::ProtFlags::READ | mm::ProtFlags::WRITE, mm::MapFlags::SHARED, &pool.file, 0).unwrap() as *mut u8,
-							length)};
-					pool.target = Target::new(size, bytemuck::cast_slice_mut(mmap));
-				}*/
-				/*{
-					use vk::*;
-					//VkImageDrmFormatModifierExplicitCreateInfoEXT and VkExternalMemoryImageCreateInfo onto VkImageCreateInfo
-					/*VkImage vulkan_import_dmabuf(wlr_dmabuf_attributes *attribs) -> VkDeviceMemory mems[n_mems]:
-					vulkan_format_props_from_drm(renderer->dev, attribs->format);
-					uint32_t plane_count = attribs->n_planes;
-					assert(plane_count < WLR_DMABUF_MAX_PLANES);
-					const struct wlr_vk_format_modifier_props *mod = vulkan_format_props_find_modifier(fmt, attribs->modifier, for_render);
-					VkExternalMemoryHandleTypeFlagBits htype = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;*/
-					let image = unsafe{device.create_image(&ImageCreateInfo{
-						image_type: ImageType::TYPE_2D,
-						format: Format::A2R10G10B10_UNORM_PACK32,
-						mip_levels: 1, array_layers: 1, samples: SampleCountFlags::TYPE_1,
-						sharing_mode: SharingMode::EXCLUSIVE,
-						initial_layout: ImageLayout::UNDEFINED,
-						extent: Extent3D{width: size.x, height: size.y, depth: 1},
-						usage: ImageUsageFlags::COLOR_ATTACHMENT|ImageUsageFlags::TRANSFER_SRC|ImageUsageFlags::SAMPLED,
-						p_next: &ExternalMemoryImageCreateInfo{handle_types: ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
-							p_next: &ImageDrmFormatModifierExplicitCreateInfoEXT{
-								drm_format_modifier_plane_count: 1, drm_format_modifier: 0, p_plane_layouts: &SubresourceLayout{offset: 0, row_pitch: buffer.pitch() as u64,
-								size: 0, ..default()} as *const _, ..default()} as *const ImageDrmFormatModifierExplicitCreateInfoEXT as *const _, ..default()}
-								 as *const ExternalMemoryImageCreateInfo as *const _, ..default()}, None)}?;
-					panic!("{:?}", image);
-					/*unsigned mem_count = disjoint ? plane_count : 1u;
-					VkBindImageMemoryInfo bindi[WLR_DMABUF_MAX_PLANES] = {0};
-					VkBindImagePlaneMemoryInfo planei[WLR_DMABUF_MAX_PLANES] = {0};
-
-					for (unsigned i = 0u; i < mem_count; ++i) {
-						VkMemoryFdPropertiesKHR fdp = {
-							.sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR,
-						};
-						res = renderer->dev->api.getMemoryFdPropertiesKHR(dev, htype,
-							attribs->fd[i], &fdp);
-						if (res != VK_SUCCESS) {
-							wlr_vk_error("getMemoryFdPropertiesKHR", res);
-							goto error_image;
-						}
-
-						VkImageMemoryRequirementsInfo2 memri = {
-							.image = image,
-							.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2,
-						};
-
-						VkImagePlaneMemoryRequirementsInfo planeri;
-						if (disjoint) {
-							planeri = (VkImagePlaneMemoryRequirementsInfo){
-								.sType = VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO,
-								.planeAspect = mem_plane_aspect(i),
-							};
-							memri.pNext = &planeri;
-						}
-
-						VkMemoryRequirements2 memr = {
-							.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
-						};
-
-						vkGetImageMemoryRequirements2(dev, &memri, &memr);
-						int mem = vulkan_find_mem_type(renderer->dev, 0,
-							memr.memoryRequirements.memoryTypeBits & fdp.memoryTypeBits);
-						if (mem < 0) {
-							wlr_log(WLR_ERROR, "no valid memory type index");
-							goto error_image;
-						}
-
-						// Since importing transfers ownership of the FD to Vulkan, we have
-						// to duplicate it since this operation does not transfer ownership
-						// of the attribs to this texture. Will be closed by Vulkan on
-						// vkFreeMemory.
-						int dfd = fcntl(attribs->fd[i], F_DUPFD_CLOEXEC, 0);
-						if (dfd < 0) {
-							wlr_log_errno(WLR_ERROR, "fcntl(F_DUPFD_CLOEXEC) failed");
-							goto error_image;
-						}
-
-						VkMemoryAllocateInfo memi = {
-							.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-							.allocationSize = memr.memoryRequirements.size,
-							.memoryTypeIndex = mem,
-						};
-
-						VkImportMemoryFdInfoKHR importi = {
-							.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
-							.fd = dfd,
-							.handleType = htype,
-						};
-						memi.pNext = &importi;
-
-						VkMemoryDedicatedAllocateInfo dedi = {
-							.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
-							.image = image,
-						};
-						importi.pNext = &dedi;
-
-						res = vkAllocateMemory(dev, &memi, NULL, &mems[i]);
-						if (res != VK_SUCCESS) {
-							close(dfd);
-							wlr_vk_error("vkAllocateMemory failed", res);
-							goto error_image;
-						}
-
-						++(*n_mems);
-
-						// fill bind info
-						bindi[i].image = image;
-						bindi[i].memory = mems[i];
-						bindi[i].memoryOffset = 0;
-						bindi[i].sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO;
-
-						if (disjoint) {
-							planei[i].sType = VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO;
-							planei[i].planeAspect = planeri.planeAspect;
-							bindi[i].pNext = &planei[i];
-						}
-					}
-					res = vkBindImageMemory2(dev, mem_count, bindi);*/
-				}*/
 				{
 					let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
 					let mut map = drm.map_dumb_buffer(&mut buffer)?;
 					assert!(stride * size.y <= map.as_mut().len() as u32, "{} {}", stride * size.y, map.as_mut().len());
 					let mut target = image::Image::cast_slice_mut(map.as_mut(), size, stride);
-					//println!("paint");
 					widget.paint(&mut target, size, zero())?;
-					//println!("present");
-					/*// unimplemented wayland PQ. use vulkan ext hdr metadata ?
-					if !crate::dark {
-						pub const PQ10_to_linear10 : std::sync::LazyLock<[u16; 0x400]> = std::sync::LazyLock::new(|| image::PQ10_EOTF.map(|pq| (pq*0x3FF as f32) as u16));
-						#[allow(non_snake_case)] let ref_PQ10_to_linear10 = &PQ10_to_linear10;
-						for pq in target.iter_mut() { *pq = u32::from(image::bgr::<u16>::from(*pq).map(|pq| ref_PQ10_to_linear10[pq as usize])) }
-					}*/
 				}
 				dmabuf.create_params(params);
 				let modifiers = 0u64;
@@ -531,103 +398,18 @@ impl App {
 				for window in &windows { window.surface.attach(&buffer_ref,0,0); }
 				buffer_ref.destroy();
 				for window in &mut windows { 
-					window.surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1); 
-					/*let size = pool.target.size;
-					widget.paint(&mut pool.target, size, zero())?;
-					surface.attach(&pool.buffer,0,0);
-					surface.damage_buffer(0, 0, pool.target.size.x, pool.target.size.y);*/
-					//assert!(window.done == true);
+					window.surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
 					window.done = false;
-					//assert!(window.callback.is_none());
-					window.callback = {let callback : Callback = server.new("callback");
-						//println!("frame {}", callback.id);
+					window.callback = {
+						let callback : Callback = server.new("callback");
 						window.surface.frame(&callback);
-						Some(callback)};
+						Some(callback)
+					};
 					window.surface.commit();
-					//println!("commit {:?}", buffer.size());
 				}
-				//eprintln!("{:?}ms", time.elapsed().as_millis());*/
 			}
 		} // idle-event loop
 	}
-	#[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result {
-		use winit::{event::{self, Event::*, WindowEvent::*, VirtualKeyCode, ElementState}, event_loop::{ControlFlow, EventLoop}, window::{WindowBuilder, Fullscreen}};
-		let mut event_loop = EventLoop::new();
-		//let mut window = WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::<u32>::from(<(_,_)>::from(widget.size(xy{x: 3840, y: 2160})))).with_title(title).build(&event_loop)?;
-		let near_eye = event_loop.available_monitors().find(|o| o.size()==[1920,1080].into()).map(|near_eye| WindowBuilder::new().with_fullscreen(Some(Fullscreen::Borderless(Some(near_eye)))).with_title(title).build(&event_loop).unwrap()); // HACK
-		let mirror = Some(WindowBuilder::new().with_title(title).build(&event_loop).unwrap());
-		let mut windows = [near_eye, mirror].into_iter().filter_map(|w| w).map(|window| {
-			let context = unsafe{softbuffer::Context::new(&window)}.unwrap();
-			let surface = unsafe{softbuffer::Surface::new(&context, &window)}.unwrap();
-			(window, context, surface)
-		}).collect::<Box<_>>();
-		let mut mirror : Option<Box<[u32]>> = None;
-		use winit::platform::run_return::EventLoopExtRunReturn;
-		event_loop.run_return(move |event, _, control_flow| match event {
-			WindowEvent {event: ScaleFactorChanged{..}, window_id} | RedrawRequested(window_id) => {
-				let windows_len = windows.len();
-				let (ref mut window, _, surface) = windows.iter_mut().find(|(window,_,_)| window_id == window.id()).unwrap();
-				let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
-				if let Some(mirror) = mirror.as_mut() {
-					surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
-					let mut buffer = surface.buffer_mut().unwrap();
-					//assert_eq!(buffer.stride, mirror.stride);
-					if buffer.len() == mirror.len() { buffer.copy_from_slice(&*mirror); } // WORKAROUND: winit starts with wrong scale factors / buffer sizes
-					buffer.present().unwrap();
-				}
-				mirror = None; // FIXME: generalize to >2 windows
-				widget.event(size, window, &Event::Stale).unwrap();
-				surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
-				let mut buffer = surface.buffer_mut().unwrap();
-				let mut target = image::Image::new::<u32>(size, &mut *buffer);
-				target.fill(image::bgr8::from(crate::background()).into());
-				widget.paint(&mut target, size, zero()).unwrap();
-				if mirror.is_none() && windows_len>1 { mirror = Some(Box::<[u32]>::from(&*buffer)) }
-				buffer.present().unwrap();
-			}
-			WindowEvent{event: CloseRequested, ..} => *control_flow = ControlFlow::Exit,
-			WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(VirtualKeyCode::Escape), ..},..},..} => *control_flow = ControlFlow::Exit,
-			MainEventsCleared => if widget.event({let size = windows[0].0.inner_size(); xy{x: size.width, y: size.height}}, &mut windows[0].0, &Event::Idle).unwrap() { 
-				for (window,_,_) in windows.iter() { window.request_redraw(); }
-			},
-			WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(key), state:ElementState::Pressed, ..},..},..} =>
-				if widget.event({let size = windows[0].0.inner_size(); xy{x: size.width, y: size.height}}, &mut windows[0].0, &Event::Key(match key {
-					VirtualKeyCode::Space => ' ',
-					VirtualKeyCode::Return => '\n',
-					VirtualKeyCode::A => 'a',
-					VirtualKeyCode::B => 'b',
-					VirtualKeyCode::C => 'c',
-					VirtualKeyCode::D => 'd',
-					VirtualKeyCode::E => 'e',
-					VirtualKeyCode::F => 'f',
-					VirtualKeyCode::G => 'g',
-					VirtualKeyCode::H => 'h',
-					VirtualKeyCode::I => 'i',
-					VirtualKeyCode::J => 'j',
-					VirtualKeyCode::K => 'k',
-					VirtualKeyCode::L => 'l',
-					VirtualKeyCode::M => 'm',
-					VirtualKeyCode::N => 'n',
-					VirtualKeyCode::O => 'o',
-					VirtualKeyCode::P => 'p',
-					VirtualKeyCode::Q => 'q',
-					VirtualKeyCode::R => 'r',
-					VirtualKeyCode::S => 's',
-					VirtualKeyCode::T => 't',
-					VirtualKeyCode::U => 'u',
-					VirtualKeyCode::V => 'v',
-					VirtualKeyCode::W => 'w',
-					VirtualKeyCode::X => 'x',
-					VirtualKeyCode::Y => 'y',
-					VirtualKeyCode::Z => 'z',
-					VirtualKeyCode::F12 => '\u{F70C}',
-					VirtualKeyCode::Back => '⌫',
-					_ => return if false {println!("{key:?}");} else {}
-				})).unwrap() { for (window,_,_) in windows.iter() { window.request_redraw(); } },
-			_ => {}
-		});
-		Ok(())
-}
 }
 impl Default for App { fn default() -> Self { Self::new().unwrap() } }
 pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result { App::new()?.run(title, widget) }
