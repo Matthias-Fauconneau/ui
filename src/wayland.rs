@@ -44,7 +44,6 @@ pub(crate) enum Type { UInt, Int, Array, String }
 	let mut ancillary : [u8; _]= [0; 24];
 	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
-	use rustix::net::RecvAncillaryMessage::ScmRights;
 	let mut read = |buffer: &mut [u8]| recvmsg(fd, buffer, &mut ancillary);
 	let mut buffer = [0; 4];
 	read(&mut buffer);
@@ -86,7 +85,7 @@ impl Server {
 	}
 	pub fn new<'s: 't, 't, T: From<(&'t Self, u32)>>(&'s self, name: &'static str) -> T { (self, self.next_id(name)).into() }
 	#[track_caller] fn sendmsg<const N: usize>(&self, id: u32, opcode: u16, args: [Arg; N], fd: Option<rustix::fd::BorrowedFd>) {
-		assert!(opcode < 10);
+		assert!(opcode <= 11, "{opcode}");
 		let mut request = Vec::new();
 		use std::io::Write;
 		let size = (2+N as u32+args.iter().map(|arg| if let Arg::String(arg) = arg { (arg.as_bytes().len() as u32+1+3)/4 } else { 0 }).sum::<u32>())*4;
@@ -129,7 +128,7 @@ impl Server {
 	pub(crate) fn globals<const M: usize, const N: usize>(&self, registry: &Registry, single_interfaces: [&'static str; M], multiple_interfaces: [&'static str; N]) -> ([u32; M], [Box<[u32]>; N]) {
 		let mut single = [0; M];
 		let mut multiple = [();N].map(|_| Vec::new());
-		while single.iter().any(|&id| id==0) || multiple.iter().any(|ids| ids.len()<2/*FIXME .is_empty()*/) {
+		while single.iter().any(|&id| id==0) || multiple.iter().any(|ids| ids.len()<1/*2*//*FIXME .is_empty()*/) {
 			let (Message{id, opcode, ..}, None) = message(&*self.server.borrow()) else {unreachable!()};
 			assert!(id == registry.id && opcode == registry::global);
 			use Arg::*;
@@ -345,15 +344,16 @@ pub(crate) mod xdg_surface {
 }
 pub use xdg_surface::XdgSurface;
 
-// toplevel: set_title(title: string); configure(width, height, states: array), close, configure_bounds(width, height), wm_capabilities
+// toplevel: set_title(title: string), set_app_id, show_window_menu, _move, resize, set_max_size, set_min_size, set_maximized, unset_maximized, set_fullscreen(output?); configure(width, height, states: array), close, configure_bounds(width, height), wm_capabilities
 pub(crate) mod toplevel {
 	pub const configure: u16 = 0; pub const close: u16 = 1; pub const configure_bounds: u16 = 2;
-	enum Requests { destroy, set_parent, set_title }
-	use super::{Server, Arg::*};
+	enum Requests { destroy, set_parent, set_title, set_app_id, show_window_menu, _move, resize, set_max_size, set_min_size, set_maximized, unset_maximized, set_fullscreen }
+	use super::{Server, Arg::*, *};
 	pub struct Toplevel<'t>{server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Toplevel<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Toplevel<'_> {
 		pub fn set_title(&self, title: &str) { self.server.request(self.id, Requests::set_title as u16, [String(title.into())]); }
+		pub fn set_fullscreen(&self, output: Option<&Output>) { self.server.request(self.id, Requests::set_fullscreen as u16, [UInt(output.map(|o| o.id).unwrap_or(0))]); }
 	}
 }
 pub use toplevel::Toplevel;
@@ -362,7 +362,7 @@ pub use toplevel::Toplevel;
 pub(crate) mod drm_lease_connector {
 	const name: u16 = 0; const description: u16 = 1; const connector_id: u16 = 2; const done: u16 = 3; const withdrawn: u16 = 4;
 	enum Requests { destroy }
-	use super::{Server, Arg::*};
+	use super::Server;
 	pub struct Connector<'t>{server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Connector<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Connector<'_> {
@@ -375,7 +375,7 @@ pub use drm_lease_connector::Connector;
 pub(crate) mod drm_lease {
 	const lease_fd: u16 = 0; const finished: u16 = 1;
 	enum Requests { destroy }
-	use super::{Server, Arg::*};
+	use super::Server;
 	pub struct Lease<'t>{server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Lease<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Lease<'_> {

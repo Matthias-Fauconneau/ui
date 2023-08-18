@@ -80,7 +80,6 @@ impl App {
 		let ref wm_base = WmBase{server, id: wm_base};
 		let ref seat = Seat{server, id: seat};
 		let outputs = outputs.iter().map(|&id| Output{server, id}).collect::<Box<_>>();
-		assert_eq!(outputs.len(), 2);
 		let ref dmabuf = DMABuf{server, id: dmabuf};
 		let ref lease_device = LeaseDevice{server, id: lease_device};
 		
@@ -98,7 +97,7 @@ impl App {
 			done: bool,
 		}
 		impl<'t> Surface<'t> {
-			fn new(server: &'t wayland::Server, compositor: &Compositor<'t>, wm_base: &WmBase<'t>, title: &str) -> Self {
+			fn new(server: &'t wayland::Server, compositor: &Compositor, wm_base: &WmBase, title: &str, fullscreen: Option<&Output>) -> Self {
 				let surface = server.new("surface");
 				compositor.create_surface(&surface);
 				let xdg_surface = server.new("xdg_surface");
@@ -106,12 +105,13 @@ impl App {
 				let toplevel = server.new("toplevel");
 				xdg_surface.get_toplevel(&toplevel);
 				toplevel.set_title(title);
+				if let Some(output) = fullscreen { toplevel.set_fullscreen(Some(output)); }
 				surface.commit();
 				Self{surface, xdg_surface, toplevel, can_paint: false, /*callback: None,*/ done: true}
 			}
 		}
 		let mut windows = Vec::new();
-		windows.push(Surface::new(server, compositor, wm_base, title));
+		windows.push(Surface::new(server, compositor, wm_base, title, Some(&outputs[0])));
 
 		let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
 
@@ -156,7 +156,7 @@ impl App {
 					assert!({let mut buf = [0; 8]; assert!(rustix::io::read(&self.0, &mut buf)? == buf.len()); let trigger_count = u64::from_ne_bytes(buf); trigger_count == 1});
 					need_paint = widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Trigger).unwrap(); // determines whether to wait for events
 				} else if events[1] {
-					let (Message{id, opcode, ..}, any_fd) = message(&*server.server.borrow());
+					let (Message{id, opcode, ..}, _any_fd) = message(&*server.server.borrow());
 					use Arg::*;
 					/**/ if id == registry.id && opcode == registry::global {
 						server.args({use Type::*; [UInt, String, UInt]});
