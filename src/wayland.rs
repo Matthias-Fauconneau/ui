@@ -128,7 +128,7 @@ impl Server {
 	pub(crate) fn globals<const M: usize, const N: usize>(&self, registry: &Registry, single_interfaces: [&'static str; M], multiple_interfaces: [&'static str; N]) -> ([u32; M], [Box<[u32]>; N]) {
 		let mut single = [0; M];
 		let mut multiple = [();N].map(|_| Vec::new());
-		while single.iter().any(|&id| id==0) || multiple.iter().any(|ids| ids.len()<1/*2*//*FIXME .is_empty()*/) {
+		while single.iter().any(|&id| id==0) || multiple.iter().any(|ids| ids.len()<2/*2*//*FIXME .is_empty()*/) {
 			let (Message{id, opcode, ..}, None) = message(&*self.server.borrow()) else {unreachable!()};
 			assert!(id == registry.id && opcode == registry::global);
 			use Arg::*;
@@ -293,6 +293,7 @@ pub(crate) mod pointer {
 	pub const frame: u16 = 5;
 	pub const axis_source: u16 = 6;
 	pub const axis_stop: u16 = 7;
+	pub const axis_value120: u16 =  9;
 	enum Requests { set_cursor }
 	use super::{Server, Arg::*, *};
 	pub struct Pointer<'t>{server: &'t Server, pub(crate) id: u32}

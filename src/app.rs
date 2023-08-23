@@ -111,7 +111,7 @@ impl App {
 			}
 		}
 		let mut windows = Vec::new();
-		windows.push(Surface::new(server, compositor, wm_base, title, Some(&outputs[0])));
+		windows.push(Surface::new(server, compositor, wm_base, title, Some(&outputs.last().unwrap())));
 
 		let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
 
@@ -190,7 +190,7 @@ impl App {
 					}
 					else if outputs.iter().any(|o| o.id == id) && opcode == output::mode {
 						let [_, UInt(x), UInt(y), _] = server.args({use Type::*; [UInt, UInt, UInt, UInt]}) else {unreachable!()};
-						configure_bounds = dbg!(xy{x,y});
+						configure_bounds = xy{x,y};
 						//if configure_bounds==(xy{x: 1920, y: 1080}) { windows.push(Surface::new(server, compositor, wm_base, title)); } // HACK: duplicate window if HMD is present
 					}
 					else if outputs.iter().any(|o| o.id == id) && opcode == output::scale {
@@ -271,7 +271,9 @@ impl App {
 					else if id == pointer.id && opcode == pointer::axis_stop {
 						server.args({use Type::*; [UInt,UInt]});
 					}
-					else if id == keyboard.id && opcode == keyboard::keymap {
+					else if id == pointer.id && opcode == pointer::axis_value120 {
+						server.args({use Type::*; [UInt]});
+					} else if id == keyboard.id && opcode == keyboard::keymap {
 						server.args({use Type::*; [UInt,UInt]});
 					}
 					else if id == keyboard.id && opcode == keyboard::repeat_info {
