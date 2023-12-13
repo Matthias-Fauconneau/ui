@@ -24,19 +24,21 @@ fn recvmsg(fd: impl rustix::fd::AsFd, buffer: &mut [u8], ancillary: &mut rustix:
 	bytes
 }
 
-pub(crate) fn message(fd: impl rustix::fd::AsFd) -> (Message, Option<std::os::fd::OwnedFd>) {
+pub(crate) fn message(fd: impl rustix::fd::AsFd) -> Option<(Message, Option<std::os::fd::OwnedFd>)> {
 	let mut ancillary : [u8; _]= [0; 32];
 	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	use rustix::net::RecvAncillaryMessage::ScmRights;
 	let mut buffer = [0; std::mem::size_of::<Message>()];
-	assert!(recvmsg(fd, &mut buffer, &mut ancillary) == buffer.len());
+	let len = recvmsg(fd, &mut buffer, &mut ancillary);
+	if len == 0 { return None; }
+	assert_eq!(len, buffer.len());
 	let message = *bytemuck::from_bytes(&buffer);
 	let any_fd = ancillary.drain().next().map(|msg| {
 		let ScmRights(mut fds) = msg else {unreachable!()};
 		fds.next().unwrap()
 	});
-	(message, any_fd)
+	Some((message, any_fd))
 }
 
 pub(crate) enum Type { UInt, Int, Array, String }
@@ -113,7 +115,7 @@ impl Server {
 			if let Err(e) = {let r = rustix::io::write(&*self.server.borrow(), &request); r} {
 				println!("Error: {e}");
 				loop {
-					let (Message{id, opcode, ..}, None) = message(&*self.server.borrow()) else {unreachable!()};
+					let Some((Message{id, opcode, ..}, None)) = message(&*self.server.borrow()) else {unreachable!()};
 					/**/ if id == 1 && opcode == display::error {
 						use Arg::*;
 						let [UInt(id), UInt(code), String(message)] = self.args({use Type::*; [UInt, UInt, String]}) else {unreachable!()};
@@ -129,7 +131,7 @@ impl Server {
 		let mut single = [0; M];
 		let mut multiple = [();N].map(|_| Vec::new());
 		while single.iter().any(|&id| id==0) || multiple.iter().any(|ids| ids.is_empty()) {
-			let (Message{id, opcode, ..}, None) = message(&*self.server.borrow()) else {unreachable!()};
+			let Some((Message{id, opcode, ..}, None)) = message(&*self.server.borrow()) else {unreachable!()};
 			assert!(id == registry.id && opcode == registry::global);
 			use Arg::*;
 			let args = {use Type::*; self.args([UInt, String, UInt])};
