@@ -33,8 +33,8 @@ cfg-if={version='*', optional=true}
 owning-ref={version='*', package='owning_ref', optional=true}
 bytemuck='*'
 
-num= {git='https://github.com/Matthias-Fauconneau/num'}
-vector= {git='https://github.com/Matthias-Fauconneau/vector'}
+num= {git='https://github.com/Matthias-Fauconneau/num',tag='0'}
+vector= {git='https://github.com/Matthias-Fauconneau/vector',tag='0'}
 trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 
 kurbo={version='*', optional=true}
@@ -45,7 +45,7 @@ rustix={version='*', features=['fs','mm','time','event','use-libc'], optional=tr
 nix={version='*', default-features = false, features = ['socket','uio'], optional=true}
 drm={version='*', optional=true}
 
-image={git='https://github.com/Matthias-Fauconneau/image'}
+image={git='https://github.com/Matthias-Fauconneau/image',tag='0'}
 text-size={version='*', optional=true}
 unicode-segmentation={version='*', optional=true}
 rustybuzz={version='*', optional=true}

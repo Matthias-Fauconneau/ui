@@ -30,7 +30,7 @@ pub(crate) fn message(fd: impl rustix::fd::AsFd) -> (Message, Option<std::os::fd
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	use rustix::net::RecvAncillaryMessage::ScmRights;
 	let mut buffer = [0; std::mem::size_of::<Message>()];
-	assert!(recvmsg(fd, &mut buffer, &mut ancillary) == buffer.len()); 
+	assert!(recvmsg(fd, &mut buffer, &mut ancillary) == buffer.len());
 	let message = *bytemuck::from_bytes(&buffer);
 	let any_fd = ancillary.drain().next().map(|msg| {
 		let ScmRights(mut fds) = msg else {unreachable!()};
@@ -78,7 +78,7 @@ impl Server {
 		rustix::net::connect_unix(&socket, &addr).unwrap();
 		Self{server: std::cell::RefCell::new(socket), last_id: std::sync::atomic::AtomicU32::new(2), names: std::sync::Mutex::new([(1,"display")].into())}
 	}
-	pub(crate) fn next_id(&self, name: &'static str) -> u32 { 
+	pub(crate) fn next_id(&self, name: &'static str) -> u32 {
 		let id = self.last_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 		self.names.lock().unwrap().push((id, name));
 		id
@@ -207,7 +207,7 @@ pub(crate) mod dmabuf {
 		impl<'t> From<(&'t Server, u32)> for Params<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 		impl Params<'_> {
 			pub fn destroy(&self) { self.server.request(self.id, Requests::destroy as u16, []) }
-			#[track_caller] pub fn add(&self, fd: rustix::fd::BorrowedFd, plane_index: u32, offset: u32, stride: u32, modifier_hi: u32, modifier_lo: u32) { self.server.sendmsg(self.id, Requests::add as u16, [UInt(plane_index),UInt(offset),UInt(stride),UInt(modifier_hi),UInt(modifier_lo)], Some(fd)) }
+			#[track_caller] pub fn add(&self, fd: impl std::os::fd::AsFd, plane_index: u32, offset: u32, stride: u32, modifier_hi: u32, modifier_lo: u32) { self.server.sendmsg(self.id, Requests::add as u16, [UInt(plane_index),UInt(offset),UInt(stride),UInt(modifier_hi),UInt(modifier_lo)], Some(fd.as_fd())) }
 			pub fn create_immed(&self, buffer: &Buffer, width: u32, height: u32, format_: u32, flags: u32) { self.server.request(self.id, Requests::create_immed as u16, [UInt(buffer.id), UInt(width),UInt(height),UInt(format_),UInt(flags)]) }
 		}
 	}

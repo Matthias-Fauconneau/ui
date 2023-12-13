@@ -23,10 +23,4 @@ mod app; pub use app::{App, run};
 #[cfg(feature="edit")] pub mod edit; //pub use edit::TextEdit;
 #[cfg(feature="plot")] pub mod plot; #[cfg(feature="plot")] pub use plot::{list, Plot};
 
-pub fn time<T>(id: &str, task: impl FnOnce() -> T) -> T {
-	let time = std::time::Instant::now();
-	let result = task();
-	eprintln!("{id}: {:?}", time.elapsed());
-	result
-}
-#[macro_export] macro_rules! time { ($arg:expr) => { $crate::time(stringify!($arg), || $arg) } }
+pub fn time<T>(task: impl FnOnce() -> T) -> (T, std::time::Duration) { let time = std::time::Instant::now(); (task(), time.elapsed()) }

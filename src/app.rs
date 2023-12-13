@@ -82,7 +82,7 @@ impl App {
 		let outputs = outputs.iter().map(|&id| Output{server, id}).collect::<Box<_>>();
 		let ref dmabuf = DMABuf{server, id: dmabuf};
 		let ref lease_device = LeaseDevice{server, id: lease_device};
-		
+
 		let ref pointer = server.new("pointer");
 		seat.get_pointer(pointer);
 		let ref keyboard = server.new("keyboard");
@@ -132,7 +132,7 @@ impl App {
 		let mut idle = std::time::Duration::ZERO;
 		let mut _last_done_timestamp = 0;
 		let ref lease_request : LeaseRequest = server.new("lease_request");
-		
+
 		loop {
 			let mut need_paint = widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Idle).unwrap(); // determines whether to wait for events
 			// ^ could also trigger eventfd instead
@@ -394,13 +394,12 @@ impl App {
 				}
 				dmabuf.create_params(params);
 				let modifiers = 0u64;
-				use rustix::fd::BorrowedFd;
-				params.add(unsafe{BorrowedFd::borrow_raw(drm.buffer_to_prime_fd(buffer.handle(), 0)?)}, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
+				params.add(drm.buffer_to_prime_fd(buffer.handle(), 0)?, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
 				params.create_immed(buffer_ref, buffer.size().0, buffer.size().1, buffer.format() as u32, 0);
 				params.destroy();
 				for window in &windows { window.surface.attach(&buffer_ref,0,0); }
 				buffer_ref.destroy();
-				for window in &mut windows { 
+				for window in &mut windows {
 					window.surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
 					window.done = false;
 					/*window.callback = {
