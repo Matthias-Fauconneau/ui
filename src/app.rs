@@ -364,7 +364,7 @@ impl App {
 						}
 						else if id == lease_device.id && opcode == drm_lease_device::released {
 						}
-						else { panic!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
+						else { println!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
 					} else { println!("No messages :("); }
 				}
 				else if events.len() > 2 && events[2] {
