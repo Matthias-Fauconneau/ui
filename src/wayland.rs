@@ -16,7 +16,7 @@ fn recvmsg(fd: impl rustix::fd::AsFd, buffer: &mut [u8], ancillary: &mut rustix:
 }
 
 #[track_caller] fn read(fd: impl rustix::fd::AsFd, buffer: &mut [u8]) -> usize {
-	let mut ancillary : [u8; _]= [0; 24];
+	let mut ancillary : [u8; _]= [0; 32];
 	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	let rustix::net::RecvMsgReturn{bytes, ..} = rustix::net::recvmsg(fd, &mut [rustix::io::IoSliceMut::new(buffer)], &mut ancillary, rustix::net::RecvFlags::empty()).unwrap();
@@ -25,7 +25,7 @@ fn recvmsg(fd: impl rustix::fd::AsFd, buffer: &mut [u8], ancillary: &mut rustix:
 }
 
 pub(crate) fn message(fd: impl rustix::fd::AsFd) -> (Message, Option<std::os::fd::OwnedFd>) {
-	let mut ancillary : [u8; _]= [0; 24];
+	let mut ancillary : [u8; _]= [0; 32];
 	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	use rustix::net::RecvAncillaryMessage::ScmRights;
@@ -41,7 +41,7 @@ pub(crate) fn message(fd: impl rustix::fd::AsFd) -> (Message, Option<std::os::fd
 
 pub(crate) enum Type { UInt, Int, Array, String }
 #[track_caller] fn args<const N: usize>(ref fd: impl rustix::fd::AsFd, types: [Type; N]) -> [Arg; N] { types.map(|r#type| {
-	let mut ancillary : [u8; _]= [0; 24];
+	let mut ancillary : [u8; _]= [0; 32];
 	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	let mut read = |buffer: &mut [u8]| recvmsg(fd, buffer, &mut ancillary);
@@ -104,7 +104,7 @@ impl Server {
 		if let Some(fd) = fd {
 			use rustix::net::SendAncillaryMessage::ScmRights;
 			let ref fds = [fd];
-			let mut buffer : [u8; _]= [0; 24];
+			let mut buffer : [u8; _]= [0; 32];
 			assert_eq!(buffer.len(), rustix::cmsg_space!(ScmRights(fds.len())));
 			let mut buffer = rustix::net::SendAncillaryBuffer::new(&mut buffer);
 			assert!(buffer.push(ScmRights(fds)));
@@ -128,7 +128,7 @@ impl Server {
 	pub(crate) fn globals<const M: usize, const N: usize>(&self, registry: &Registry, single_interfaces: [&'static str; M], multiple_interfaces: [&'static str; N]) -> ([u32; M], [Box<[u32]>; N]) {
 		let mut single = [0; M];
 		let mut multiple = [();N].map(|_| Vec::new());
-		while single.iter().any(|&id| id==0) || multiple.iter().any(|ids| ids.len()<2/*2*//*FIXME .is_empty()*/) {
+		while single.iter().any(|&id| id==0) || multiple.iter().any(|ids| ids.is_empty()) {
 			let (Message{id, opcode, ..}, None) = message(&*self.server.borrow()) else {unreachable!()};
 			assert!(id == registry.id && opcode == registry::global);
 			use Arg::*;
