@@ -378,6 +378,7 @@ impl App {
 				assert!(size.x > 0 && size.y > 0);
 				use ::drm::{control::Device as _, buffer::Buffer as _};
 				if buffer.is_some_and(|buffer: ::drm::control::dumbbuffer::DumbBuffer| {let (x, y) = buffer.size(); xy{x, y} != size}) { buffer = None; }
+				buffer = None; // Force not reusing buffer to avoid partial updates being presented (when compositor scans out while app is drawing) // FIXME TODO: proper double buffering
 				let mut buffer = buffer.get_or_insert_with(|| {
 					widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Stale).unwrap();
 					let mut buffer = drm.create_dumb_buffer(size.into(), ::drm::buffer::DrmFourcc::Xrgb8888 /*drm::buffer::DrmFourcc::Xrgb2101010*/, 32).unwrap();
