@@ -253,7 +253,7 @@ impl App {
 						else if id == pointer.id && opcode == pointer::button {
 							let [_,_,UInt(button),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
 							#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [0x110, 0x111];
-							let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(|| panic!("{:x}", button)) as u8;
+							let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(||{ println!("{:x}", button); usb_hid_buttons.len()}) as u8;
 							if state>0 { mouse_buttons |= 1<<button; } else { mouse_buttons &= !(1<<button); }
 							if widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
 								need_paint=true;
@@ -364,7 +364,7 @@ impl App {
 						}
 						else if id == lease_device.id && opcode == drm_lease_device::released {
 						}
-						else { println!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
+						else { /*println!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names);*/ }
 					} else { println!("No messages :("); }
 				}
 				else if events.len() > 2 && events[2] {
