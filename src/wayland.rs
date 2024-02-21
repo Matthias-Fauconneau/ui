@@ -30,8 +30,9 @@ pub(crate) fn message(fd: impl rustix::fd::AsFd) -> Option<(Message, Option<std:
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	use rustix::net::RecvAncillaryMessage::ScmRights;
 	let mut buffer = [0; std::mem::size_of::<Message>()];
-	let len = recvmsg(fd, &mut buffer, &mut ancillary);
+	let mut len = recvmsg(&fd, &mut buffer, &mut ancillary);
 	if len == 0 { return None; }
+	if len < buffer.len() { len += recvmsg(fd, &mut buffer[len..], &mut ancillary); }
 	assert_eq!(len, buffer.len());
 	let message = *bytemuck::from_bytes(&buffer);
 	let any_fd = ancillary.drain().next().map(|msg| {
