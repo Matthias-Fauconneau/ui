@@ -8,9 +8,9 @@ mod drm {
 	impl ::drm::control::Device for DRM {}
 }
 #[path="wayland.rs"] pub mod wayland;
-use {num::zero, vector::xy, crate::{prelude::*, widget::Widget, Event}};
+use {num::zero, vector::xy, crate::{prelude::*, Event}};
 use self::drm::DRM;
-use {num::IsZero, vector::int2, wayland::*, crate::{EventContext, background, ModifiersState}};
+use {num::IsZero, wayland::*, crate::{EventContext, background, ModifiersState}};
 
 pub struct Cursor<'t> {
 	name: &'static str,
@@ -93,7 +93,7 @@ impl App {
 			xdg_surface: XdgSurface<'t>,
 			toplevel: Toplevel<'t>,
 			can_paint: bool,
-			//callback : Option<Callback<'t>>,
+			callback : Option<Callback<'t>>,
 			done: bool,
 		}
 		impl<'t> Surface<'t> {
@@ -107,7 +107,7 @@ impl App {
 				toplevel.set_title(title);
 				if let Some(output) = fullscreen { toplevel.set_fullscreen(Some(output)); }
 				surface.commit();
-				Self{surface, xdg_surface, toplevel, can_paint: false, /*callback: None,*/ done: true}
+				Self{surface, xdg_surface, toplevel, can_paint: false, callback: None, done: true}
 			}
 		}
 		let mut windows = Vec::new();
@@ -119,7 +119,7 @@ impl App {
 		let ref buffer_ref : Buffer = server.new("buffer_ref");
 		let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
 
-		let mut buffer = None;
+		let mut buffer = [None; 3];
 		let mut scale_factor = 0;
 		let mut configure_bounds = zero();
 		let mut size = zero();
@@ -131,7 +131,7 @@ impl App {
 		let _start = std::time::Instant::now();
 		let mut idle = std::time::Duration::ZERO;
 		let mut _last_done_timestamp = 0;
-		let ref lease_request : LeaseRequest = server.new("lease_request");
+		//let ref lease_request : LeaseRequest = server.new("lease_request");
 
 		loop {
 			let mut need_paint = widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Idle).unwrap(); // determines whether to wait for events
@@ -168,8 +168,14 @@ impl App {
 						}
 						else if id == display.id && opcode == display::delete_id {
 							let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-							/*if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) { window.callback = None; } // Cannot reuse same id... :(
-							else*/ { // Reused immediately
+							//println!("delete_id {id}");
+							if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) {
+								window.done = true; // O_o
+								window.callback = None;
+								//server.last_id.compare_exchange(id, id-1, std::sync::atomic::Ordering::Relaxed, std::sync::atomic::Ordering::Relaxed).unwrap();
+								if server.last_id.load(std::sync::atomic::Ordering::SeqCst) == id+1 { server.last_id.store(id, std::sync::atomic::Ordering::SeqCst); }
+							}
+							else { // Reused immediately
 								assert!(id == params.id || id == buffer_ref.id, "{id}");
 							}
 						}
@@ -333,14 +339,14 @@ impl App {
 								} else { repeat = None; }
 							}
 						}
-						/*else if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) && opcode == callback::done {
+						else if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) && opcode == callback::done {
 							let [UInt(_timestamp_ms)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-							//println!("{}", _timestamp_ms-last_done_timestamp);
+							//println!("{}", _timestamp_ms-_last_done_timestamp);
 							_last_done_timestamp = _timestamp_ms;
 							window.done = true;
-							//println!("done {}", callback.id);
+							//println!("done {}", window.callback.as_ref().unwrap().id);
 							//println!("done");
-						}*/
+						}
 						/*else if let Some(pool) = &cursor.pool && id == pool.buffer.id && opcode == buffer::release {
 						}*/
 						else if windows.iter().any(|window| id == window.surface.id) && opcode == surface::enter {
@@ -355,11 +361,11 @@ impl App {
 						}
 						else if id == lease_device.id && opcode == drm_lease_device::drm_fd {
 						}
-						else if id == lease_device.id && opcode == drm_lease_device::connector {
+						/*else if id == lease_device.id && opcode == drm_lease_device::connector {
 							println!("connector");
 							let [UInt(_connector)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 							lease_device.create_lease_request(lease_request);
-						}
+						}*/
 						else if id == lease_device.id && opcode == drm_lease_device::done {
 						}
 						else if id == lease_device.id && opcode == drm_lease_device::released {
@@ -374,11 +380,13 @@ impl App {
 				}
 				else { break; }
 			} // event loop
-			if need_paint && windows.iter().any(|window|window.can_paint && window.done) {
+			if need_paint && windows.iter().all(|window|window.can_paint && window.done) {
 				assert!(size.x > 0 && size.y > 0);
 				use ::drm::{control::Device as _, buffer::Buffer as _};
-				if buffer.is_some_and(|buffer: ::drm::control::dumbbuffer::DumbBuffer| {let (x, y) = buffer.size(); xy{x, y} != size}) { buffer = None; }
-				buffer = None; // Force not reusing buffer to avoid partial updates being presented (when compositor scans out while app is drawing) // FIXME TODO: proper double buffering
+				buffer.rotate_left(1);
+				let ref mut buffer = buffer[0];
+				if buffer.is_some_and(|buffer: ::drm::control::dumbbuffer::DumbBuffer| {let (x, y) = buffer.size(); xy{x, y} != size}) { *buffer = None; }
+				//buffer = None; // Force not reusing buffer to avoid partial updates being presented (when compositor scans out while app is drawing) // FIXME TODO: proper double buffering
 				let mut buffer = buffer.get_or_insert_with(|| {
 					widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Stale).unwrap();
 					let mut buffer = drm.create_dumb_buffer(size.into(), ::drm::buffer::DrmFourcc::Xrgb8888 /*drm::buffer::DrmFourcc::Xrgb2101010*/, 32).unwrap();
@@ -406,11 +414,8 @@ impl App {
 				for window in &mut windows {
 					window.surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
 					window.done = false;
-					/*window.callback = {
-						let callback : Callback = server.new("callback");
-						window.surface.frame(&callback);
-						Some(callback)
-					};*/window.done = true;
+					let callback = window.callback.get_or_insert_with(|| server.new("callback"));
+					window.surface.frame(&callback);
 					window.surface.commit();
 				}
 			}

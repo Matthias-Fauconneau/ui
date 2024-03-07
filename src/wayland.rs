@@ -70,7 +70,7 @@ pub(crate) enum Type { UInt, Int, Array, String }
 
 pub struct Server {
 	pub(super) server: std::cell::RefCell<rustix::fd::OwnedFd>,
-	last_id: std::sync::atomic::AtomicU32,
+	pub(super) last_id: std::sync::atomic::AtomicU32,
 	pub(super) names: std::sync::Mutex<Vec<(u32, &'static str)>>,
 }
 
@@ -156,7 +156,7 @@ impl Server {
 pub(crate) mod display {
 	pub const error: u16 = 0; pub const delete_id: u16 = 1;
 	enum Requests { sync, get_registry }
-	use super::{Server, Arg::*, *};
+	use super::{Arg::*, *};
 	pub struct Display<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Display<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Display<'_> {
@@ -205,7 +205,7 @@ pub(crate) mod dmabuf {
 		pub const created: u16 = 0;
 		pub const failed: u16 = 1;
 		enum Requests { destroy, add, _create, create_immed }
-		use super::{Server, *};
+		use super::*;
 		pub struct Params<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
 		impl<'t> From<(&'t Server, u32)> for Params<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 		impl Params<'_> {
@@ -224,7 +224,7 @@ pub use self::dmabuf::DMABuf;
 // compositor: create_surface(surface)
 pub(crate) mod compositor {
 	enum Requests { create_surface }
-	use super::{Server, Arg::*, *};
+	use super::{Arg::*, *};
 	pub struct Compositor<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Compositor<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Compositor<'_> {
@@ -258,8 +258,8 @@ pub use callback::Callback;
 // surface: enter(output); attach(buffer, x, y), commit, set_buffer_scale(factor), damage_buffer(x,y,w,h); enter(output), leave(output)
 pub(crate) mod surface {
 	pub const enter: u16 = 0; pub const leave: u16 = 1;
-	enum Requests { destroy, attach, damage, frame, set_opaque_region, set_input_region, commit, set_buffer_transform, set_buffer_scale, damage_buffer }
-	use super::{Server, Arg::*, *};
+	enum Requests { destroy, attach, _damage, frame, set_opaque_region, set_input_region, commit, set_buffer_transform, set_buffer_scale, damage_buffer }
+	use super::{Arg::*, *};
 	pub struct Surface<'t>{server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Surface<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Surface<'_> {
@@ -276,7 +276,7 @@ pub use surface::Surface;
 pub(crate) mod seat {
 	pub const capabilities: u16 = 0; pub const name: u16 = 1;
 	enum Requests { get_pointer, get_keyboard }
-	use super::{Server, Arg::*, *};
+	use super::{Arg::*, *};
 	pub struct Seat<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Seat<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Seat<'_> {
@@ -298,7 +298,7 @@ pub(crate) mod pointer {
 	pub const axis_stop: u16 = 7;
 	pub const axis_value120: u16 =  9;
 	enum Requests { set_cursor }
-	use super::{Server, Arg::*, *};
+	use super::{Arg::*, *};
 	pub struct Pointer<'t>{server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Pointer<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Pointer<'_> {
@@ -322,7 +322,7 @@ pub use keyboard::Keyboard;
 pub(crate) mod wm_base {
 	pub const ping: u16 = 0;
 	enum Requests { destroy, create_positioner, get_xdg_surface, pong }
-	use super::{Server, Arg::*, *};
+	use super::{Arg::*, *};
 	pub struct WmBase<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for WmBase<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl WmBase<'_> {
@@ -338,7 +338,7 @@ pub use wm_base::WmBase;
 pub(crate) mod xdg_surface {
 	pub const configure: u16 = 0;
 	enum Requests { destroy, get_toplevel, get_popup, set_window_geometry, ack_configure }
-	use super::{Server, Arg::*, *};
+	use super::{Arg::*, *};
 	pub struct XdgSurface<'t>{server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for XdgSurface<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl XdgSurface<'_> {
@@ -352,7 +352,7 @@ pub use xdg_surface::XdgSurface;
 pub(crate) mod toplevel {
 	pub const configure: u16 = 0; pub const close: u16 = 1; pub const configure_bounds: u16 = 2;
 	enum Requests { destroy, set_parent, set_title, set_app_id, show_window_menu, _move, resize, set_max_size, set_min_size, set_maximized, unset_maximized, set_fullscreen }
-	use super::{Server, Arg::*, *};
+	use super::{Arg::*, *};
 	pub struct Toplevel<'t>{server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for Toplevel<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl Toplevel<'_> {
@@ -391,7 +391,7 @@ pub use drm_lease::Lease;
 // wp_drm_lease_request_v1: request_connector(connector), submit(lease)
 pub(crate) mod drm_lease_request {
 	enum Requests { request_connector, submit }
-	use super::{Server, Arg::*, *};
+	use super::{Arg::*, *};
 	pub struct LeaseRequest<'t>{server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for LeaseRequest<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl LeaseRequest<'_> {
@@ -405,7 +405,7 @@ pub use drm_lease_request::LeaseRequest;
 pub(crate) mod drm_lease_device {
 	pub const drm_fd: u16 = 0; pub const connector: u16 = 1; pub const done: u16 = 2; pub const released: u16 = 3;
 	enum Requests { create_lease_request, release }
-	use super::{Server, Arg::*, *};
+	use super::{Arg::*, *};
 	pub struct LeaseDevice<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
 	impl<'t> From<(&'t Server, u32)> for LeaseDevice<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 	impl LeaseDevice<'_> {
