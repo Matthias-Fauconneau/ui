@@ -10,7 +10,8 @@ mod drm {
 #[path="wayland.rs"] pub mod wayland;
 use {num::zero, vector::xy, crate::{prelude::*, Event}};
 use self::drm::DRM;
-use {num::IsZero, wayland::*, crate::{EventContext, background, ModifiersState}};
+use {num::IsZero, vector::int2, wayland::*, crate::{EventContext, ModifiersState}};
+#[cfg(feature="background")] use crate::background;
 
 pub struct Cursor<'t> {
 	name: &'static str,
@@ -224,13 +225,15 @@ impl App {
 							if size.is_zero() {
 								assert!(configure_bounds.x > 0 && configure_bounds.y > 0);
 								size = widget.size(configure_bounds);
-								#[cfg(feature="int_roundings")] { size = size.map(|x| x.next_multiple_of(3)); }
-								#[cfg(not(feature="int_roundings"))] { size = size.map(|x| x+2/3 ); }
+								#[cfg(all(feature="int_roundings",feature="generic_arg_infer"))] { size = size.map(|x| x.next_multiple_of(3)); }
+								#[cfg(any(not(feature="int_roundings"),not(feature="generic_arg_infer")))] { size = xy{x: (size.x+2)/3, y: (size.y+2)/3}; }
 								assert!(size.x % scale_factor == 0 && size.y % scale_factor == 0);
 							}
 							assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
 						}
-						else if let Some(window) = windows.iter_mut().find(|window| id == window.xdg_surface.id) && opcode == xdg_surface::configure {
+						//else if let Some(window) = windows.iter_mut().find(|window| id == window.xdg_surface.id) && opcode == xdg_surface::configure {
+						else if windows.iter().any(|window| id == window.xdg_surface.id) && opcode == xdg_surface::configure {
+							let window = windows.iter_mut().find(|window| id == window.xdg_surface.id).unwrap();
 							let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 							window.xdg_surface.ack_configure(serial);
 							window.can_paint = true;
@@ -390,11 +393,11 @@ impl App {
 				let mut buffer = buffer.get_or_insert_with(|| {
 					widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Stale).unwrap();
 					let mut buffer = drm.create_dumb_buffer(size.into(), ::drm::buffer::DrmFourcc::Xrgb8888 /*drm::buffer::DrmFourcc::Xrgb2101010*/, 32).unwrap();
-					{
+					/*{
 						let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
 						let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
 						image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride).fill(image::bgr8::from(background()).into());
-					}
+					}*/
 					buffer
 				});
 				{

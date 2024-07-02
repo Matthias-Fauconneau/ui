@@ -16,7 +16,7 @@ fn recvmsg(fd: impl rustix::fd::AsFd, buffer: &mut [u8], ancillary: &mut rustix:
 }
 
 #[track_caller] fn read(fd: impl rustix::fd::AsFd, buffer: &mut [u8]) -> usize {
-	let mut ancillary : [u8; _]= [0; 32];
+	let mut ancillary = [0; 32];
 	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	let rustix::net::RecvMsgReturn{bytes, ..} = rustix::net::recvmsg(fd, &mut [rustix::io::IoSliceMut::new(buffer)], &mut ancillary, rustix::net::RecvFlags::empty()).unwrap();
@@ -25,7 +25,7 @@ fn recvmsg(fd: impl rustix::fd::AsFd, buffer: &mut [u8], ancillary: &mut rustix:
 }
 
 pub(crate) fn message(fd: impl rustix::fd::AsFd) -> Option<(Message, Option<std::os::fd::OwnedFd>)> {
-	let mut ancillary : [u8; _]= [0; 32];
+	let mut ancillary = [0; 32];
 	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	use rustix::net::RecvAncillaryMessage::ScmRights;
@@ -44,7 +44,7 @@ pub(crate) fn message(fd: impl rustix::fd::AsFd) -> Option<(Message, Option<std:
 
 pub(crate) enum Type { UInt, Int, Array, String }
 #[track_caller] fn args<const N: usize>(ref fd: impl rustix::fd::AsFd, types: [Type; N]) -> [Arg; N] { types.map(|r#type| {
-	let mut ancillary : [u8; _]= [0; 32];
+	let mut ancillary = [0; 32];
 	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	let mut read = |buffer: &mut [u8]| recvmsg(fd, buffer, &mut ancillary);
@@ -107,7 +107,7 @@ impl Server {
 		if let Some(fd) = fd {
 			use rustix::net::SendAncillaryMessage::ScmRights;
 			let ref fds = [fd];
-			let mut buffer : [u8; _]= [0; 32];
+			let mut buffer = [0; 32];
 			assert_eq!(buffer.len(), rustix::cmsg_space!(ScmRights(fds.len())));
 			let mut buffer = rustix::net::SendAncillaryBuffer::new(&mut buffer);
 			assert!(buffer.push(ScmRights(fds)));

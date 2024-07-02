@@ -2,9 +2,10 @@
 #![cfg_attr(feature="int_roundings", feature(int_roundings))]
 #![cfg_attr(feature="array_methods", feature(array_methods))]
 #![cfg_attr(feature="array_windows", feature(array_windows))]
-#![cfg_attr(feature="wayland", feature(generic_arg_infer))]
+//#![cfg_attr(feature="wayland", feature(generic_arg_infer))]
 #![cfg_attr(feature="generators", feature(generators,iter_from_generator))]
-#![feature(let_chains)]
+//#![feature(let_chains)]
+
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T=(),E=Error> = std::result::Result<T, E>;
 #[cfg(feature="fehler")] pub use fehler::throws;
