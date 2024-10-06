@@ -1,6 +1,7 @@
-#![feature(let_chains)]
+/*#![feature(let_chains)]
 #![cfg_attr(feature="array_windows", feature(array_windows))]
 #![cfg_attr(feature="coroutines", feature(coroutines,iter_from_coroutine))]
+#![no_std] use origin_studio as std;
 
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T=(),E=Error> = std::result::Result<T, E>;
@@ -20,4 +21,4 @@ mod app; pub use app::{App, run};
 #[cfg(feature="edit")] pub mod edit; //pub use edit::TextEdit;
 #[cfg(feature="plot")] pub mod plot; #[cfg(feature="plot")] pub use plot::{list, Plot};
 
-pub fn time<T>(task: impl FnOnce() -> T) -> (T, std::time::Duration) { let time = std::time::Instant::now(); (task(), time.elapsed()) }
+pub fn time<T>(task: impl FnOnce() -> T) -> (T, std::time::Duration) { let time = std::time::Instant::now(); (task(), time.elapsed()) }*/

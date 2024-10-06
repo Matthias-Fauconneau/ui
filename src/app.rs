@@ -1,5 +1,5 @@
 #![allow(non_upper_case_globals)]
-mod drm {
+#[cfg(feature="drm")] mod drm {
 	pub struct DRM(std::fs::File);
 	impl DRM { pub fn new(path: &str) -> Self { Self(std::fs::OpenOptions::new().read(true).write(true).open(path).unwrap()) } }
 	impl std::os::fd::AsFd for DRM { fn as_fd(&self) -> std::os::fd::BorrowedFd { self.0.as_fd() } }
@@ -7,12 +7,13 @@ mod drm {
 	impl ::drm::Device for DRM {}
 	impl ::drm::control::Device for DRM {}
 }
-#[path="wayland.rs"] pub mod wayland;
+#[cfg(feature="wayland")] #[path="wayland.rs"] pub mod wayland;
+#[cfg(feature="wayland")] use wayland::*;
 use {num::zero, vector::xy, crate::{prelude::*, Event}};
-use self::drm::DRM;
-use {num::IsZero, vector::int2, wayland::*, crate::{EventContext, ModifiersState}};
+#[cfg(feature="drm")] use self::drm::DRM;
+use {num::IsZero, vector::int2, crate::{EventContext, ModifiersState}};
 
-pub struct Cursor<'t> {
+#[cfg(feature="wayland")] pub struct Cursor<'t> {
 	name: &'static str,
 	#[allow(dead_code)] pointer: &'t Pointer<'t>,
 	//#[allow(dead_code)] dmabuf: &'t DMABuf<'t>,
@@ -21,7 +22,7 @@ pub struct Cursor<'t> {
 	serial: u32,
 }
 
-impl Cursor<'_> {
+#[cfg(feature="wayland")]impl Cursor<'_> {
 	pub fn set(&mut self, name: &'static str) {
 		if self.name == name { return; }
 		#[cfg(feature="xcursor")] {
@@ -59,18 +60,126 @@ impl Cursor<'_> {
 			surface
 		});
 		surface.attach(&pool.buffer,0,0);
-        surface.commit();
+	surface.commit();
 		self.pointer.set_cursor(self.serial, surface, hot.x/scale_factor, hot.y/scale_factor);
 	}
 	#[cfg(not(feature="xcursor"))] unreachable!()
 	}
 }
 
-pub struct App(rustix::fd::OwnedFd);
+#[cfg(feature="wayland")] pub struct App(#[cfg(feature="rustix")]rustix::fd::OwnedFd);
+
+#[cfg(feature="softbuffer")] pub struct App {
+	window: std::rc::Rc<winit::window::Window>,
+	context: softbuffer::Context,
+	surface: softbuffer::Surface,
+}
+#[cfg(feature="softbuffer")] impl winit::application::ApplicationHandler for Option<App> {
+	fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+		let window = std::rc::Rc::new(event_loop.create_window(Default::default()).unwrap());
+		let context = softbuffer::Context::new(&window.clone()).unwrap();
+		*self = Some(App{surface: softbuffer::Surface::new(&context, &window.clone()).unwrap(), window});
+	}
+	fn suspended(&mut self, _: &winit::event_loop::ActiveEventLoop) {}
+	fn window_event(&mut self, _: &winit::event_loop::ActiveEventLoop, _: winit::window::WindowId, _: winit::event::WindowEvent) {}
+	fn about_to_wait(&mut self, _: &winit::event_loop::ActiveEventLoop) {}
+}
 impl App {
-	pub fn new() -> Result<Self> { Ok(Self(#[cfg(feature="rustix")] rustix::event::eventfd(0, rustix::event::EventfdFlags::empty())?)) }
-	pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
-	pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result {
+	#[cfg(feature="wayland")] pub fn new() -> Result<Self> { Ok(Self(#[cfg(feature="rustix")] rustix::event::eventfd(0, rustix::event::EventfdFlags::empty())?)) }
+	#[cfg(feature="rustix")] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
+	#[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result {
+  		let event_loop = winit::event_loop::EventLoop::new().unwrap();
+    	
+        /*.with_event_handler(|_, event, event_loop| {
+        	//event_loop.set_control_flow(ControlFlow::Wait);
+        	match event {
+            //Event::WindowEvent{event: WindowEvent::Resized(size: {width, height}), ..} => surface.resize(width, height).unwrap(),
+            Event::WindowEvent{event: WindowEvent::RedrawRequested, ..} => {
+                let size = window.inner_size();
+                let mut buffer = surface.buffer_mut().unwrap();
+                buffer.present().unwrap();
+            }
+            Event::WindowEvent{event: WindowEvent::CloseRequested|WindowEvent::KeyboardInput{event: KeyEvent{logical_key: Key::Named(NamedKey::Escape), ..}, ..}, ..} => event_loop.exit(),
+            _ => {}
+        }*/
+		/*//use winit::{event::{self, Event::*, WindowEvent::*, ElementState}, event_loop::{ControlFlow, EventLoop}};
+		let mut event_loop = EventLoop::new();
+		//let mut window = WindowBuilder::new().with_inner_size(winit::dpi::PhysicalSize::<u32>::from(<(_,_)>::from(widget.size(xy{x: 3840, y: 2160})))).with_title(title).build(&event_loop)?;
+		let near_eye = event_loop.available_monitors().find(|o| o.size()==[1920,1080].into()).map(|near_eye| WindowBuilder::new().with_fullscreen(Some(Fullscreen::Borderless(Some(near_eye)))).with_title(title).build(&event_loop).unwrap()); // HACK
+		let mirror = Some(WindowBuilder::new().with_title(title).build(&event_loop).unwrap());
+		let mut windows = [near_eye, mirror].into_iter().filter_map(|w| w).map(|window| {
+			let context = unsafe{softbuffer::Context::new(&window)}.unwrap();
+			let surface = unsafe{softbuffer::Surface::new(&context, &window)}.unwrap();
+			(window, context, surface)
+		}).collect::<Box<_>>();
+		let mut mirror : Option<Box<[u32]>> = None;
+		use winit::platform::run_return::EventLoopExtRunReturn;
+		event_loop.run_return(move |event, _, control_flow| match event {
+			WindowEvent {event: ScaleFactorChanged{..}, window_id} | RedrawRequested(window_id) => {
+				let windows_len = windows.len();
+				let (ref mut window, _, surface) = windows.iter_mut().find(|(window,_,_)| window_id == window.id()).unwrap();
+				let size = {let size = window.inner_size(); xy{x: size.width, y: size.height}};
+				if let Some(mirror) = mirror.as_mut() {
+					surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
+					let mut buffer = surface.buffer_mut().unwrap();
+					//assert_eq!(buffer.stride, mirror.stride);
+					if buffer.len() == mirror.len() { buffer.copy_from_slice(&*mirror); } // WORKAROUND: winit starts with wrong scale factors / buffer sizes
+					buffer.present().unwrap();
+				}
+				mirror = None; // FIXME: generalize to >2 windows
+				widget.event(size, window, &Event::Stale).unwrap();
+				surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
+				let mut buffer = surface.buffer_mut().unwrap();
+				let mut target = image::Image::new::<u32>(size, &mut *buffer);
+				target.fill(image::bgr8::from(crate::background()).into());
+				widget.paint(&mut target, size, zero()).unwrap();
+				if mirror.is_none() && windows_len>1 { mirror = Some(Box::<[u32]>::from(&*buffer)) }
+				buffer.present().unwrap();
+			}
+			WindowEvent{event: CloseRequested, ..} => *control_flow = ControlFlow::Exit,
+			WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(VirtualKeyCode::Escape), ..},..},..} => *control_flow = ControlFlow::Exit,
+			MainEventsCleared => if widget.event({let size = windows[0].0.inner_size(); xy{x: size.width, y: size.height}}, &mut windows[0].0, &Event::Idle).unwrap() {
+				for (window,_,_) in windows.iter() { window.request_redraw(); }
+			},
+			WindowEvent{event:KeyboardInput{input:event::KeyboardInput{virtual_keycode:Some(key), state:ElementState::Pressed, ..},..},..} =>
+				if widget.event({let size = windows[0].0.inner_size(); xy{x: size.width, y: size.height}}, &mut windows[0].0, &Event::Key(match key {
+					VirtualKeyCode::Space => ' ',
+					VirtualKeyCode::Return => '\n',
+					VirtualKeyCode::A => 'a',
+					VirtualKeyCode::B => 'b',
+					VirtualKeyCode::C => 'c',
+					VirtualKeyCode::D => 'd',
+					VirtualKeyCode::E => 'e',
+					VirtualKeyCode::F => 'f',
+					VirtualKeyCode::G => 'g',
+					VirtualKeyCode::H => 'h',
+					VirtualKeyCode::I => 'i',
+					VirtualKeyCode::J => 'j',
+					VirtualKeyCode::K => 'k',
+					VirtualKeyCode::L => 'l',
+					VirtualKeyCode::M => 'm',
+					VirtualKeyCode::N => 'n',
+					VirtualKeyCode::O => 'o',
+					VirtualKeyCode::P => 'p',
+					VirtualKeyCode::Q => 'q',
+					VirtualKeyCode::R => 'r',
+					VirtualKeyCode::S => 's',
+					VirtualKeyCode::T => 't',
+					VirtualKeyCode::U => 'u',
+					VirtualKeyCode::V => 'v',
+					VirtualKeyCode::W => 'w',
+					VirtualKeyCode::X => 'x',
+					VirtualKeyCode::Y => 'y',
+					VirtualKeyCode::Z => 'z',
+					VirtualKeyCode::F12 => '\u{F70C}',
+					VirtualKeyCode::Back => '⌫',
+					_ => return if false {println!("{key:?}");} else {}
+				})).unwrap() { for (window,_,_) in windows.iter() { window.request_redraw(); } },
+			_ => {}
+		});*/
+		Ok(())
+	}
+	#[cfg(not(feature="softbuffer"))] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result {
 		let ref server = Server::connect();
 		let display = Display{server, id: 1};
 		let ref registry = server.new("registry");
@@ -112,13 +221,13 @@ impl App {
 		}
 		let mut window = Surface::new(server, compositor, wm_base, title, Some(&outputs.last().unwrap()));
 
-		let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
+		#[cfg(feature="drm")] let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
 
 		let ref params : dmabuf::Params = server.new("params");
 		let ref buffer_ref : Buffer = server.new("buffer_ref");
 		let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
 
-		let mut buffer = [None; 3];
+		#[cfg(feature="drm")] let mut buffer = [None; 3];
 		let mut scale_factor = 0;
 		let mut configure_bounds = zero();
 		let mut size = zero();
@@ -375,7 +484,7 @@ impl App {
 				}
 				else { break; }
 			} // event loop
-			if need_paint && size.x > 0 && size.y > 0 {
+			#[cfg(feature="drm")] if need_paint && size.x > 0 && size.y > 0 {
 				use ::drm::{control::Device as _, buffer::Buffer as _};
 				buffer.rotate_left(1);
 				let ref mut buffer = buffer[0];
@@ -415,4 +524,4 @@ impl App {
 	}
 }
 impl Default for App { fn default() -> Self { Self::new().unwrap() } }
-pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result { App::new()?.run(title, widget) }
+pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {  trace::timeout(1, || App::new()?.run(title, widget)) }
