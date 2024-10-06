@@ -47,7 +47,7 @@ impl ttf_parser::OutlineBuilder for Outline<'_> {
 pub fn rasterize(face: &Face, scale: Ratio, id: GlyphId, bbox: Rect) -> Image<Box<[f32]>> {
 	let x_min = scale.ifloor(bbox.min.x)-1; // Correct rasterization with f32 roundoff without bound checking
 	let y_max = scale.iceil(bbox.max.y as i32);
-	let size = scale*face.bbox(id).unwrap().size()+xy{x:2, y:1};
+	let size = scale*face.bbox(id).unwrap().size().unsigned()+xy{x:2, y:1};
 	let mut target = Image::new(size, Box::from_iter(std::iter::repeat(0.).take((size.y*size.x+1) as usize)));
 	face.outline_glyph(id, &mut Outline{scale: scale.into(), x_min: x_min as f32, y_max: y_max as f32, target: &mut target.as_mut(), first:None, p0:None}).unwrap();
 	raster::fill(&target.as_ref())

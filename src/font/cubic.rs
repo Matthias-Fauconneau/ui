@@ -1,7 +1,6 @@
 use vector::vec2;
 
 #[cfg(feature="kurbo")]
-
 pub fn cubic(p0: vec2, p1: vec2, p2: vec2, p3: vec2, mut line_to: impl FnMut(vec2)) {
 	use kurbo::PathEl::*;
 	fn point(vec2{x,y}: vec2) -> kurbo::Point { kurbo::Point{x: x as f64, y: y as f64} }

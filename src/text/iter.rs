@@ -13,11 +13,11 @@ impl<'t, I:Iterator, P: Fn(&<I as Iterator>::Item) -> bool> Iterator for Peeking
     }
 }
 
-pub trait PeekableExt<'t, I:Iterator> : Iterator {
-    #[must_use] fn peeking_take_while<P:Fn(&<Self as Iterator>::Item) -> bool>(&'t mut self, predicate: P) -> PeekingTakeWhile<'t, I, P>;
+pub trait PeekableExt<I:Iterator> : Iterator {
+    #[must_use] fn peeking_take_while<P:Fn(&<Self as Iterator>::Item) -> bool>(&mut self, predicate: P) -> PeekingTakeWhile<'_, I, P>;
 }
-impl<'t, I:Iterator> PeekableExt<'t, I> for std::iter::Peekable<I> {
-    fn peeking_take_while<P:Fn(&<Self as Iterator>::Item) -> bool>(&'t mut self, predicate: P) -> PeekingTakeWhile<I, P> { PeekingTakeWhile{iter: self, predicate} }
+impl<I:Iterator> PeekableExt<I> for std::iter::Peekable<I> {
+    fn peeking_take_while<P:Fn(&<Self as Iterator>::Item) -> bool>(&mut self, predicate: P) -> PeekingTakeWhile<I, P> { PeekingTakeWhile{iter: self, predicate} }
 }
 
 pub trait Single: Iterator+Sized { fn single(mut self) -> Option<Self::Item> { self.next().filter(|_| self.next().is_none()) } }

@@ -35,9 +35,9 @@ impl Graphic<'_> {
 	}
 	pub fn bounds(&self) -> Rect {
 		use {vector::MinMax, num::Option};
-		self.rects.iter().map(|(r,_)| MinMax{min: r.min, max: r.min.zip(r.max).map(|(min,max)| if max < i32::MAX as _ { max } else { min })})
+		self.rects.iter().map(|(r,_)| MinMax{min: r.min, max: r.min.zip(r.max).map(|(min,max)| if max < i32::MAX as _ { max } else { min }).collect()})
 		.chain( self.parallelograms.iter().map(|p| MinMax{min: p.top_left, max: p.bottom_right}) )
-		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + g.face.bbox(g.id).unwrap().size().signed()}) )
+		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + g.face.bbox(g.id).unwrap().size()}) )
 		.reduce(MinMax::minmax)
 		.map(|MinMax{min, max}| Rect{min: min, max: max})
 		.unwrap_or_zero()
@@ -55,7 +55,7 @@ pub struct View<'t> { graphic: Graphic<'t>, view: Rect }
 impl<'t> View<'t> { pub fn new(graphic: Graphic<'t>) -> Self { Self{view: graphic.bounds(), graphic} } }
 
 impl widget::Widget for View<'_> {
-    fn size(&mut self, _: size) -> size { ceil(self.graphic.scale, self.view.size()) }
+    fn size(&mut self, _: size) -> size { ceil(self.graphic.scale, self.view.size().unsigned()) }
     #[throws] fn paint(&mut self, target: &mut Target, size: size, _offset: int2) {
 		let Self{graphic: Graphic{scale, rects, parallelograms, glyphs}, view: Rect{min, ..}} = &self;
 

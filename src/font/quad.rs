@@ -8,6 +8,7 @@ pub fn quad(p0: vec2, p1: vec2, p2: vec2, mut line_to: impl FnMut(vec2)) {
 	kurbo::flatten([MoveTo(p0),QuadTo(p1,p2)], 1./4., |e| if let LineTo(kurbo::Point{x,y}) = e { line_to(vec2{x: x as f32, y: y as f32}); } /*Ignore first MoveTo*/)
 }
 
+#[cfg(not(feature="kurbo"))] pub struct Quad {pub p0: vec2, pub p1: vec2, pub p2: vec2}
 #[cfg(not(feature="kurbo"))]
 pub fn quad(p0: vec2, p1: vec2, p2: vec2, mut line_to: impl FnMut(vec2)) {
     use vector::{dot, cross, norm};
@@ -41,8 +42,6 @@ pub fn quad(p0: vec2, p1: vec2, p2: vec2, mut line_to: impl FnMut(vec2)) {
             (u - self.u0) * self.uscale
         }
     }
-
-    pub struct Quad {pub p0: vec2, pub p1: vec2, pub p2: vec2}
 
     impl Quad {
         fn eval(&self, t: f32) -> vec2 {

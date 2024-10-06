@@ -250,11 +250,11 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					if true { // Interpolate in compressed instead of linear domain (approximation but avoid EOTF+OETF transfer function evaluation)
 						if color == crate::white {
 							let white = u32::from(crate::white);
-							target.slice_mut(target_offset, size).each_mut_zip_map(&coverage_sRGB8.slice(source_offset.unsigned(), size),
+							target.slice_mut(target_offset, size).zip_map(&coverage_sRGB8.slice(source_offset.unsigned(), size),
 								|target, &t| match t {
-									0 => {},
-									0xFF => *target = white,
-									_ => *target = image::bgr8::from(*target).map(|target| {
+									0 => *target,
+									0xFF => white,
+									_ => image::bgr8::from(*target).map(|target| {
 										// using sRGB gamma compressed value as linear interpolation coefficient.
 										// Corrects interpolation for black background case (same as linear coefficient with linear domain points)
 										((255-t) as u16*(target as u16)/255) as u8 + t

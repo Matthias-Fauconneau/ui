@@ -11,7 +11,6 @@ mod drm {
 use {num::zero, vector::xy, crate::{prelude::*, Event}};
 use self::drm::DRM;
 use {num::IsZero, vector::int2, wayland::*, crate::{EventContext, ModifiersState}};
-#[cfg(feature="background")] use crate::background;
 
 pub struct Cursor<'t> {
 	name: &'static str,
@@ -111,8 +110,7 @@ impl App {
 				Self{surface, xdg_surface, toplevel, can_paint: false, callback: None, done: true}
 			}
 		}
-		let mut windows = Vec::new();
-		windows.push(Surface::new(server, compositor, wm_base, title, Some(&outputs.last().unwrap())));
+		let mut window = Surface::new(server, compositor, wm_base, title, Some(&outputs.last().unwrap()));
 
 		let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
 
@@ -135,7 +133,7 @@ impl App {
 		//let ref lease_request : LeaseRequest = server.new("lease_request");
 
 		loop {
-			let mut need_paint = widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Idle).unwrap(); // determines whether to wait for events
+			let mut need_paint = widget.event(size, &mut EventContext{toplevel: &window.toplevel, modifiers_state, cursor}, &Event::Idle).unwrap(); // determines whether to wait for events
 			// ^ could also trigger eventfd instead
 			loop {
 				let events = {
@@ -149,13 +147,13 @@ impl App {
 						fds.push(PollFd::new(&timerfd, PollFlags::IN));
 					}
 					let time = std::time::Instant::now();
-					rustix::event::poll(fds, if windows.iter().any(|window| window.can_paint && window.done) && need_paint {0} else {-1})?;
+					rustix::event::poll(fds, if window.can_paint && window.done && need_paint {0} else {-1})?;
 					idle += time.elapsed();
 					fds.iter().map(|fd| fd.revents().contains(PollFlags::IN)).collect::<Box<_>>()
 				};
 				if events[0] {
 					assert!({let mut buf = [0; 8]; assert!(rustix::io::read(&self.0, &mut buf)? == buf.len()); let trigger_count = u64::from_ne_bytes(buf); trigger_count == 1});
-					need_paint = widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Trigger).unwrap(); // determines whether to wait for events
+					need_paint = widget.event(size, &mut EventContext{toplevel: &window.toplevel, modifiers_state, cursor}, &Event::Trigger).unwrap(); // determines whether to wait for events
 				} else if events[1] {
 					//println!("events[1] {}", events[1]);
 					if let Some((Message{id, opcode, ..}, _any_fd)) = message(&*server.server.borrow()) {
@@ -170,7 +168,7 @@ impl App {
 						else if id == display.id && opcode == display::delete_id {
 							let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 							//println!("delete_id {id}");
-							if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) {
+							if window.callback.as_ref().is_some_and(|callback| id == callback.id) {
 								window.done = true; // O_o
 								window.callback = None;
 								//server.last_id.compare_exchange(id, id-1, std::sync::atomic::Ordering::Relaxed, std::sync::atomic::Ordering::Relaxed).unwrap();
@@ -200,12 +198,11 @@ impl App {
 						else if outputs.iter().any(|o| o.id == id) && opcode == output::mode {
 							let [_, UInt(x), UInt(y), _] = server.args({use Type::*; [UInt, UInt, UInt, UInt]}) else {unreachable!()};
 							configure_bounds = xy{x,y};
-							//if configure_bounds==(xy{x: 1920, y: 1080}) { windows.push(Surface::new(server, compositor, wm_base, title)); } // HACK: duplicate window if HMD is present
 						}
 						else if outputs.iter().any(|o| o.id == id) && opcode == output::scale {
 							let [UInt(factor)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 							scale_factor = factor;
-							windows[0].surface.set_buffer_scale(scale_factor);
+							window.surface.set_buffer_scale(scale_factor);
 						}
 						else if outputs.iter().any(|o| o.id == id) && opcode == output::name {
 							server.args({use Type::*; [String]});
@@ -215,34 +212,29 @@ impl App {
 						}
 						else if outputs.iter().any(|o| o.id == id) && opcode == output::done {
 						}
-						else if windows.iter().any(|window| id == window.toplevel.id) && opcode == toplevel::configure_bounds {
+						else if id == window.toplevel.id && opcode == toplevel::configure_bounds {
 							let [UInt(_width),UInt(_height)] = server.args({use Type::*; [UInt,UInt]}) else {unreachable!()};
 						}
-						else if windows.iter().any(|window| id == window.toplevel.id) && opcode == toplevel::configure {
+						else if id == window.toplevel.id && opcode == toplevel::configure {
 							let [UInt(x),UInt(y),_] = server.args({use Type::*; [UInt,UInt,Array]}) else {unreachable!()};
 							//buffer = None;
 							size = xy{x: x*scale_factor, y: y*scale_factor};
 							if size.is_zero() {
 								assert!(configure_bounds.x > 0 && configure_bounds.y > 0);
-								size = widget.size(configure_bounds);
-								#[cfg(all(feature="int_roundings",feature="generic_arg_infer"))] { size = size.map(|x| x.next_multiple_of(3)); }
-								#[cfg(any(not(feature="int_roundings"),not(feature="generic_arg_infer")))] { size = xy{x: (size.x+2)/3, y: (size.y+2)/3}; }
-								assert!(size.x % scale_factor == 0 && size.y % scale_factor == 0);
+								size = widget.size(configure_bounds).map(|x| x.next_multiple_of(scale_factor));
 							}
 							assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
 						}
-						//else if let Some(window) = windows.iter_mut().find(|window| id == window.xdg_surface.id) && opcode == xdg_surface::configure {
-						else if windows.iter().any(|window| id == window.xdg_surface.id) && opcode == xdg_surface::configure {
-							let window = windows.iter_mut().find(|window| id == window.xdg_surface.id).unwrap();
+						else if id == window.xdg_surface.id && opcode == xdg_surface::configure {
 							let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 							window.xdg_surface.ack_configure(serial);
 							window.can_paint = true;
 							need_paint = true;
 						}
-						else if windows.iter().any(|window| id == window.surface.id) && opcode == surface::enter {
+						else if id == window.surface.id && opcode == surface::enter {
 							let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						}
-						else if windows.iter().any(|window| id == window.surface.id) && opcode == surface::leave {
+						else if id == window.surface.id && opcode == surface::leave {
 							let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						}
 						else if id == buffer_ref.id && opcode == buffer::release {}
@@ -257,21 +249,21 @@ impl App {
 						else if id == pointer.id && opcode == pointer::motion {
 							let [_,Int(x),Int(y)] = server.args({use Type::*; [UInt,Int,Int]}) else {unreachable!()};
 							pointer_position = xy{x: x*scale_factor as i32/256,y: y*scale_factor as i32/256};
-							if widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Motion{position: pointer_position, mouse_buttons})? { need_paint=true }
+							if widget.event(size, &mut EventContext{toplevel: &window.toplevel, modifiers_state, cursor}, &Event::Motion{position: pointer_position, mouse_buttons})? { need_paint=true }
 						}
 						else if id == pointer.id && opcode == pointer::button {
 							let [_,_,UInt(button),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
 							#[allow(non_upper_case_globals)] const usb_hid_buttons: [u32; 2] = [0x110, 0x111];
 							let button = usb_hid_buttons.iter().position(|&b| b == button).unwrap_or_else(||{ println!("{:x}", button); usb_hid_buttons.len()}) as u8;
 							if state>0 { mouse_buttons |= 1<<button; } else { mouse_buttons &= !(1<<button); }
-							if widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
+							if widget.event(size, &mut EventContext{toplevel: &window.toplevel, modifiers_state, cursor}, &Event::Button{position: pointer_position, button: button as u8, state: state as u8})? {
 								need_paint=true;
 							}
 						}
 						else if id == pointer.id && opcode == pointer::axis {
 							let [_,UInt(axis),Int(value)] = server.args({use Type::*; [UInt,UInt,Int]}) else {unreachable!()};
 							if axis != 0 { continue; }
-							if widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Scroll(value*scale_factor as i32/256))? { need_paint=true; }
+							if widget.event(size, &mut EventContext{toplevel: &window.toplevel, modifiers_state, cursor}, &Event::Scroll(value*scale_factor as i32/256))? { need_paint=true; }
 						}
 						else if id == pointer.id && opcode == pointer::frame {
 							server.args([]);
@@ -334,7 +326,7 @@ impl App {
 									'�',',','�','�','¥','◆','◆','⎄'][key as usize];
 								if state > 0 {
 									if key == '⎋' { return Ok(()); }
-									if widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Key(key))? { need_paint=true; }
+									if widget.event(size, &mut EventContext{toplevel: &window.toplevel, modifiers_state, cursor}, &Event::Key(key))? { need_paint=true; }
 									let rustix::time::Timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
 									let base = tv_sec as u64*1000+tv_nsec as u64/1000000;
 									//let time = base&0xFFFFFFFF_00000000 + key_time as u64;
@@ -342,7 +334,7 @@ impl App {
 								} else { repeat = None; }
 							}
 						}
-						else if let Some(window) = windows.iter_mut().find(|window| window.callback.as_ref().is_some_and(|callback| id == callback.id)) && opcode == callback::done {
+						else if window.callback.as_ref().is_some_and(|callback| id == callback.id) && opcode == callback::done {
 							let [UInt(_timestamp_ms)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 							//println!("{}", _timestamp_ms-_last_done_timestamp);
 							_last_done_timestamp = _timestamp_ms;
@@ -352,13 +344,13 @@ impl App {
 						}
 						/*else if let Some(pool) = &cursor.pool && id == pool.buffer.id && opcode == buffer::release {
 						}*/
-						else if windows.iter().any(|window| id == window.surface.id) && opcode == surface::enter {
+						else if id == window.surface.id && opcode == surface::enter {
 							let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						}
-						else if windows.iter().any(|window| id == window.surface.id) && opcode == surface::leave {
+						else if id == window.surface.id && opcode == surface::leave {
 							let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						}
-						else if windows.iter().any(|window| id == window.surface.id) && opcode == toplevel::close {
+						else if id == window.surface.id && opcode == toplevel::close {
 							//println!("close");
 							return Ok(());
 						}
@@ -378,26 +370,25 @@ impl App {
 				}
 				else if events.len() > 2 && events[2] {
 					let (msec, key) = repeat.unwrap();
-					if widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Key(key))? { need_paint=true; }
+					if widget.event(size, &mut EventContext{toplevel: &window.toplevel, modifiers_state, cursor}, &Event::Key(key))? { need_paint=true; }
 					repeat = Some((msec+33, key));
 				}
 				else { break; }
 			} // event loop
-			if need_paint && windows.iter().all(|window|window.can_paint && window.done) {
-				assert!(size.x > 0 && size.y > 0);
+			if need_paint && size.x > 0 && size.y > 0 {
 				use ::drm::{control::Device as _, buffer::Buffer as _};
 				buffer.rotate_left(1);
 				let ref mut buffer = buffer[0];
 				if buffer.is_some_and(|buffer: ::drm::control::dumbbuffer::DumbBuffer| {let (x, y) = buffer.size(); xy{x, y} != size}) { *buffer = None; }
 				//buffer = None; // Force not reusing buffer to avoid partial updates being presented (when compositor scans out while app is drawing) // FIXME TODO: proper double buffering
 				let mut buffer = buffer.get_or_insert_with(|| {
-					widget.event(size, &mut EventContext{toplevel: &windows[0].toplevel, modifiers_state, cursor}, &Event::Stale).unwrap();
+					widget.event(size, &mut EventContext{toplevel: &window.toplevel, modifiers_state, cursor}, &Event::Stale).unwrap();
 					let mut buffer = drm.create_dumb_buffer(size.into(), ::drm::buffer::DrmFourcc::Xrgb8888 /*drm::buffer::DrmFourcc::Xrgb2101010*/, 32).unwrap();
-					/*{
+					#[cfg(feature="background")] {
 						let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
 						let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
-						image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride).fill(image::bgr8::from(background()).into());
-					}*/
+						image::fill(&mut image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride), image::bgr8::from(crate::background()).into());
+					}
 					buffer
 				});
 				{
@@ -412,15 +403,13 @@ impl App {
 				params.add(drm.buffer_to_prime_fd(buffer.handle(), 0)?, 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
 				params.create_immed(buffer_ref, buffer.size().0, buffer.size().1, buffer.format() as u32, 0);
 				params.destroy();
-				for window in &windows { window.surface.attach(&buffer_ref,0,0); }
+				window.surface.attach(&buffer_ref,0,0);
 				buffer_ref.destroy();
-				for window in &mut windows {
-					window.surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
-					window.done = false;
-					let callback = window.callback.get_or_insert_with(|| server.new("callback"));
-					window.surface.frame(&callback);
-					window.surface.commit();
-				}
+				window.surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
+				window.done = false;
+				let callback = window.callback.get_or_insert_with(|| server.new("callback"));
+				window.surface.frame(&callback);
+				window.surface.commit();
 			}
 		} // idle-event loop
 	}

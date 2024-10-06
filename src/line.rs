@@ -1,4 +1,5 @@
-use {num::{abs, fract}, vector::{xy,uint2,size,vec2}, image::{Image, bgrf}};
+use {num::{abs, fract}, vector::{xy,uint2,size,vec2}, image::{Image, bgrf, bgr8}};
+
 pub fn generate_line(size: size, p: [vec2; 2]) -> impl Iterator<Item=(uint2, uint2, f32, f32)> {
 	let d = p[1] - p[0];
 	let (transpose, p0, p1, d) = if abs(d.x) < abs(d.y) { (true, p[0].yx(), p[1].yx(), d.yx()) } else { (false, p[0], p[1], d) };
@@ -6,7 +7,7 @@ pub fn generate_line(size: size, p: [vec2; 2]) -> impl Iterator<Item=(uint2, uin
 	let (p0, p1) = if p0.x > p1.x { (p1, p0) } else { (p0, p1) };
 	let gradient = d.y / d.x;
 	let f = move |x: u32, y: u32, cx: f32, cy: f32| if transpose { (xy{x: y, y: x}, xy{x: y+1, y: x}, cx, cy) } else { (xy{x,y},xy{x,y:y+1}, cx, cy) };
-	std::iter::from_generator(move || {
+	std::iter::from_coroutine(#[coroutine] move || {
 		let (i0, intery) = {
 			let xend = f32::round(p0.x);
 			let yend = p0.y + gradient * (xend - p0.x);
@@ -32,7 +33,10 @@ pub fn generate_line(size: size, p: [vec2; 2]) -> impl Iterator<Item=(uint2, uin
 		yield f(xend as u32, yend as u32, xgap, fract_yend);
 	})
 }
-fn blend(eotf: &[f32; 256], oetf: &[u8; 0x1000], target: &mut Image<&mut[u32]>, color: bgrf, p: uint2, coverage: f32) { if p < target.size { target[p] = image::lerp/*PQ10(PQ10⁻¹)*/(eotf, oetf, coverage, target[p], color); } }
+
+fn blend(eotf: &[f32; 256], oetf: &[u8; 0x1000], target: &mut Image<&mut[u32]>, color: bgrf, p: uint2, coverage: f32) { 
+	if p < target.size { target[p] = image::lerp/*PQ10(PQ10⁻¹)*/(eotf, oetf, coverage, bgr8::from(target[p]), color); } 
+}
 pub fn line(eotf: &[f32; 256], oetf: &[u8; 0x1000], target: &mut Image<&mut[u32]>, p0: vec2, p1: vec2, color: bgrf) {
 	assert!(p0 != p1);
 	let size = target.size;
