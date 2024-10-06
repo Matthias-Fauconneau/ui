@@ -10,7 +10,7 @@ example=[
 ]
 
 [features]
-default=['no-std']
+default=['wayland','no-std']
 #default=['wayland','background']
 
 #font=['fehler','dep:derive-more','dep:owning-ref','dep:rustybuzz','kurbo','dep:cfg-if','rustix','vector/int_roundings','image/slice_take']
@@ -18,16 +18,17 @@ default=['no-std']
 #edit=['text']#,'xcursor'
 #plot=['text','dep:itertools','array_windows','coroutines']
 #graphic=['font','dep:rustybuzz','coroutines']
-
-#vulkan=['dep:ash']
-#wayland=['rustix/net','trace']#'dep:nix'
-#drm=['dep:drm']
-#softbuffer=['dep:softbuffer','dep:winit']
-
+timerfd=['dep:rustix']
+trigger=['dep:rustix']
 background=[]
 
+#vulkan=['dep:ash']
+wayland=['bytemuck','rustix/net','trace']#'dep:nix'
+drm=['dep:drm']
+#softbuffer=['dep:softbuffer','dep:winit']
+
 #kurbo=['dep:kurbo']
-#xcursor=['dep:xcursor']
+xcursor=['dep:xcursor']
 #rustix=['dep:rustix']
 #fehler=['dep:fehler']
 
@@ -36,7 +37,7 @@ array_windows=[]
 coroutines=[]
 
 no-std = ['origin-studio']
-origin-studio = ['dep:origin-studio','dep:compiler_builtins']
+origin-studio = ['dep:std','dep:compiler_builtins']
 
 #[target.'cfg(not(target_os="windows"))'.features]
 #default = ['wayland']
@@ -49,36 +50,43 @@ origin-studio = ['dep:origin-studio','dep:compiler_builtins']
 #itertools={version='*', optional=true}
 #cfg-if={version='*', optional=true}
 #owning-ref={version='*', package='owning_ref', optional=true}
-#bytemuck='*'
+bytemuck={version='*', optional=true}
 
 #num= {git='https://github.com/Matthias-Fauconneau/num'}
-#vector= {git='https://github.com/Matthias-Fauconneau/vector'}
+vector= {git='https://github.com/Matthias-Fauconneau/vector'}
+image={git='https://github.com/Matthias-Fauconneau/image'}
 trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
 
 #kurbo={version='*', optional=true}
 
 #linux-raw-sys='*'
-#rustix={version='*', features=['fs','mm','time','event','runtime'], optional=true} 
+rustix={version='*', default-features=false, features=['fs','mm','time','event','runtime'], optional=true} 
 #rustix={version='*', features=['fs','mm','time','event','use-libc'], optional=true} # Currently broken without libc
 #dirs='*'
 #nix={version='*', default-features = false, features = ['socket','uio'], optional=true}
-#drm={version='*', optional=true}
+drm={version='*', optional=true}
 
-#image={git='https://github.com/Matthias-Fauconneau/image'}
 #text-size={version='*', optional=true}
 #unicode-segmentation={version='*', optional=true}
 #rustybuzz={version='*', optional=true}
 #glob={version='*', optional=true}
-#xcursor={version='*', optional=true}
+xcursor={version='*', optional=true}
 #ash={version='*', optional=true, default-features=false, features = ['linked','debug']}
 #winit={version='*', optional=true}
-#softbuffer={version='*', optional=true, default-features=false, features = ['wayland']}
+softbuffer={version='*', optional=true, default-features=false, features = ['wayland']}
 compiler_builtins={version='*', features=['mem'], optional=true}
-origin-studio={version='*', optional=true}
+#origin-studio={version='*', optional=true}
+std={package='origin-studio', version='*', features=['std'], optional=true}
 
 #[dev-dependencies]
 #image-io={package='image', version='*', optional=true, default-features=false, features=['png']}
 
+[patch.'https://github.com/Matthias-Fauconneau/image']
+image={path='../image'}
+[patch.'https://github.com/Matthias-Fauconneau/num']
+num={path='../num'}
+[patch.'https://github.com/Matthias-Fauconneau/vector']
+vector={path='../vector'}
 [patch.'https://github.com/Matthias-Fauconneau/trace']
 trace={path='../trace'}
 [patch.'crates-io']

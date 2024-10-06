@@ -1,4 +1,4 @@
-#![allow(non_upper_case_globals)]
+/*#![allow(non_upper_case_globals)]
 #[cfg(feature="drm")] mod drm {
 	pub struct DRM(std::fs::File);
 	impl DRM { pub fn new(path: &str) -> Self { Self(std::fs::OpenOptions::new().read(true).write(true).open(path).unwrap()) } }
@@ -6,12 +6,11 @@
 	impl std::os::fd::AsRawFd for DRM { fn as_raw_fd(&self) -> std::os::fd::RawFd { self.0.as_raw_fd() } }
 	impl ::drm::Device for DRM {}
 	impl ::drm::control::Device for DRM {}
-}
+}*/
 #[cfg(feature="wayland")] #[path="wayland.rs"] pub mod wayland;
 #[cfg(feature="wayland")] use wayland::*;
-use {num::zero, vector::xy, crate::{prelude::*, Event}};
-#[cfg(feature="drm")] use self::drm::DRM;
-use {num::IsZero, vector::int2, crate::{EventContext, ModifiersState}};
+use {crate::{Result, Widget, ModifiersState, /*Event, EventContext*/}, vector::{num::{zero, /*IsZero*/}, /*xy,*/ int2}};
+//#[cfg(feature="drm")] use self::drm::DRM;
 
 #[cfg(feature="wayland")] pub struct Cursor<'t> {
 	name: &'static str,
@@ -22,7 +21,7 @@ use {num::IsZero, vector::int2, crate::{EventContext, ModifiersState}};
 	serial: u32,
 }
 
-#[cfg(feature="wayland")]impl Cursor<'_> {
+#[cfg(feature="wayland")] impl Cursor<'_> {
 	pub fn set(&mut self, name: &'static str) {
 		if self.name == name { return; }
 		#[cfg(feature="xcursor")] {
@@ -67,7 +66,7 @@ use {num::IsZero, vector::int2, crate::{EventContext, ModifiersState}};
 	}
 }
 
-#[cfg(feature="wayland")] pub struct App(#[cfg(feature="rustix")]rustix::fd::OwnedFd);
+#[cfg(feature="wayland")] pub struct App(#[cfg(feature="trigger")]rustix::fd::OwnedFd);
 
 #[cfg(feature="softbuffer")] pub struct App {
 	window: std::rc::Rc<winit::window::Window>,
@@ -85,8 +84,8 @@ use {num::IsZero, vector::int2, crate::{EventContext, ModifiersState}};
 	fn about_to_wait(&mut self, _: &winit::event_loop::ActiveEventLoop) {}
 }
 impl App {
-	#[cfg(feature="wayland")] pub fn new() -> Result<Self> { Ok(Self(#[cfg(feature="rustix")] rustix::event::eventfd(0, rustix::event::EventfdFlags::empty())?)) }
-	#[cfg(feature="rustix")] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
+	#[cfg(feature="wayland")] pub fn new() -> Result<Self> { Ok(Self(#[cfg(feature="trigger")] rustix::event::eventfd(0, rustix::event::EventfdFlags::empty())?)) }
+	#[cfg(feature="trigger")] pub fn trigger(&self) -> rustix::io::Result<()> { Ok(assert!(rustix::io::write(&self.0, &1u64.to_ne_bytes())? == 8)) }
 	#[cfg(feature="softbuffer")] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result {
   		let event_loop = winit::event_loop::EventLoop::new().unwrap();
     	
@@ -179,18 +178,18 @@ impl App {
 		});*/
 		Ok(())
 	}
-	#[cfg(not(feature="softbuffer"))] pub fn run<T:Widget>(&self, title: &str, widget: &mut T) -> Result {
+	#[cfg(feature="wayland")] pub fn run<T:Widget>(&self, title: &str, _widget: &mut T) -> Result {
 		let ref server = Server::connect();
 		let display = Display{server, id: 1};
 		let ref registry = server.new("registry");
 		display.get_registry(registry);
-		let ([compositor, wm_base, seat, dmabuf, lease_device], [outputs]) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1","wp_drm_lease_device_v1"], ["wl_output"]);
+		let ([compositor, wm_base, seat, dmabuf, lease_device,output], []) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1","wp_drm_lease_device_v1","wl_output"], []);
 		let ref compositor = Compositor{server, id: compositor};
 		let ref wm_base = WmBase{server, id: wm_base};
 		let ref seat = Seat{server, id: seat};
-		let outputs = outputs.iter().map(|&id| Output{server, id}).collect::<Box<_>>();
 		let ref dmabuf = DMABuf{server, id: dmabuf};
 		let ref lease_device = LeaseDevice{server, id: lease_device};
+		let ref output = Output{server, id: output};
 
 		let ref pointer = server.new("pointer");
 		seat.get_pointer(pointer);
@@ -219,29 +218,30 @@ impl App {
 				Self{surface, xdg_surface, toplevel, can_paint: false, callback: None, done: true}
 			}
 		}
-		let mut window = Surface::new(server, compositor, wm_base, title, Some(&outputs.last().unwrap()));
+		let mut window = Surface::new(server, compositor, wm_base, title, Some(output));
 
 		#[cfg(feature="drm")] let drm = DRM::new(if std::path::Path::new("/dev/dri/card0").exists() { "/dev/dri/card0" } else { "/dev/dri/card1"});
 
 		let ref params : dmabuf::Params = server.new("params");
 		let ref buffer_ref : Buffer = server.new("buffer_ref");
-		let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
+		#[cfg(feature="timerfd")] let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
 
 		#[cfg(feature="drm")] let mut buffer = [None; 3];
 		let mut scale_factor = 0;
-		let mut configure_bounds = zero();
-		let mut size = zero();
+		//let mut configure_bounds = zero();
+		//let mut size = zero();
 		let mut modifiers_state = ModifiersState::default();
 		let mut pointer_position = int2::default();
 		let mut mouse_buttons = 0;
 		let ref mut cursor = Cursor{name: "", pointer, serial: 0, /*dmabuf,*/ compositor, surface: None};
 		let mut repeat : Option<(u64, char)> = None;
-		let _start = std::time::Instant::now();
+		//let _start = std::time::Instant::now();
 		let mut idle = std::time::Duration::ZERO;
 		let mut _last_done_timestamp = 0;
 		//let ref lease_request : LeaseRequest = server.new("lease_request");
-
-		loop {
+		Ok(())
+		
+		/*loop {
 			let mut need_paint = widget.event(size, &mut EventContext{toplevel: &window.toplevel, modifiers_state, cursor}, &Event::Idle).unwrap(); // determines whether to wait for events
 			// ^ could also trigger eventfd instead
 			loop {
@@ -520,7 +520,7 @@ impl App {
 				window.surface.frame(&callback);
 				window.surface.commit();
 			}
-		} // idle-event loop
+		} // idle-event loop*/
 	}
 }
 impl Default for App { fn default() -> Self { Self::new().unwrap() } }

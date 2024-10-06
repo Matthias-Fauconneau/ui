@@ -1,4 +1,5 @@
 #![allow(non_camel_case_types,non_upper_case_globals, dead_code)]
+use std::{boxed::Box, vec::Vec};
 
 #[derive(Debug)] pub(crate) enum Arg { UInt(u32), Int(i32), Array(Box<[u8]>), String(std::string::String)}
 
@@ -24,7 +25,7 @@ fn recvmsg(fd: impl rustix::fd::AsFd, buffer: &mut [u8], ancillary: &mut rustix:
 	bytes
 }
 
-pub(crate) fn message(fd: impl rustix::fd::AsFd) -> Option<(Message, Option<std::os::fd::OwnedFd>)> {
+pub(crate) fn message(fd: impl rustix::fd::AsFd) -> Option<(Message, Option<rustix::fd::OwnedFd>)> {
 	let mut ancillary = [0; 32];
 	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
@@ -77,29 +78,28 @@ pub struct Server {
 impl Server {
 	pub fn connect() -> Self {
 		let socket = rustix::net::socket(rustix::net::AddressFamily::UNIX, rustix::net::SocketType::STREAM, None).unwrap();
-		let addr = rustix::net::SocketAddrUnix::new([std::env::var_os("XDG_RUNTIME_DIR").unwrap(), std::env::var_os("WAYLAND_DISPLAY").unwrap()].iter().collect::<std::path::PathBuf>()).unwrap();
+		let addr = rustix::net::SocketAddrUnix::new([std::env::var("XDG_RUNTIME_DIR").unwrap(), "/", std::env::var("WAYLAND_DISPLAY").unwrap()].concat()).unwrap();
 		rustix::net::connect_unix(&socket, &addr).unwrap();
 		Self{server: std::cell::RefCell::new(socket), last_id: std::sync::atomic::AtomicU32::new(2), names: std::sync::Mutex::new([(1,"display")].into())}
 	}
 	pub(crate) fn next_id(&self, name: &'static str) -> u32 {
 		let id = self.last_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-		self.names.lock().unwrap().push((id, name));
+		self.names.lock().push((id, name));
 		id
 	}
 	pub fn new<'s: 't, 't, T: From<(&'t Self, u32)>>(&'s self, name: &'static str) -> T { (self, self.next_id(name)).into() }
 	#[track_caller] fn sendmsg<const N: usize>(&self, id: u32, opcode: u16, args: [Arg; N], fd: Option<rustix::fd::BorrowedFd>) {
 		assert!(opcode <= 11, "{opcode}");
 		let mut request = Vec::new();
-		use std::io::Write;
 		let size = (2+N as u32+args.iter().map(|arg| if let Arg::String(arg) = arg { (arg.as_bytes().len() as u32+1+3)/4 } else { 0 }).sum::<u32>())*4;
-		request.write(bytemuck::bytes_of(&Message{id, opcode, size: size as u16})).unwrap();
+		request.extend_from_slice(bytemuck::bytes_of(&Message{id, opcode, size: size as u16}));
 		for arg in args { use Arg::*; match arg {
-			UInt(arg) => { request.write(bytemuck::bytes_of(&arg)).unwrap(); },
+			UInt(arg) => { request.extend_from_slice(bytemuck::bytes_of(&arg)); },
 			String(arg) => {
-				request.write(bytemuck::bytes_of::<u32>(&(arg.as_bytes().len() as u32+1))).unwrap();
-				request.write(arg.as_bytes()).unwrap();
-				request.write(&[0]).unwrap();
-				while request.len()%4!=0 { request.write(&[0]).unwrap(); }
+				request.extend_from_slice(bytemuck::bytes_of::<u32>(&(arg.as_bytes().len() as u32+1)));
+				request.extend_from_slice(arg.as_bytes());
+				request.extend_from_slice(&[0]);
+				while request.len()%4!=0 { request.extend_from_slice(&[0]); }
 			}
 			_ => unimplemented!("{arg:?}"),
 		}; }
@@ -114,14 +114,14 @@ impl Server {
 			rustix::net::sendmsg(&*self.server.borrow(), &[rustix::io::IoSlice::new(&request)], &mut buffer, rustix::net::SendFlags::empty()).unwrap();
 		} else {
 			if let Err(e) = {let r = rustix::io::write(&*self.server.borrow(), &request); r} {
-				println!("Error: {e}");
+				std::eprintln!("Error: {}", e);
 				loop {
 					let Some((Message{id, opcode, ..}, None)) = message(&*self.server.borrow()) else {unreachable!()};
 					/**/ if id == 1 && opcode == display::error {
 						use Arg::*;
 						let [UInt(id), UInt(code), String(message)] = self.args({use Type::*; [UInt, UInt, String]}) else {unreachable!()};
 						panic!("{id} {code} {message}");
-					} else { println!("{id} {opcode}"); }
+					} else { std::println!("{id} {opcode}"); }
 				}
 			}
 		}
@@ -210,7 +210,7 @@ pub(crate) mod dmabuf {
 		impl<'t> From<(&'t Server, u32)> for Params<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
 		impl Params<'_> {
 			pub fn destroy(&self) { self.server.request(self.id, Requests::destroy as u16, []) }
-			#[track_caller] pub fn add(&self, fd: impl std::os::fd::AsFd, plane_index: u32, offset: u32, stride: u32, modifier_hi: u32, modifier_lo: u32) { self.server.sendmsg(self.id, Requests::add as u16, [UInt(plane_index),UInt(offset),UInt(stride),UInt(modifier_hi),UInt(modifier_lo)], Some(fd.as_fd())) }
+			#[track_caller] pub fn add(&self, fd: impl rustix::fd::AsFd, plane_index: u32, offset: u32, stride: u32, modifier_hi: u32, modifier_lo: u32) { self.server.sendmsg(self.id, Requests::add as u16, [UInt(plane_index),UInt(offset),UInt(stride),UInt(modifier_hi),UInt(modifier_lo)], Some(fd.as_fd())) }
 			pub fn create_immed(&self, buffer: &Buffer, width: u32, height: u32, format_: u32, flags: u32) { self.server.request(self.id, Requests::create_immed as u16, [UInt(buffer.id), UInt(width),UInt(height),UInt(format_),UInt(flags)]) }
 		}
 	}
