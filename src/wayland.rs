@@ -78,13 +78,13 @@ pub struct Server {
 impl Server {
 	pub fn connect() -> Self {
 		let socket = rustix::net::socket(rustix::net::AddressFamily::UNIX, rustix::net::SocketType::STREAM, None).unwrap();
-		let addr = rustix::net::SocketAddrUnix::new([std::env::var("XDG_RUNTIME_DIR").unwrap(), "/", std::env::var("WAYLAND_DISPLAY").unwrap()].concat()).unwrap();
+		let addr = rustix::net::SocketAddrUnix::new([std::env::var_os("XDG_RUNTIME_DIR").unwrap().to_str().unwrap(), "/", std::env::var_os("WAYLAND_DISPLAY").unwrap().to_str().unwrap()].concat()).unwrap();
 		rustix::net::connect_unix(&socket, &addr).unwrap();
 		Self{server: std::cell::RefCell::new(socket), last_id: std::sync::atomic::AtomicU32::new(2), names: std::sync::Mutex::new([(1,"display")].into())}
 	}
 	pub(crate) fn next_id(&self, name: &'static str) -> u32 {
 		let id = self.last_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-		self.names.lock().push((id, name));
+		self.names.lock().unwrap().push((id, name));
 		id
 	}
 	pub fn new<'s: 't, 't, T: From<(&'t Self, u32)>>(&'s self, name: &'static str) -> T { (self, self.next_id(name)).into() }
@@ -147,7 +147,6 @@ impl Server {
 				multiple[index].push(id);
 			}
 		}
-		//println!("{globals:?} {interfaces:?}");
 		(single, multiple.map(|v| v.into_boxed_slice()))
 	}
 }

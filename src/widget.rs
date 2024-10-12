@@ -4,11 +4,11 @@ pub type Target<'t> = image::Image<&'t mut [u32]>;
 #[derive(Default,Clone,Copy)] pub struct ModifiersState { pub shift: bool, pub ctrl: bool, pub logo: bool, pub alt: bool }
 
 pub struct EventContext<'t, 's, 'c> {
-	/*#[cfg(feature="wayland")] pub toplevel: &'t crate::app::wayland::toplevel::Toplevel<'s>,
-	#[cfg(not(feature="wayland"))]*/ pub toplevel: &'t core::marker::PhantomData<&'s ()>,
+	#[cfg(feature="wayland")] pub toplevel: &'t crate::app::wayland::toplevel::Toplevel<'s>,
+	#[cfg(not(feature="wayland"))] pub toplevel: &'t core::marker::PhantomData<&'s ()>,
 	pub modifiers_state: ModifiersState,
-	/*#[cfg(feature="wayland")] pub cursor: &'t mut crate::app::Cursor<'c>,
-	#[cfg(not(feature="wayland"))]*/ pub cursor: &'t core::marker::PhantomData<&'c ()>,
+	#[cfg(feature="wayland")] pub cursor: &'t mut crate::app::Cursor<'c>,
+	#[cfg(not(feature="wayland"))] pub cursor: &'t core::marker::PhantomData<&'c ()>,
 }
 
 pub type MouseButtons = u32;
