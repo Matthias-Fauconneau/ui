@@ -6,7 +6,7 @@ impl Parallelogram {
 	pub fn translate(&mut self, offset: int2) { self.top_left += offset; self.bottom_right += offset; }
 }
 
-pub use {num::Ratio, vector::Rect, crate::font::{Face, GlyphId}};
+pub use {vector::{num::Ratio, Rect}, crate::font::{Face, GlyphId}};
 
 pub struct Glyph<'t> { pub top_left: int2, pub face: &'t Face<'t>, pub id: GlyphId, pub scale: Ratio, pub style: f32 }
 
@@ -24,7 +24,7 @@ pub struct Graphic<'t> {
 	pub glyphs: Vec<Glyph<'t>>,
 }
 
-use {num::zero, crate::{throws, Error, Result}, vector::{xy, size, vec2, ifloor, ceil}, image::{Image, bgr, /*PQ10*/sRGB8}, crate::{font::rasterize, widget, Target, dark}};
+use {crate::{throws, Error, Result}, vector::{num::zero, xy, size, vec2, ifloor, ceil}, image::{Image, bgr, /*PQ10*/sRGB8}, crate::{font::rasterize, widget, Target}};
 
 impl Graphic<'_> {
 	pub fn new(scale: Ratio) -> Self { Self{scale, rects: Vec::new(), parallelograms: Vec::new(), glyphs: Vec::new()} }
@@ -34,13 +34,13 @@ impl Graphic<'_> {
 		self.glyphs.extend(graphic.glyphs.drain(..).map(|mut x| { x.translate(position); x }));
 	}
 	pub fn bounds(&self) -> Rect {
-		use {vector::MinMax, num::Option};
+		use vector::MinMax;
 		self.rects.iter().map(|(r,_)| MinMax{min: r.min, max: r.min.zip(r.max).map(|(min,max)| if max < i32::MAX as _ { max } else { min }).collect()})
 		.chain( self.parallelograms.iter().map(|p| MinMax{min: p.top_left, max: p.bottom_right}) )
 		.chain( self.glyphs.iter().map(|g| MinMax{min: g.top_left, max: g.top_left + g.face.bbox(g.id).unwrap().size()}) )
 		.reduce(MinMax::minmax)
 		.map(|MinMax{min, max}| Rect{min: min, max: max})
-		.unwrap_or_zero()
+		.unwrap_or(zero())
 	}
 
 	#[track_caller] pub fn rect(&mut self, r: Rect, style: f32) { assert!(r.min <= r.max); self.rects.push((r, style)) }
@@ -100,7 +100,7 @@ impl widget::Widget for View<'_> {
 			}
 			target
 		};
-		target.zip_map(&buffer, |_, &buffer| { let c = f32::min(1.,buffer); bgr::from(/*PQ10*/sRGB8(if dark {c} else {1.-c})).into()});
+		target.zip_map(&buffer, |_, &buffer| { let c = f32::min(1.,buffer); bgr::from(/*PQ10*/sRGB8(/*if dark {c} else*/ 1.-c)).into()});
 	}
 }
 

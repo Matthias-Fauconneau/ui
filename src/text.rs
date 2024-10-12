@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use {std::{cmp::{min, max}, ops::Range}, crate::{throws, Error}, num::{zero, Ratio}, vector::{xy, uint2, int2, size, Rect}};
+use {std::{cmp::{min, max}, ops::Range}, crate::{throws, Error}, vector::{num::{zero, Ratio, unit}, xy, uint2, int2, size, Rect}};
 use {image::bgrf as Color, crate::{foreground, font::{self, Face, GlyphId}}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::UnicodeSegmentation;
@@ -123,7 +123,7 @@ impl<D:AsRef<str>> View<'_, D> {
 		})
 	}
 	#[track_caller] pub fn size_scale(&mut self, fit: size) -> (size, Ratio) {
-		if self.data.as_ref().is_empty() { return (zero(), num::unit) }
+		if self.data.as_ref().is_empty() { return (zero(), unit) }
 		let size = Self::size(self);
 		assert!(size > zero() && fit > zero(), "{size} {fit} '{}'", self.data.as_ref());
 		(size, if fit.x*size.y < fit.y*size.x { Ratio{num: fit.x-1, div: size.x-1} } else { Ratio{num: fit.y-1, div: size.y-1} }) // Fit

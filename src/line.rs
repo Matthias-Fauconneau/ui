@@ -1,4 +1,4 @@
-use {num::{abs, fract}, vector::{xy,uint2,size,vec2}, image::{Image, bgrf, bgr8}};
+use {vector::{num::{abs, fract}, xy, uint2, size, vec2}, image::{Image, bgrf, bgr8}};
 
 pub fn generate_line(size: size, p: [vec2; 2]) -> impl Iterator<Item=(uint2, uint2, f32, f32)> {
 	let d = p[1] - p[0];

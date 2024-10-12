@@ -1,6 +1,6 @@
 #[derive(derive_more::Deref)] pub struct Face<'t>(rustybuzz::Face<'t>);
 pub use rustybuzz::ttf_parser::{self, GlyphId};
-use vector::{xy, vec2, Rect};
+use vector::{xy, vec2, Rect, num::Ratio};
 impl<'t> Face<'t> {
 	pub fn advance(&self, codepoint: char) -> u32 { self.glyph_hor_advance(self.glyph_index(codepoint).unwrap()).unwrap() as u32 }
 	pub fn bbox(&self, id: GlyphId) -> Option<Rect> {
@@ -10,7 +10,7 @@ impl<'t> Face<'t> {
 }
 mod quad; mod cubic; mod raster;
 
-use {num::Ratio, image::Image, quad::quad, cubic::cubic, raster::line};
+use {image::Image, quad::quad, cubic::cubic, raster::line};
 struct Outline<'t> { scale : Ratio /*f32 loses precision*/, x_min: f32, y_max: f32, target : &'t mut Image<&'t mut[f32]>, first : Option<vec2>, p0 : Option<vec2>}
 impl Outline<'_> { fn map(&self, x : f32, y : f32) -> vec2 { vec2{x: self.scale*x-self.x_min, y: -(self.scale*y)+self.y_max} } }
 impl ttf_parser::OutlineBuilder for Outline<'_> {
@@ -92,21 +92,11 @@ impl ttf_parser::OutlineBuilder for PathEncoder<'_> {
 
 #[derive(derive_more::Deref)] pub struct Handle<'t>(Face<'t>);
 use {fehler::throws, super::Error};
-cfg_if::cfg_if!{if #[cfg(target_os="linux")] {
-	use memory_map::MemoryMap;
-	pub type File<'t> = owning_ref::OwningHandle<Box<MemoryMap>, Handle<'t>>;
-	#[throws] pub fn open<'t>(path: &std::path::Path) -> File<'t> {
-		owning_ref::OwningHandle::new_with_fn(
-			Box::new(MemoryMap::map(&std::fs::File::open(path)?)?),
-			unsafe { |map| Handle(Face(rustybuzz::Face::from_slice(&*map, 0).unwrap())) }
-		)
-	}
-} else {
-	pub type File<'t> = owning_ref::OwningHandle<std::sync::Arc<Vec<u8>>, Handle<'t>>;
-	#[throws] pub fn open<'t>(file: std::sync::Arc<Vec<u8>>) -> File<'t> {
-		owning_ref::OwningHandle::new_with_fn(
-			file,
-			unsafe { |file| Handle(Face(rustybuzz::Face::from_slice(&*file, 0).unwrap())) }
-		)
-	}
-}}
+use memory_map::MemoryMap;
+pub type File<'t> = owning_ref::OwningHandle<Box<MemoryMap>, Handle<'t>>;
+#[throws] pub fn open<'t>(path: &std::path::Path) -> File<'t> {
+	owning_ref::OwningHandle::new_with_fn(
+		Box::new(MemoryMap::map(&std::fs::File::open(path)?)?),
+		unsafe { |map| Handle(Face(rustybuzz::Face::from_slice(&*map, 0).unwrap())) }
+	)
+}

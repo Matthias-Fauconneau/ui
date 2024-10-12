@@ -1,96 +1,17 @@
 cargo-features = ['edition2024']
-package={name='ui', version='0.0.0', edition='2021'}#'2024'}
-example=[
- {name='empty', path='examples/empty.rs'},
- {name='glyph', path='examples/glyph.rs', required-features=['text']},
- {name='text', path='examples/text.rs', required-features=['text']},
- {name='compose', path='examples/compose.rs', required-features=['text','edit']},
- {name='edit', path='examples/edit.rs', required-features=['edit']},
- {name='plot', path='examples/plot.rs', required-features=['plot']},
-]
-
-[features]
-default=['softbuffer','background']
-#default=['wayland','background']
-
-#font=['fehler','dep:derive-more','dep:owning-ref','dep:rustybuzz','kurbo','dep:cfg-if','rustix','vector/int_roundings','image/slice_take']
-#text=['fehler','dep:derive-more','dep:text-size','dep:unicode-segmentation','font','dep:rustybuzz','dep:glob','array_methods']
-#edit=['text']#,'xcursor'
-#plot=['text','dep:itertools','array_windows','coroutines']
-#graphic=['font','dep:rustybuzz','coroutines']
-repeat=['dep:rustix']
-trigger=['dep:rustix']
-background=[]
-
-#vulkan=['dep:ash']
-wayland=['bytemuck','rustix/net']#'dep:nix'
-drm=['dep:drm']
-softbuffer=['dep:softbuffer','dep:winit']
-
-#kurbo=['dep:kurbo']
-xcursor=['dep:xcursor']
-#rustix=['dep:rustix']
-#fehler=['dep:fehler']
-
-array_methods=[]
-array_windows=[]
-coroutines=[]
-
-no-std = ['dep:std','dep:compiler_builtins']
-
-#[target.'cfg(not(target_os="windows"))'.features]
-#default = ['wayland']
-#[target.'cfg(target_os="windows")'.features]
-#default = ["softbuffer"]
+package={name='ui', version='0.0.0', edition='2024'}
 
 [dependencies]
-#fehler={version='*', optional=true}
-#derive-more={version='*', package='derive_more', optional=true, features=['deref']}
-#itertools={version='*', optional=true}
-#cfg-if={version='*', optional=true}
-#owning-ref={version='*', package='owning_ref', optional=true}
-bytemuck={version='*', optional=true}
-
-#num= {git='https://github.com/Matthias-Fauconneau/num'}
-vector= {git='https://github.com/Matthias-Fauconneau/vector'}
-image={git='https://github.com/Matthias-Fauconneau/image'}
-trace={git='https://github.com/Matthias-Fauconneau/trace', optional=true}
-
-#kurbo={version='*', optional=true}
-
-#linux-raw-sys='*'
-rustix={version='*', default-features=false, features=['alloc','event'], optional=true}  #'runtime','time',, 'fs','mm',
-#rustix={version='*', features=['fs','mm','time','event','use-libc'], optional=true} # Currently broken without libc
-#dirs='*'
-#nix={version='*', default-features = false, features = ['socket','uio'], optional=true}
-drm={version='*', optional=true}
-
-#text-size={version='*', optional=true}
-#unicode-segmentation={version='*', optional=true}
-#rustybuzz={version='*', optional=true}
-#glob={version='*', optional=true}
-xcursor={version='*', optional=true}
-#ash={version='*', optional=true, default-features=false, features = ['linked','debug']}
-winit={version='*', optional=true}
-softbuffer={version='*', optional=true, default-features=false, features = ['wayland']}
-
-compiler_builtins={version='*', features=['mem'], optional=true}
-std={package='origin-studio', version='*', features=['std'], optional=true}
-
-#[dev-dependencies]
-#image-io={package='image', version='*', optional=true, default-features=false, features=['png']}
-
-#[patch.'https://github.com/Matthias-Fauconneau/image']
-#image={path='../image'}
-#[patch.'https://github.com/Matthias-Fauconneau/num']
-#num={path='../num'}
-#[patch.'https://github.com/Matthias-Fauconneau/vector']
-#vector={path='../vector'}
-#[patch.'https://github.com/Matthias-Fauconneau/trace']
-#trace={path='../trace'}
-#[patch.'crates-io']
-#linux-raw-sys={path='../linux-raw-sys'}
-#rustix={path='../rustix'}
-#origin={path='../origin'}
-#backtrace={path='../backtrace'}
-#origin-studio={path='../origin-studio'}
+winit={version='*'}
+softbuffer={version='*', default-features=false, features = ['wayland']}
+vector= {git='https://github.com/Matthias-Fauconneau/vector', features=['int_roundings']}
+image={git='https://github.com/Matthias-Fauconneau/image', features=['slice_take']}
+rustix={version='*', features=['fs','mm']}
+fehler='*'
+text-size='*'
+unicode-segmentation='*'
+rustybuzz='*'
+derive_more={version='*', features=['deref']}
+owning_ref='*'
+kurbo='*'
+glob='*'
