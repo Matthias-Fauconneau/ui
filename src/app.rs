@@ -24,7 +24,7 @@ impl<T: Widget> ApplicationHandler for App<'_, T> {
 			buffer.present().unwrap();
 		};
 		match event {
-			ScaleFactorChanged{scale_factor, ..} => { dbg!(scale_factor); redraw(); }
+			ScaleFactorChanged{..} => redraw(),
 			RedrawRequested => if scale_factor != 3. {
 				surface.resize(std::num::NonZeroU32::new(size.x).unwrap(), std::num::NonZeroU32::new(size.y).unwrap()).unwrap();
 				surface.buffer_mut().unwrap().present().unwrap();
