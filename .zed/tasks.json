@@ -1,1 +1,2 @@
 [{"label": "Empty", "command": "cargo run --manifest-path examples/empty/Cargo.toml"}]
+//[{"label": "Empty", "command": "cargo run --example empty"}]
