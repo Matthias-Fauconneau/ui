@@ -114,7 +114,7 @@ pub fn fit(size: size, from: size) -> size { if size.x*from.y < size.y*from.x { 
 
 impl<D:AsRef<str>> View<'_, D> {
 	pub fn size(&mut self) -> size {
-		let Self{font, data, ref mut size, ..} = self;
+		let &mut Self{ref mut font, ref mut data, ref mut size, ..} = self;
 		*size.get_or_insert_with(||{
 			let text = data.as_ref();
 			let (line_count, max_width) = line_ranges(&text).fold((0,0),|(line_count, width), line| (line_count+1, max(width, metrics(layout(font, &line).into_iter()).width)));
