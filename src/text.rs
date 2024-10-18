@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use {std::{cmp::{min, max}, ops::Range}, crate::{throws, Error}, vector::{num::{zero, Ratio, unit}, xy, uint2, int2, size, Rect}};
+use {std::{cmp::{min, max}, ops::Range}, crate::Result, vector::{num::{zero, Ratio, unit}, xy, uint2, int2, size, Rect}};
 use {image::bgrf as Color, crate::{foreground, font::{self, Face, GlyphId}}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::UnicodeSegmentation;
@@ -298,7 +298,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 use crate::widget::{Widget, Target};
 impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 	fn size(&mut self, size: size) -> size { fit(size/*fit_width(size.x*/, Self::size(self)) }
-	#[track_caller] #[throws] fn paint(&mut self, target: &mut Target, size: size, offset: int2) { self.paint_fit(target, size, offset); }
+	#[track_caller] fn paint(&mut self, target: &mut Target, size: size, offset: int2) -> Result { self.paint_fit(target, size, offset); Ok(()) }
 }
 
 pub struct Plain<T>(pub T);

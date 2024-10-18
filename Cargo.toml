@@ -2,12 +2,9 @@ cargo-features = ['edition2024']
 package={name='ui', version='0.0.0', edition='2024'}
 
 [dependencies]
-winit={version='*'}
-softbuffer={version='*', default-features=false, features = ['wayland']}
 vector= {git='https://github.com/Matthias-Fauconneau/vector', features=['int_roundings']}
 image={git='https://github.com/Matthias-Fauconneau/image', features=['slice_take']}
-rustix={version='*', features=['fs','mm']}
-fehler='*'
+rustix={git='https://github.com/Matthias-Fauconneau/rustix', features=['fs','mm','net','event']} # rustix: 0.4 -> same as drm:
 text-size='*'
 unicode-segmentation='*'
 rustybuzz='*'
@@ -15,3 +12,8 @@ derive_more={version='*', features=['deref']}
 owning_ref='*'
 kurbo='*'
 glob='*'
+bytemuck='*'
+drm='*'
+
+[patch.crates-io]
+rustix={git='https://github.com/Matthias-Fauconneau/rustix'} # rustix: 0.4 -> same as drm:

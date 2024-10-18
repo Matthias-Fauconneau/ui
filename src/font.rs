@@ -91,12 +91,11 @@ impl ttf_parser::OutlineBuilder for PathEncoder<'_> {
 }
 
 #[derive(derive_more::Deref)] pub struct Handle<'t>(Face<'t>);
-use {fehler::throws, super::Error};
 use memory_map::MemoryMap;
 pub type File<'t> = owning_ref::OwningHandle<Box<MemoryMap>, Handle<'t>>;
-#[throws] pub fn open<'t>(path: &std::path::Path) -> File<'t> {
-	owning_ref::OwningHandle::new_with_fn(
+pub fn open<'t>(path: &std::path::Path) -> super::Result<File<'t>> {
+	Ok(owning_ref::OwningHandle::new_with_fn(
 		Box::new(MemoryMap::map(&std::fs::File::open(path)?)?),
 		unsafe { |map| Handle(Face(rustybuzz::Face::from_slice(&*map, 0).unwrap())) }
-	)
+	))
 }

@@ -29,25 +29,25 @@ fn run_class<'t>(graphemes: &mut std::iter::Peekable<impl Iterator<Item=(Graphem
 	use super::iter::PeekableExt;
 	graphemes.peeking_take_while(|&(_,g)| classify(g) == class).last().map(|(last,_)| last)
 }
-use fehler::throws;
-#[throws(as Option)] fn run<'t>(graphemes: &mut std::iter::Peekable<impl Iterator<Item=(GraphemeIndex, &'t str)>>) -> (GraphemeIndex, Class) {
+
+fn run<'t>(graphemes: &mut std::iter::Peekable<impl Iterator<Item=(GraphemeIndex, &'t str)>>) -> Option<(GraphemeIndex, Class)> {
 	let (last, class) = { let (last, g) = graphemes.next()?; (last, classify(g)) };
-	(run_class(graphemes, class).unwrap_or(last), class)
+	Some((run_class(graphemes, class).unwrap_or(last), class))
 }
 
-#[throws(as Option)] fn last_word_start(text: &str) -> GraphemeIndex {
+fn last_word_start(text: &str) -> Option<GraphemeIndex> {
 	let mut graphemes = text.graphemes(true).rev().scan(text.grapheme_indices(true).count() as GraphemeIndex, |before, g| { *before -= 1; Some((*before, g)) }).peekable();
-	match run(&mut graphemes)? {
+	Some(match run(&mut graphemes)? {
 		(_, Class::Space) => { let (last, _) = run(&mut graphemes)?; last },
 		(last, _) => last,
-	}
+	})
 }
-#[throws(as Option)] fn next_word_start(text: &str) -> GraphemeIndex {
+fn next_word_start(text: &str) -> Option<GraphemeIndex> {
 	let mut graphemes = text.graphemes(true).enumerate().map(|(i,e)| (i as GraphemeIndex, e)).peekable();
-	match run(&mut graphemes)? {
+	Some(match run(&mut graphemes)? {
 		(last, Class::Space) => last+1,
 		(last, _) => { run_class(&mut graphemes, Class::Space).unwrap_or(last)+1 },
-	}
+	})
 }
 
 pub fn prev_word(text: &str, from: GraphemeIndex) -> GraphemeIndex { last_word_start(&text[..index(text, from).into()]).unwrap_or(from) }

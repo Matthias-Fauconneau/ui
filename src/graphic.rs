@@ -24,7 +24,7 @@ pub struct Graphic<'t> {
 	pub glyphs: Vec<Glyph<'t>>,
 }
 
-use {crate::{throws, Error, Result}, vector::{num::zero, xy, size, vec2, ifloor, ceil}, image::{Image, bgr, /*PQ10*/sRGB8}, crate::{font::rasterize, widget, Target}};
+use {crate::Result, vector::{num::zero, xy, size, vec2, ifloor, ceil}, image::{Image, bgr, /*PQ10*/sRGB8}, crate::{font::rasterize, widget, Target}};
 
 impl Graphic<'_> {
 	pub fn new(scale: Ratio) -> Self { Self{scale, rects: Vec::new(), parallelograms: Vec::new(), glyphs: Vec::new()} }
@@ -56,7 +56,7 @@ impl<'t> View<'t> { pub fn new(graphic: Graphic<'t>) -> Self { Self{view: graphi
 
 impl widget::Widget for View<'_> {
     fn size(&mut self, _: size) -> size { ceil(self.graphic.scale, self.view.size().unsigned()) }
-    #[throws] fn paint(&mut self, target: &mut Target, size: size, _offset: int2) {
+    fn paint(&mut self, target: &mut Target, size: size, _offset: int2) -> Result {
 		let Self{graphic: Graphic{scale, rects, parallelograms, glyphs}, view: Rect{min, ..}} = &self;
 
 		let buffer = {
@@ -101,6 +101,7 @@ impl widget::Widget for View<'_> {
 			target
 		};
 		target.zip_map(&buffer, |_, &buffer| { let c = f32::min(1.,buffer); bgr::from(/*PQ10*/sRGB8(/*if dark {c} else*/ 1.-c)).into()});
+		Ok(())
 	}
 }
 
