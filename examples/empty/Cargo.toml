@@ -2,6 +2,3 @@ package={name='empty', version='0.1.0', edition='2024'}
 
 [dependencies]
 ui={path='../..'}
-
-[patch.'https://github.com/Matthias-Fauconneau/image']
-image={path='../../../image'}

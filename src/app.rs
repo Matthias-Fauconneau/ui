@@ -1,5 +1,8 @@
 use {vector::{num::zero, xy}, crate::{Result, Event, EventContext, Widget}};
-#[path="wayland.rs"] mod wayland; use wayland::*;
+
+#[path="wayland.rs"] mod wayland; use vulkano::memory::ExternalMemoryHandleTypes;
+use wayland::*;
+
 mod drm {
 	pub struct DRM(std::fs::File);
 	impl DRM { pub fn new(dev: u64) -> Self { Self(std::fs::OpenOptions::new().read(true).write(true).open(::drm::node::dev_path(dev, ::drm::node::NodeType::Primary).unwrap()).unwrap()) } }
@@ -10,7 +13,70 @@ mod drm {
 }
 use self::drm::DRM;
 
+use {std::sync::Arc, vulkano::{VulkanLibrary, Validated, VulkanError, instance::{Instance, InstanceCreateInfo, InstanceExtensions},
+	device::{Device, DeviceCreateInfo, DeviceFeatures, DeviceExtensions, physical::PhysicalDeviceType, QueueCreateInfo, QueueFlags},
+	memory::allocator::StandardMemoryAllocator,
+	command_buffer::{allocator::StandardCommandBufferAllocator, CommandBufferLevel, CommandBufferBeginInfo, CommandBufferUsage},
+	descriptor_set::allocator::StandardDescriptorSetAllocator,
+	swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainPresentInfo, acquire_next_image},
+	command_buffer::RecordingCommandBuffer,
+	image::{ImageUsage, view::ImageView}, format::Format,
+	sync::{future::{GpuFuture, FenceSignalFuture}, now}}};
+/*#[path="vulkan.rs"] mod vulkan;
+use vulkan::Context;*/
+
 pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
+	let vulkan = VulkanLibrary::new().unwrap();
+	pub fn default<T: Default>() -> T { Default::default() }
+	let enabled_extensions = InstanceExtensions{/*khr_surface: true, khr_wayland_surface: true,*/ ext_debug_utils: true, ..default()};
+	let enabled_layers = if false { vec!["VK_LAYER_KHRONOS_validation".to_owned()] } else { vec![] };
+	let instance = Instance::new(vulkan, InstanceCreateInfo{enabled_extensions, enabled_layers, ..default()})?;
+	//let enabled_extensions = DeviceExtensions{khr_swapchain: true, ..default()};
+	let enabled_extensions = DeviceExtensions{khr_external_memory_fd: true, ext_external_memory_dma_buf: true, ext_queue_family_foreign: true, ext_image_drm_format_modifier: true, ..default()};
+	let (physical_device, queue_family_index) = instance.enumerate_physical_devices()?.find_map(|p| {
+		((p.properties().device_type == PhysicalDeviceType::DiscreteGpu || p.properties().device_type == PhysicalDeviceType::IntegratedGpu) && p.supported_extensions().contains(&enabled_extensions))
+			.then_some(())?;
+		let (i, _) = p.queue_family_properties().iter().enumerate()
+			.find(|&(i, q)| q.queue_flags.intersects(QueueFlags::GRAPHICS) /*&& p.surface_support(i as u32, &surface).unwrap_or(false)*/)?;
+		Some((p, i as u32))
+	}).unwrap();
+	println!("{:?}", physical_device.memory_properties());
+	let (device, mut queues) = Device::new(physical_device, DeviceCreateInfo{
+		enabled_extensions,
+		queue_create_infos: vec![QueueCreateInfo{queue_family_index, ..default()}],
+		enabled_features: DeviceFeatures{dynamic_rendering: true, dynamic_rendering_unused_attachments: true, ..default()},
+		..default()
+	})?;
+	let queue = queues.next().unwrap();
+	let format = Format::B8G8R8_SRGB; //B8G8R8A8_SRGB;
+	/*let surface_capabilities = device.physical_device().surface_capabilities(&surface, default()).unwrap();
+    let (mut swapchain, mut targets) = Swapchain::new(device.clone(), surface, SwapchainCreateInfo{
+        min_image_count: surface_capabilities.min_image_count.max(2),
+        image_format: format,
+        image_extent: window.inner_size().into(),
+        image_usage: ImageUsage::COLOR_ATTACHMENT|ImageUsage::TRANSFER_SRC,
+        ..default()
+    })?;*/
+    use {std::sync::Arc, vulkano::{device::{Device, Queue}, memory::allocator::StandardMemoryAllocator, command_buffer::allocator::StandardCommandBufferAllocator,  format::Format, descriptor_set::allocator::StandardDescriptorSetAllocator}};
+    #[derive(Clone)] pub struct Context {
+		pub device: Arc<Device>,
+		pub queue: Arc<Queue>,
+		pub memory_allocator: Arc<StandardMemoryAllocator>,
+		pub command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
+		pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+		pub format: Format,
+    }
+    let ref mut context = Context{
+        memory_allocator: Arc::new(StandardMemoryAllocator::new_default(device.clone())),
+        command_buffer_allocator: Arc::new(StandardCommandBufferAllocator::new(device.clone(), default())),
+        descriptor_set_allocator: Arc::new(StandardDescriptorSetAllocator::new(device.clone(), default())),
+        device, queue, format,
+    };
+    let mut commands = RecordingCommandBuffer::new(context.command_buffer_allocator.clone(), context.queue.queue_family_index(), CommandBufferLevel::Primary, CommandBufferBeginInfo{usage: CommandBufferUsage::OneTimeSubmit, ..default()})?;
+    //let mut previous_frame_end : Option<FenceSignalFuture<Box<dyn GpuFuture>>> = Some((Box::new(unsafe{commands.end()?.execute(context.queue.clone())}?) as Box<dyn GpuFuture>).then_signal_fence_and_flush()? );
+    let previous_frame_end = Some(now(context.device.clone()).boxed());
+    let mut recreate_swapchain = false;
+    
 	let ref server = Server::connect();
 	let display = Display{server, id: 1};
 	let ref registry = server.new("registry");
@@ -60,7 +126,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 
 	let ref params : dmabuf::Params = server.new("params");
 	let ref buffer_ref : Buffer = server.new("buffer_ref");
-	let mut buffer = [None; 3];
+	//let mut buffer = [None; 3];
 	let mut scale_factor = 0;
 	let mut configure_bounds = zero();
 	let mut size = zero();
@@ -256,36 +322,49 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 			}
 		} // event loop
 		if need_paint && size.x > 0 && size.y > 0 {
-			use ::drm::{control::Device as _, buffer::Buffer as _};
-			buffer.rotate_left(1);
-			let ref mut buffer = buffer[0];
-			if buffer.is_some_and(|buffer: ::drm::control::dumbbuffer::DumbBuffer| {let (x, y) = buffer.size(); xy{x, y} != size}) { *buffer = None; }
-			let drm = drm.as_ref().unwrap();
-			let mut buffer = buffer.get_or_insert_with(|| {
+			//use ::drm::{control::Device as _, buffer::Buffer as _};
+			//buffer.rotate_left(1);
+			//let ref mut buffer = buffer[0];
+			//if buffer.is_some_and(|buffer: ::drm::control::dumbbuffer::DumbBuffer| {let (x, y) = buffer.size(); xy{x, y} != size}) { *buffer = None; }
+			//let drm = drm.as_ref().unwrap();
+			use vulkano::memory::{DeviceMemory, MemoryAllocateInfo, ExternalMemoryHandleType, MemoryMapInfo};
+			/*let mut buffer = buffer.get_or_insert_with(|| {
 				widget.event(size, &mut EventContext{modifiers_state}, &Event::Stale).unwrap();
-				let buffer = drm.create_dumb_buffer(size.into(), if true { ::drm::buffer::DrmFourcc::Xrgb8888 } else { ::drm::buffer::DrmFourcc::Xrgb2101010 }, 32).unwrap();
+				//let buffer = drm.create_dumb_buffer(size.into(), if true { ::drm::buffer::DrmFourcc::Xrgb8888 } else { ::drm::buffer::DrmFourcc::Xrgb2101010 }, 32).unwrap();
 				/*let mut buffer = buffer; {
 					let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
 					let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
 					image::fill(&mut image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride), image::bgr8::from(crate::background()).into());
-				}*/
-				buffer
-			});
+				}*/*/
+				let memory_type_index = 1;
+				let format = ::drm::buffer::DrmFourcc::Xrgb8888;
+				let pitch = size.x*4;
+				let mut memory = DeviceMemory::allocate(context.device.clone(), MemoryAllocateInfo{allocation_size: (size.y*pitch) as u64, memory_type_index, 
+					export_handle_types: ExternalMemoryHandleTypes::DMA_BUF,
+					..default()
+				}).unwrap();
+				/*memory
+			});*/
 			{
-				let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
-				let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
-				assert!(stride * size.y <= map.as_mut().len() as u32, "{} {}", stride * size.y, map.as_mut().len());
-				let mut target = image::Image::cast_slice_mut(map.as_mut(), size, stride);
+				let stride = {assert_eq!(pitch%4, 0); pitch/4};
+				//let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
+				memory.map(MemoryMapInfo{offset: 0, size: (size.y*pitch) as u64, ..default()})?;
+				//assert!(stride * size.y <= map.as_mut().len() as u32, "{} {}", stride * size.y, map.as_mut().len());
+				let mut map = memory.mapping_state().unwrap().slice(0..(size.y*pitch) as u64).unwrap();
+				let mut target = image::Image::cast_slice_mut(unsafe{map.as_mut()}, size, stride);
 				widget.paint(&mut target, size, zero()).unwrap();
 			}
+			//let fd = drm.buffer_to_prime_fd(buffer.handle(), 0).unwrap();
+			let fd = memory.export_fd(ExternalMemoryHandleType::DmaBuf)?;
+			
 			dmabuf.create_params(params);
 			let modifiers = 0u64;
-			params.add(drm.buffer_to_prime_fd(buffer.handle(), 0).unwrap(), 0, 0, buffer.pitch(), (modifiers>>32) as u32, modifiers as u32);
-			params.create_immed(buffer_ref, buffer.size().0, buffer.size().1, buffer.format() as u32, 0);
+			params.add(fd, 0, 0, pitch, (modifiers>>32) as u32, modifiers as u32);
+			params.create_immed(buffer_ref, size.x, size.y, format as u32, 0);
 			params.destroy();
 			window.surface.attach(&buffer_ref,0,0);
 			buffer_ref.destroy();
-			window.surface.damage_buffer(0, 0, buffer.size().0, buffer.size().1);
+			window.surface.damage_buffer(0, 0, size.x, size.y);
 			window.done = false;
 			let callback = window.callback.get_or_insert_with(|| server.new("callback"));
 			window.surface.frame(&callback);
