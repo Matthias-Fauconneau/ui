@@ -140,6 +140,7 @@ impl Server {
 			if let Some(index) = single_interfaces.iter().position(|&item| item==interface) {
 				let id = self.next_id(single_interfaces[index]);
 				registry.bind(name, &interface, version, id);
+				println!("{interface} {version}");
 				single[index] = id;
 			} else if let Some(index) = multiple_interfaces.iter().position(|&item| item==interface) {
 				let id = self.next_id(multiple_interfaces[index]);
@@ -349,7 +350,7 @@ pub use xdg_surface::XdgSurface;
 
 // toplevel: set_title(title: string), set_app_id, show_window_menu, _move, resize, set_max_size, set_min_size, set_maximized, unset_maximized, set_fullscreen(output?); configure(width, height, states: array), close, configure_bounds(width, height), wm_capabilities
 pub(crate) mod toplevel {
-	pub const configure: u16 = 0; pub const close: u16 = 1; pub const configure_bounds: u16 = 2;
+	pub const configure: u16 = 0; pub const close: u16 = 1; pub const configure_bounds: u16 = 2; pub const wm_capabilities: u16 = 3;
 	enum Requests { destroy, set_parent, set_title, set_app_id, show_window_menu, _move, resize, set_max_size, set_min_size, set_maximized, unset_maximized, set_fullscreen }
 	use super::{Arg::*, *};
 	pub struct Toplevel<'t>{server: &'t Server, pub(crate) id: u32}

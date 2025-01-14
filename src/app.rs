@@ -51,6 +51,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 		}
 	}
 	let mut window = Surface::new(server, compositor, wm_base, title, None/*Some(output)*/);
+	//let mut window = Surface::new(server, compositor, wm_base, title, Some(output));
 
 	let drm = DRM::new(if std::path::Path::new("/dev/dri/card2").exists() { "/dev/dri/card2" } else { "/dev/dri/card1"});
 
@@ -106,43 +107,50 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 					else if id == seat.id && opcode == seat::name {
 						server.args({use Type::*; [String]});
 					}
-					else if output.id == id && opcode == output::geometry {
+					else if id == output.id && opcode == output::geometry {
 						server.args({use Type::*; [UInt, UInt, UInt, UInt, UInt, String, String, UInt]});
 					}
-					else if output.id == id && opcode == output::mode {
+					else if id == output.id && opcode == output::mode {
 						let [_, UInt(x), UInt(y), _] = server.args({use Type::*; [UInt, UInt, UInt, UInt]}) else {unreachable!()};
 						configure_bounds = xy{x,y};
 					}
-					else if output.id == id && opcode == output::scale {
+					else if id == output.id && opcode == output::scale {
 						let [UInt(factor)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						scale_factor = factor;
 						window.surface.set_buffer_scale(scale_factor);
 					}
-					else if output.id == id && opcode == output::name {
+					else if id == output.id && opcode == output::name {
 						server.args({use Type::*; [String]});
 					}
-					else if output.id == id && opcode == output::description {
+					else if id == output.id && opcode == output::description {
 						server.args({use Type::*; [String]});
 					}
-					else if output.id == id && opcode == output::done {
+					else if id == output.id && opcode == output::done {
+					}
+					else if id == window.toplevel.id && opcode == toplevel::wm_capabilities {
+						let [Array(_)] = server.args({use Type::*; [Array]}) else {unreachable!()};
+						println!("top_level::configure_bounds");
 					}
 					else if id == window.toplevel.id && opcode == toplevel::configure_bounds {
 						let [UInt(_width),UInt(_height)] = server.args({use Type::*; [UInt,UInt]}) else {unreachable!()};
+						println!("top_level::configure_bounds");
 					}
 					else if id == window.toplevel.id && opcode == toplevel::configure {
-						let [UInt(x),UInt(y),_] = server.args({use Type::*; [UInt,UInt,Array]}) else {unreachable!()};
+						let [UInt(x),UInt(y),Array(_)] = server.args({use Type::*; [UInt,UInt,Array]}) else {unreachable!()};
 						size = xy{x: x*scale_factor, y: y*scale_factor};
 						if size.is_zero() {
 							assert!(configure_bounds.x > 0 && configure_bounds.y > 0);
 							size = widget.size(configure_bounds).map(|x| x.next_multiple_of(scale_factor));
 						}
 						assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
+						println!("top_level::configure");
 					}
 					else if id == window.xdg_surface.id && opcode == xdg_surface::configure {
 						let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						window.xdg_surface.ack_configure(serial);
 						window.can_paint = true;
 						need_paint = true;
+						println!("xdg_surface::configure");
 					}
 					else if id == window.surface.id && opcode == surface::enter {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
@@ -219,12 +227,13 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 					}
 					else if id == lease_device.id && opcode == drm_lease_device::released {
 					}
-					else { /*println!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names);*/ }
+					else { println!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
 				} else { println!("No messages :("); }
 			} else {
 				break;
 			}
 		} // event loop
+		println!("{need_paint} {size}");
 		if need_paint && size.x > 0 && size.y > 0 {
 			use ::drm::{control::Device as _, buffer::Buffer as _};
 			buffer.rotate_left(1);
@@ -259,6 +268,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 			let callback = window.callback.get_or_insert_with(|| server.new("callback"));
 			window.surface.frame(&callback);
 			window.surface.commit();
+			println!("commit");
 		}
 	} // {idle; event; draw;} loop
 }
