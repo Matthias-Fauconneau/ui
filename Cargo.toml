@@ -2,8 +2,7 @@ package={name='ui', version='0.0.0', edition='2024'}
 
 [dependencies]
 vector= {git='https://github.com/Matthias-Fauconneau/vector', features=['int_roundings']}
-#image={git='https://github.com/Matthias-Fauconneau/image', features=['slice_take']}
-image={path='../image', features=['slice_take']}
+image={git='https://github.com/Matthias-Fauconneau/image'}
 rustix={version='*', features=['fs','mm','net','event']}
 bytemuck='*'
 drm='*'
@@ -19,6 +18,3 @@ glob={version='*', optional=true}
 [features]
 text=['dep:text-size','dep:unicode-segmentation','dep:rustybuzz','dep:derive_more','dep:owning_ref','dep:kurbo','dep:glob']
 graphic=[]
-
-[patch.'https://github.com/Matthias-Fauconneau/image']
-image={path='../image'}
