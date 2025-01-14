@@ -1,4 +1,4 @@
-use {vector::{num::zero, xy}, crate::{Event, EventContext, Widget}};
+use {vector::{num::zero, xy}, crate::{Result, Event, EventContext, Widget}};
 #[path="wayland.rs"] mod wayland; use wayland::*;
 mod drm {
 	pub struct DRM(std::fs::File);
@@ -10,7 +10,7 @@ mod drm {
 }
 use self::drm::DRM;
 
-pub fn run<T:Widget>(title: &str, widget: &mut T) {
+pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 	let ref server = Server::connect();
 	let display = Display{server, id: 1};
 	let ref registry = server.new("registry");
@@ -228,7 +228,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 					}
 					else if id == keyboard.id && opcode == keyboard::key {
 						let [_serial,UInt(_key_time),UInt(key),UInt(_state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
-						if key == 1 { return; }
+						if key == 1 { return Ok(()); }
 					}
 					else if window.callback.as_ref().is_some_and(|callback| id == callback.id) && opcode == callback::done {
 						let [UInt(_timestamp_ms)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
@@ -241,7 +241,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
 					else if id == window.surface.id && opcode == toplevel::close {
-						return;
+						return Ok(());
 					}
 					else if id == lease_device.id && opcode == drm_lease_device::drm_fd {
 					}
@@ -263,12 +263,12 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 			let drm = drm.as_ref().unwrap();
 			let mut buffer = buffer.get_or_insert_with(|| {
 				widget.event(size, &mut EventContext{modifiers_state}, &Event::Stale).unwrap();
-				let mut buffer = drm.create_dumb_buffer(size.into(), if true { ::drm::buffer::DrmFourcc::Xrgb8888 } else { ::drm::buffer::DrmFourcc::Xrgb2101010 }, 32).unwrap();
-				let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
-				if true {
+				let buffer = drm.create_dumb_buffer(size.into(), if true { ::drm::buffer::DrmFourcc::Xrgb8888 } else { ::drm::buffer::DrmFourcc::Xrgb2101010 }, 32).unwrap();
+				/*let mut buffer = buffer; {
+					let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
 					let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
 					image::fill(&mut image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride), image::bgr8::from(crate::background()).into());
-				}
+				}*/
 				buffer
 			});
 			{
