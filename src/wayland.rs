@@ -140,7 +140,7 @@ impl Server {
 			if let Some(index) = single_interfaces.iter().position(|&item| item==interface) {
 				let id = self.next_id(single_interfaces[index]);
 				registry.bind(name, &interface, version, id);
-				println!("{interface} {version}");
+				//println!("{interface} {version}");
 				single[index] = id;
 			} else if let Some(index) = multiple_interfaces.iter().position(|&item| item==interface) {
 				let id = self.next_id(multiple_interfaces[index]);
@@ -193,17 +193,16 @@ pub(crate) mod buffer {
 }
 pub use buffer::Buffer;
 
-// dmabuf: create_params(params); format, modifier
+// dmabuf: destroy, create_params(params), get_default_feedback(feedback), get_surface_feedback(feedback, surface); format, modifier
 pub(crate) mod dmabuf {
 	pub const format: u16 = 0;
 	pub const modifier: u16 = 1;
-	enum Requests { _destroy, create_params }
+	enum Requests { _destroy, create_params, _get_default_feedback, get_surface_feedback }
 	use super::{Server, Arg::*, *};
 	pub struct DMABuf<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
 	// params: destroy, add(fd, plane_index, offset, stride, modifier_hi, modifier_lo), create(width, height, format, flags); created, failed
 	pub(crate) mod params {
-		pub const created: u16 = 0;
-		pub const failed: u16 = 1;
+		pub const created: u16 = 0; pub const failed: u16 = 1;
 		enum Requests { destroy, add, _create, create_immed }
 		use super::*;
 		pub struct Params<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
@@ -215,8 +214,22 @@ pub(crate) mod dmabuf {
 		}
 	}
 	pub use params::Params;
+	// feedback: destroy; done, format_table(fd, size), main_device(device), tranche_done, tranche_target_device(device), tranche_formats, tranche_flags(flags)
+	pub(crate) mod feedback {
+		pub const done: u16 = 0; pub const format_table: u16 = 1; pub const main_device: u16 = 2; pub const tranche_done: u16 = 3; pub const tranche_target_device: u16 = 4;
+		pub const tranche_formats: u16 = 5; pub const tranche_flags: u16 = 6;
+		enum Requests { destroy }
+		use super::*;
+		pub struct Feedback<'t>{pub(crate) server: &'t Server, pub(crate) id: u32}
+		impl<'t> From<(&'t Server, u32)> for Feedback<'t> { fn from((server, id): (&'t Server, u32)) -> Self { Self{server, id} }}
+		impl Feedback<'_> {
+			pub fn destroy(&self) { self.server.request(self.id, Requests::destroy as u16, []) }
+		}
+	}
+	pub use feedback::Feedback;
 	impl DMABuf<'_> {
 		#[track_caller] pub fn create_params(&self, params: &Params) { self.server.request(self.id, Requests::create_params as u16, [UInt(params.id)]) }
+		#[track_caller] pub fn get_surface_feedback(&self, feedback: &Feedback, surface: &Surface) { self.server.request(self.id, Requests::get_surface_feedback as u16, [UInt(feedback.id), UInt(surface.id)]) }
 	}
 }
 pub use self::dmabuf::DMABuf;
@@ -255,9 +268,9 @@ pub(crate) mod callback {
 }
 pub use callback::Callback;
 
-// surface: enter(output); attach(buffer, x, y), commit, set_buffer_scale(factor), damage_buffer(x,y,w,h); enter(output), leave(output)
+// surface: enter(output), leave, preferred_buffer_scale(factor); attach(buffer, x, y), commit, set_buffer_scale(factor), damage_buffer(x,y,w,h); enter(output), leave(output)
 pub(crate) mod surface {
-	pub const enter: u16 = 0; pub const leave: u16 = 1;
+	pub const enter: u16 = 0; pub const leave: u16 = 1; pub const preferred_buffer_scale: u16 = 2;
 	enum Requests { destroy, attach, _damage, frame, set_opaque_region, set_input_region, commit, set_buffer_transform, set_buffer_scale, damage_buffer }
 	use super::{Arg::*, *};
 	pub struct Surface<'t>{server: &'t Server, pub(crate) id: u32}

@@ -2,7 +2,7 @@ use {vector::{num::{zero, IsZero}, xy}, crate::{Event, EventContext, Widget}};
 #[path="wayland.rs"] mod wayland; use wayland::*;
 mod drm {
 	pub struct DRM(std::fs::File);
-	impl DRM { pub fn new(path: &str) -> Self { Self(std::fs::OpenOptions::new().read(true).write(true).open(path).unwrap()) } }
+	impl DRM { pub fn new(dev: u64) -> Self { Self(std::fs::OpenOptions::new().read(true).write(true).open(::drm::node::dev_path(dev, ::drm::node::NodeType::Primary).unwrap()).unwrap()) } }
 	impl std::os::fd::AsFd for DRM { fn as_fd(&self) -> std::os::fd::BorrowedFd { self.0.as_fd() } }
 	impl std::os::fd::AsRawFd for DRM { fn as_raw_fd(&self) -> std::os::fd::RawFd { self.0.as_raw_fd() } }
 	impl ::drm::Device for DRM {}
@@ -15,7 +15,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 	let display = Display{server, id: 1};
 	let ref registry = server.new("registry");
 	display.get_registry(registry);
-	let ([compositor, wm_base, seat, dmabuf, lease_device,output], []) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1","wp_drm_lease_device_v1","wl_output"], []);
+	let ([compositor, wm_base, seat, dmabuf, lease_device, output], []) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1","wp_drm_lease_device_v1","wl_output"], []);
 	let ref compositor = Compositor{server, id: compositor};
 	let ref wm_base = WmBase{server, id: wm_base};
 	let ref seat = Seat{server, id: seat};
@@ -53,7 +53,10 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 	let mut window = Surface::new(server, compositor, wm_base, title, None/*Some(output)*/);
 	//let mut window = Surface::new(server, compositor, wm_base, title, Some(output));
 
-	let drm = DRM::new(if std::path::Path::new("/dev/dri/card2").exists() { "/dev/dri/card2" } else { "/dev/dri/card1"});
+	let ref feedback : dmabuf::Feedback = server.new("feedback");
+	dmabuf.get_surface_feedback(feedback, &window.surface);
+	
+	let mut drm = None;
 
 	let ref params : dmabuf::Params = server.new("params");
 	let ref buffer_ref : Buffer = server.new("buffer_ref");
@@ -71,13 +74,16 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 				use rustix::event::{PollFd,PollFlags};
 				let server = &*server.server.borrow();
 				let mut fds = [PollFd::new(server, PollFlags::IN)];
+				println!("poll");
 				rustix::event::poll(&mut fds, if window.can_paint && window.done && need_paint {0} else {-1}).unwrap();
+				println!("polled");
 				let events = fds.map(|fd| fd.revents().contains(PollFlags::IN));
 				events
 			};
 			if events[0] {
 				if let Some((Message{id, opcode, ..}, _any_fd)) = message(&*server.server.borrow()) {
 					use Arg::*;
+					println!("event");
 					/**/ if id == registry.id && opcode == registry::global {
 						server.args({use Type::*; [UInt, String, UInt]});
 					} else if id == display.id && opcode == display::error {
@@ -85,6 +91,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 						panic!("{id} {code} {message} {:?}", server.names.lock()/*.iter().find(|(e,_)| *e==id).map(|(_,name)| name)*/);
 					}
 					else if id == display.id && opcode == display::delete_id {
+						println!("delete_id");
 						let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						if window.callback.as_ref().is_some_and(|callback| id == callback.id) {
 							window.done = true; // O_o
@@ -115,9 +122,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 						configure_bounds = xy{x,y};
 					}
 					else if id == output.id && opcode == output::scale {
-						let [UInt(factor)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-						scale_factor = factor;
-						window.surface.set_buffer_scale(scale_factor);
+						server.args({use Type::*; [UInt]});
 					}
 					else if id == output.id && opcode == output::name {
 						server.args({use Type::*; [String]});
@@ -126,6 +131,25 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 						server.args({use Type::*; [String]});
 					}
 					else if id == output.id && opcode == output::done {
+					}
+					else if id == feedback.id && opcode == dmabuf::feedback::done {}
+					else if id == feedback.id && opcode == dmabuf::feedback::format_table {
+						server.args({use Type::*; [UInt]});
+						//assert!(_any_fd.is_some());
+					} 
+					else if id == feedback.id && opcode == dmabuf::feedback::main_device {
+						server.args({use Type::*; [Array]});
+					} 
+					else if id == feedback.id && opcode == dmabuf::feedback::tranche_target_device {
+						let [Array(dev)] = server.args({use Type::*; [Array]}) else {unreachable!()};
+						drm = Some(DRM::new(u64::from_ne_bytes(dev[..].try_into().unwrap())));
+					}
+					else if id == feedback.id && opcode == dmabuf::feedback::tranche_done {}
+					else if id == feedback.id && opcode == dmabuf::feedback::tranche_formats {
+						server.args({use Type::*; [Array]});
+					}
+					else if id == feedback.id && opcode == dmabuf::feedback::tranche_flags {
+						server.args({use Type::*; [UInt]});
 					}
 					else if id == window.toplevel.id && opcode == toplevel::wm_capabilities {
 						let [Array(_)] = server.args({use Type::*; [Array]}) else {unreachable!()};
@@ -138,9 +162,10 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 					else if id == window.toplevel.id && opcode == toplevel::configure {
 						let [UInt(x),UInt(y),Array(_)] = server.args({use Type::*; [UInt,UInt,Array]}) else {unreachable!()};
 						size = xy{x: x*scale_factor, y: y*scale_factor};
-						if size.is_zero() {
+						if size.x == 0 || size.y == 0 {
 							assert!(configure_bounds.x > 0 && configure_bounds.y > 0);
-							size = widget.size(configure_bounds).map(|x| x.next_multiple_of(scale_factor));
+							let app_size = widget.size(configure_bounds).map(|x| x.next_multiple_of(scale_factor));
+							size = xy{x: if size.x > 0 { size.x } else { app_size.x}, y: if size.y > 0 { size.y } else { app_size.y }};
 						}
 						assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
 						println!("top_level::configure");
@@ -158,7 +183,12 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 					else if id == window.surface.id && opcode == surface::leave {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
-					else if id == buffer_ref.id && opcode == buffer::release {}
+					else if id == window.surface.id && opcode == surface::preferred_buffer_scale {
+						let [UInt(factor)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
+						scale_factor = factor;
+						window.surface.set_buffer_scale(scale_factor);
+					}
+					else if id == buffer_ref.id && opcode == buffer::release { println!("release"); }
 					else if id == pointer.id && opcode == pointer::enter {
 						let [UInt(_),_,_,_] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
 					}
@@ -230,6 +260,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 					else { println!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
 				} else { println!("No messages :("); }
 			} else {
+				println!("no event");
 				break;
 			}
 		} // event loop
@@ -239,11 +270,12 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 			buffer.rotate_left(1);
 			let ref mut buffer = buffer[0];
 			if buffer.is_some_and(|buffer: ::drm::control::dumbbuffer::DumbBuffer| {let (x, y) = buffer.size(); xy{x, y} != size}) { *buffer = None; }
+			let drm = drm.as_ref().unwrap();
 			let mut buffer = buffer.get_or_insert_with(|| {
 				widget.event(size, &mut EventContext{modifiers_state}, &Event::Stale).unwrap();
-				let mut buffer = drm.create_dumb_buffer(size.into(), if false { ::drm::buffer::DrmFourcc::Xrgb8888 } else { ::drm::buffer::DrmFourcc::Xrgb2101010 }, 32).unwrap();
+				let mut buffer = drm.create_dumb_buffer(size.into(), if true { ::drm::buffer::DrmFourcc::Xrgb8888 } else { ::drm::buffer::DrmFourcc::Xrgb2101010 }, 32).unwrap();
 				let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
-				if false {
+				if true {
 					let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
 					image::fill(&mut image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride), image::bgr8::from(crate::background()).into());
 				}
