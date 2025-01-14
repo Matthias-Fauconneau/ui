@@ -50,7 +50,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 			Self{surface, xdg_surface, toplevel, can_paint: false, callback: None, done: true}
 		}
 	}
-	let mut window = Surface::new(server, compositor, wm_base, title, Some(output));
+	let mut window = Surface::new(server, compositor, wm_base, title, None/*Some(output)*/);
 
 	let drm = DRM::new(if std::path::Path::new("/dev/dri/card2").exists() { "/dev/dri/card2" } else { "/dev/dri/card1"});
 
@@ -95,12 +95,10 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 						}
 					}
 					else if id == dmabuf.id && opcode == dmabuf::format {
-						let [UInt(format)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-						println!("f {:x}", format);
+						let [UInt(_)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
 					else if id == dmabuf.id && opcode == dmabuf::modifier {
-						let [UInt(modifier)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
-						println!("m {:x}", modifier);
+						let [UInt(_)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 					}
 					else if id == seat.id && opcode == seat::capabilities {
 						server.args({use Type::*; [UInt]});
@@ -234,10 +232,12 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 			if buffer.is_some_and(|buffer: ::drm::control::dumbbuffer::DumbBuffer| {let (x, y) = buffer.size(); xy{x, y} != size}) { *buffer = None; }
 			let mut buffer = buffer.get_or_insert_with(|| {
 				widget.event(size, &mut EventContext{modifiers_state}, &Event::Stale).unwrap();
-				let mut buffer = drm.create_dumb_buffer(size.into(), ::drm::buffer::DrmFourcc::Xrgb8888 /*drm::buffer::DrmFourcc::Xrgb2101010*/, 32).unwrap();
+				let mut buffer = drm.create_dumb_buffer(size.into(), if false { ::drm::buffer::DrmFourcc::Xrgb8888 } else { ::drm::buffer::DrmFourcc::Xrgb2101010 }, 32).unwrap();
 				let stride = {assert_eq!(buffer.pitch()%4, 0); buffer.pitch()/4};
-				{let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
-				image::fill(&mut image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride), image::bgr8::from(crate::background()).into());}
+				if false {
+					let mut map = drm.map_dumb_buffer(&mut buffer).unwrap();
+					image::fill(&mut image::Image::<& mut [u32]>::cast_slice_mut(map.as_mut(), size, stride), image::bgr8::from(crate::background()).into());
+				}
 				buffer
 			});
 			{
