@@ -5,9 +5,9 @@ vector= {git='https://github.com/Matthias-Fauconneau/vector', features=['int_rou
 image={git='https://github.com/Matthias-Fauconneau/image'}
 rustix={version='*', features=['fs','mm','net','event']}
 bytemuck='*'
-drm='*'
 
 vulkano={git='https://github.com/vulkano-rs/vulkano'}
+drm-fourcc='*'
 
 text-size={version='*', optional=true}
 unicode-segmentation={version='*', optional=true}
