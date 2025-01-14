@@ -1,4 +1,4 @@
-use {vector::{num::{zero, IsZero}, xy}, crate::{Event, EventContext, Widget}};
+use {vector::{num::zero, xy}, crate::{Event, EventContext, Widget}};
 #[path="wayland.rs"] mod wayland; use wayland::*;
 mod drm {
 	pub struct DRM(std::fs::File);
@@ -74,16 +74,13 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 				use rustix::event::{PollFd,PollFlags};
 				let server = &*server.server.borrow();
 				let mut fds = [PollFd::new(server, PollFlags::IN)];
-				println!("poll");
 				rustix::event::poll(&mut fds, if window.can_paint && window.done && need_paint {0} else {-1}).unwrap();
-				println!("polled");
 				let events = fds.map(|fd| fd.revents().contains(PollFlags::IN));
 				events
 			};
 			if events[0] {
 				if let Some((Message{id, opcode, ..}, _any_fd)) = message(&*server.server.borrow()) {
 					use Arg::*;
-					println!("event");
 					/**/ if id == registry.id && opcode == registry::global {
 						server.args({use Type::*; [UInt, String, UInt]});
 					} else if id == display.id && opcode == display::error {
@@ -91,7 +88,6 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 						panic!("{id} {code} {message} {:?}", server.names.lock()/*.iter().find(|(e,_)| *e==id).map(|(_,name)| name)*/);
 					}
 					else if id == display.id && opcode == display::delete_id {
-						println!("delete_id");
 						let [UInt(id)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						if window.callback.as_ref().is_some_and(|callback| id == callback.id) {
 							window.done = true; // O_o
@@ -153,11 +149,9 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 					}
 					else if id == window.toplevel.id && opcode == toplevel::wm_capabilities {
 						let [Array(_)] = server.args({use Type::*; [Array]}) else {unreachable!()};
-						println!("top_level::configure_bounds");
 					}
 					else if id == window.toplevel.id && opcode == toplevel::configure_bounds {
 						let [UInt(_width),UInt(_height)] = server.args({use Type::*; [UInt,UInt]}) else {unreachable!()};
-						println!("top_level::configure_bounds");
 					}
 					else if id == window.toplevel.id && opcode == toplevel::configure {
 						let [UInt(x),UInt(y),Array(_)] = server.args({use Type::*; [UInt,UInt,Array]}) else {unreachable!()};
@@ -168,14 +162,12 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 							size = xy{x: if size.x > 0 { size.x } else { app_size.x}, y: if size.y > 0 { size.y } else { app_size.y }};
 						}
 						assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
-						println!("top_level::configure");
 					}
 					else if id == window.xdg_surface.id && opcode == xdg_surface::configure {
 						let [UInt(serial)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
 						window.xdg_surface.ack_configure(serial);
 						window.can_paint = true;
 						need_paint = true;
-						println!("xdg_surface::configure");
 					}
 					else if id == window.surface.id && opcode == surface::enter {
 						let [UInt(_output)] = server.args({use Type::*; [UInt]}) else {unreachable!()};
@@ -260,11 +252,9 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 					else { println!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
 				} else { println!("No messages :("); }
 			} else {
-				println!("no event");
 				break;
 			}
 		} // event loop
-		println!("{need_paint} {size}");
 		if need_paint && size.x > 0 && size.y > 0 {
 			use ::drm::{control::Device as _, buffer::Buffer as _};
 			buffer.rotate_left(1);
@@ -300,7 +290,6 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) {
 			let callback = window.callback.get_or_insert_with(|| server.new("callback"));
 			window.surface.frame(&callback);
 			window.surface.commit();
-			println!("commit");
 		}
 	} // {idle; event; draw;} loop
 }

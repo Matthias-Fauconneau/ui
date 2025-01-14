@@ -4,24 +4,21 @@ package={name='ui', version='0.0.0', edition='2024'}
 vector= {git='https://github.com/Matthias-Fauconneau/vector', features=['int_roundings']}
 #image={git='https://github.com/Matthias-Fauconneau/image', features=['slice_take']}
 image={path='../image', features=['slice_take']}
-#rustix={git='https://github.com/Matthias-Fauconneau/rustix', features=['fs','mm','net','event']} # rustix: 0.4 -> same as drm:
-rustix={version='*', features=['fs','mm','net','event']} # rustix: 0.4 -> same as drm:
-text-size='*'
-unicode-segmentation='*'
-rustybuzz='*'
-derive_more={version='*', features=['deref']}
-owning_ref='*'
-kurbo='*'
-glob='*'
+rustix={version='*', features=['fs','mm','net','event']}
 bytemuck='*'
 drm='*'
 
-[features]
-text=[]
-graphic=[]
+text-size={version='*', optional=true}
+unicode-segmentation={version='*', optional=true}
+rustybuzz={version='*', optional=true}
+derive_more={version='*', features=['deref'], optional=true}
+owning_ref={version='*', optional=true}
+kurbo={version='*', optional=true}
+glob={version='*', optional=true}
 
-#[patch.crates-io]
-#rustix={git='https://github.com/Matthias-Fauconneau/rustix'} # rustix: 0.4 -> same as drm:
+[features]
+text=['dep:text-size','dep:unicode-segmentation','dep:rustybuzz','dep:derive_more','dep:owning_ref','dep:kurbo','dep:glob']
+graphic=[]
 
 [patch.'https://github.com/Matthias-Fauconneau/image']
 image={path='../image'}

@@ -11,7 +11,7 @@ pub use image::{bgr, bgrf};
 pub mod widget; pub use widget::{Widget, Target, Event, EventContext, ModifiersState};
 mod app; pub use app::run;
 
-pub mod font;
+#[cfg(feature="text")] pub mod font;
 #[cfg(feature="text")] pub mod text; #[cfg(feature="text")] pub use text::{fit,Text,text};
 #[cfg(feature="graphic")] pub mod line; #[cfg(feature="graphic")] pub use line::{line, parallelogram};
 #[cfg(feature="graphic")] pub mod graphic; #[cfg(feature="graphic")] pub use {graphic::Graphic, vector::num::{Ratio,unit}};
