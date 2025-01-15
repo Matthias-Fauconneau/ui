@@ -1,26 +1,26 @@
 package={name='ui', version='0.0.0', edition='2024'}
 
 [dependencies]
-vector= {git='https://github.com/Matthias-Fauconneau/vector', features=['int_roundings']}
-image={git='https://github.com/Matthias-Fauconneau/image'}
-rustix={version='*', features=['fs','mm','net','event']}
-bytemuck='*'
+fehler='*'
+vector={ git='https://github.com/Matthias-Fauconneau/vector', features=['int_roundings']}
+image={ git='https://github.com/Matthias-Fauconneau/image' }
+rustix={ version='*', features=['fs','mm','net','event'] }
+bytemuck={ version='*', features=['extern_crate_alloc'] }
 
-vulkano={git='https://github.com/vulkano-rs/vulkano'}
-#vulkano-shaders={git='https://github.com/vulkano-rs/vulkano', features = ['shaderc-build-from-source']} # Fails to link glslang
+vulkano={ git='https://github.com/vulkano-rs/vulkano', default-features=false }
 drm-fourcc='*'
 
-text-size={version='*', optional=true}
-unicode-segmentation={version='*', optional=true}
-rustybuzz={version='*', optional=true}
-derive_more={version='*', features=['deref'], optional=true}
-owning_ref={version='*', optional=true}
-kurbo={version='*', optional=true}
-glob={version='*', optional=true}
+text-size={ version='*', optional=true }
+unicode-segmentation={ version='*', optional=true }
+rustybuzz={ version='*', optional=true }
+derive_more={ version='*', features=['deref'], optional=true }
+owning_ref={ version='*', optional=true }
+kurbo={ version='*', optional=true }
+glob={ version='*', optional=true }
 
 [features]
 text=['dep:text-size','dep:unicode-segmentation','dep:rustybuzz','dep:derive_more','dep:owning_ref','dep:kurbo','dep:glob']
 graphic=[]
 
 [patch.'https://github.com/vulkano-rs/vulkano']
-vulkano={path='../vulkano/vulkano'}
+vulkano={ path='../vulkano/vulkano' }

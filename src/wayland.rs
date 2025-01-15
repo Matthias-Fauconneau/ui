@@ -375,7 +375,7 @@ pub(crate) mod toplevel {
 }
 pub use toplevel::Toplevel;
 
-// wp_drm_lease_connector_v1: destroy; name(string), description(string), connector_id(uint), done, withdrawn
+/*// wp_drm_lease_connector_v1: destroy; name(string), description(string), connector_id(uint), done, withdrawn
 pub(crate) mod drm_lease_connector {
 	const name: u16 = 0; const description: u16 = 1; const connector_id: u16 = 2; const done: u16 = 3; const withdrawn: u16 = 4;
 	enum Requests { destroy }
@@ -426,4 +426,4 @@ pub(crate) mod drm_lease_device {
 		pub fn release(&self) { self.server.request(self.id, Requests::release as u16, []); }
 	}
 }
-pub use drm_lease_device::LeaseDevice;
+pub use drm_lease_device::LeaseDevice;*/

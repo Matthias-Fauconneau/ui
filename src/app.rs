@@ -53,12 +53,11 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 	let display = Display{server, id: 1};
 	let ref registry = server.new("registry");
 	display.get_registry(registry);
-	let ([compositor, wm_base, seat, dmabuf, lease_device, output], []) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1","wp_drm_lease_device_v1","wl_output"], []);
+	let ([compositor, wm_base, seat, dmabuf, output], []) = server.globals(registry, ["wl_compositor","xdg_wm_base","wl_seat","zwp_linux_dmabuf_v1","wl_output"], []);
 	let ref compositor = Compositor{server, id: compositor};
 	let ref wm_base = WmBase{server, id: wm_base};
 	let ref seat = Seat{server, id: seat};
 	let ref dmabuf = DMABuf{server, id: dmabuf};
-	let ref lease_device = LeaseDevice{server, id: lease_device};
 	let ref output = Output{server, id: output};
 
 	let ref pointer = server.new("pointer");
@@ -280,13 +279,14 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 					else if id == window.surface.id && opcode == toplevel::close {
 						return Ok(());
 					}
-					else if id == lease_device.id && opcode == drm_lease_device::drm_fd {
+					/*else if id == lease_device.id && opcode == drm_lease_device::drm_fd {
 					}
 					else if id == lease_device.id && opcode == drm_lease_device::done {
 					}
 					else if id == lease_device.id && opcode == drm_lease_device::released {
-					}
-					else { println!("{:?} {opcode:?} {:?} {:?}", id, [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
+					}*/
+					else { println!("! {id:?} {opcode:?} {:?} {:?}", [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
+					//println!("{id:?} {opcode:?}");
 				} else { println!("No messages :("); }
 			} else {
 				break;

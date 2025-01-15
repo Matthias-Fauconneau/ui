@@ -1,0 +1,19 @@
+package={name='triangle', version='0.0.0', edition='2024'}
+
+[dependencies]
+ui={path='../..'}
+vulkano={git='https://github.com/vulkano-rs/vulkano', default-features=false}
+vulkano-spirv={git='https://github.com/Matthias-Fauconneau/vulkano-spirv'}
+
+[build-dependencies]
+naga = {version='*', features = ['wgsl-in','spv-out']}
+bytemuck = {version='*'}
+
+[patch.'https://github.com/vulkano-rs/vulkano']
+vulkano={path='../../../vulkano/vulkano'}
+
+[patch.crates-io] # Make vulkano-spirv use same version
+vulkano={path='../../../vulkano/vulkano'}
+
+[patch.'https://github.com/Matthias-Fauconneau/vulkano-spirv']
+vulkano-spirv={path='../../../vulkano-spirv'}

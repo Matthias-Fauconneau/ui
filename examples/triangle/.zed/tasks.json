@@ -1,6 +1,6 @@
 [
 	{
-		"label": "Empty",
+		"label": "Triangle",
 		"command": "cargo run",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,

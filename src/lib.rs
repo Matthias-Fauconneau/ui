@@ -2,6 +2,7 @@
 pub fn default<T: Default>() -> T { Default::default() }
 pub type Error = Box<dyn core::error::Error>;
 pub type Result<T=(),E=Error> = core::result::Result<T, E>;
+pub use fehler::throws;
 pub use vector::{xy, uint2, int2};
 pub use image::{self, Image};
 pub mod vulkan;

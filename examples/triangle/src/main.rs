@@ -1,4 +1,5 @@
-use vulkano::{
+#![feature(slice_from_ptr_range)] // shader
+/*use vulkano::{
 	memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, 
 	buffer::{Buffer, BufferCreateInfo, BufferUsage, subbuffer::BufferContents},
 	command_buffer::{RenderingInfo, RenderingAttachmentInfo},
@@ -7,15 +8,21 @@ use vulkano::{
 		graphics::{GraphicsPipelineCreateInfo, subpass::PipelineRenderingCreateInfo, viewport::Viewport, 
 			vertex_input::{Vertex, VertexDefinition}, color_blend::ColorBlendState}
 	},
-};
+};*/
 
-use {std::sync::Arc, ui::{default, vulkan::{Context, Commands, ImageView}}};
+use {std::sync::Arc, ui::vulkan::{Context, Commands, ImageView}};
 
-struct Empty;
-impl ui::Widget for Empty { 
-fn paint(&mut self, Context{device, memory_allocator, ..}: &Context, commands: &mut Commands, target: Arc<ImageView>, _: ui::uint2, _: ui::int2) -> ui::Result<()> {
-	#[derive(BufferContents, Vertex)] #[repr(C)] struct MyVertex { #[format(R32G32_SFLOAT)] position: [f32; 2] }
-	mod vs { vulkano_shaders::shader!{ty: "vertex", src: r"#version 450
+ui::shader!{triangle, Triangle}
+
+struct App;
+impl ui::Widget for App { 
+fn paint(&mut self, context/*@Context{device, memory_allocator, ..}*/: &Context, commands: &mut Commands, target: Arc<ImageView>, _: ui::uint2, _: ui::int2) -> ui::Result<()> {
+	let triangle = Triangle::new(context)?;
+	triangle.begin_rendering(context, commands, target.clone(), &[])?;
+	unsafe{commands.draw(4, 1, 0, 0)}?;
+	commands.end_rendering()?;
+	//#[derive(BufferContents, Vertex)] #[repr(C)] struct MyVertex { #[format(R32G32_SFLOAT)] position: [f32; 2] }
+	/*mod vs { vulkano_shaders::shader!{ty: "vertex", src: r"#version 450
 		layout(location = 0) in vec2 position;
 		void main() { gl_Position = vec4(position, 0.0, 1.0); }"}}
 	mod fs { vulkano_shaders::shader!{ty: "fragment", src: r"#version 450
@@ -60,11 +67,11 @@ fn paint(&mut self, Context{device, memory_allocator, ..}: &Context, commands: &
 	let len = vertex_buffer.len();
 	commands.bind_vertex_buffers(0, vertex_buffer)?;
 	unsafe{commands.draw(len as u32, 1, 0, 0) }?;
-	commands.end_rendering()?;
+	commands.end_rendering()?;*/
 	Ok(())
 }
 }
 
 fn main() -> ui::Result {
-	ui::run("empty", &mut Empty)
+	ui::run("triangle", &mut App)
 }
