@@ -6,12 +6,11 @@ use wayland::*;
 
 use {std::sync::Arc, vulkano::{VulkanLibrary, Validated, VulkanError, instance::{Instance, InstanceCreateInfo, InstanceExtensions},
 	device::{Device, DeviceCreateInfo, DeviceFeatures, DeviceExtensions, physical::PhysicalDeviceType, QueueCreateInfo, QueueFlags},
-	memory::allocator::StandardMemoryAllocator,
+	memory::{DeviceMemory, MemoryAllocateInfo, ExternalMemoryHandleType, ExternalMemoryHandleTypes, MemoryMapInfo, allocator::{GenericMemoryAllocatorCreateInfo, StandardMemoryAllocator}},
 	command_buffer::{allocator::StandardCommandBufferAllocator, CommandBufferLevel, CommandBufferBeginInfo, CommandBufferUsage},
 	descriptor_set::allocator::StandardDescriptorSetAllocator,
-	swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainPresentInfo, acquire_next_image},
 	command_buffer::RecordingCommandBuffer,
-	image::{ImageUsage, view::ImageView}, format::Format,
+	image::{ImageFormatInfo, ImageDrmFormatModifierInfo, Image, ImageCreateInfo, ImageUsage, ImageMemory, ImageTiling, view::ImageView}, format::Format,
 	sync::{future::{GpuFuture, FenceSignalFuture}, now}}};
 /*#[path="vulkan.rs"] mod vulkan;
 use vulkan::Context;*/
@@ -30,15 +29,28 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 			.find(|&(i, q)| q.queue_flags.intersects(QueueFlags::GRAPHICS) /*&& p.surface_support(i as u32, &surface).unwrap_or(false)*/)?;
 		Some((p, i as u32))
 	}).unwrap();
-	let (device, mut queues) = Device::new(physical_device, DeviceCreateInfo{
+	let format = Format::B8G8R8A8_SRGB; // B8G8R8_SRGB is not compatible as dmabuf color attachment
+	/*println!("{:?}", physical_device.image_format_properties(ImageFormatInfo{
+		format, 
+		usage: ImageUsage::COLOR_ATTACHMENT, 
+		external_memory_handle_type: Some(ExternalMemoryHandleType::DmaBuf),
+		tiling: ImageTiling::DrmFormatModifier,
+		drm_format_modifier_info: Some(ImageDrmFormatModifierInfo{drm_format_modifier: 0, ..default()}),
+		..default()
+	})?.unwrap());*/
+	let (device, mut queues) = Device::new(physical_device.clone(), DeviceCreateInfo{
 		enabled_extensions,
 		queue_create_infos: vec![QueueCreateInfo{queue_family_index, ..default()}],
 		enabled_features: DeviceFeatures{dynamic_rendering: true, dynamic_rendering_unused_attachments: true, ..default()},
 		..default()
 	})?;
 	let queue = queues.next().unwrap();
-	let format = Format::B8G8R8_SRGB; //B8G8R8A8_SRGB;
- 
+	
+	let ref memory_types = physical_device.memory_properties().memory_types;
+    let ref export_handle_types = vec![ExternalMemoryHandleTypes::DMA_BUF; memory_types.len()];
+    let ref block_sizes = vec![256 * 1024 * 1024; memory_types.len()];
+    let dmabuf_memory_allocator = Arc::new(StandardMemoryAllocator::new(device.clone(), GenericMemoryAllocatorCreateInfo{block_sizes, export_handle_types, ..default()}));
+    
 	use {std::sync::Arc, vulkano::{device::{Device, Queue}, memory::allocator::StandardMemoryAllocator, command_buffer::allocator::StandardCommandBufferAllocator,  format::Format, descriptor_set::allocator::StandardDescriptorSetAllocator}};
     #[derive(Clone)] pub struct Context {
 		pub device: Arc<Device>,
@@ -102,11 +114,12 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 	
 	let ref params : dmabuf::Params = server.new("params");
 	let ref buffer_ref : Buffer = server.new("buffer_ref");
-	let mut framebuffer = None;
+	let mut framebuffer = [None, None, None];
 	let mut scale_factor = 0;
 	let mut configure_bounds = zero();
 	let mut size = zero();
 	let modifiers_state = Default::default();
+	let mut previous_frame_end = Some(now(context.device.clone()).boxed());
 
 	loop {
 		let mut need_paint = widget.event(size, &mut EventContext{modifiers_state}, &Event::Idle).unwrap(); // determines whether to wait for events
@@ -299,12 +312,10 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 			}
 		} // event loop
 		if need_paint && size.x > 0 && size.y > 0 {
-			use vulkano::memory::{DeviceMemory, MemoryAllocateInfo, ExternalMemoryHandleType, ExternalMemoryHandleTypes, MemoryMapInfo};
-			let format = drm_fourcc::DrmFourcc::Xrgb8888;
 			let pitch = size.x*4;
-			let image_size = (size.y*pitch) as u64;
-			let allocation_size = (4*image_size) as u64;
-			if framebuffer.as_ref().is_some_and(|(memory,_,_):&(DeviceMemory,_,_)| memory.allocation_size() != allocation_size) { framebuffer = None; }
+			/*let image_size = (size.y*pitch) as u64;
+			let allocation_size = (4*image_size) as u64;*/
+			/*if framebuffer.as_ref().is_some_and(|(memory,_,_):&(DeviceMemory,_,_)| memory.allocation_size() != allocation_size) { framebuffer = None; }
 			let &mut (ref mut memory, ref mut fd, ref mut framebuffers) = framebuffer.get_or_insert_with(|| {
 				widget.event(size, &mut EventContext{modifiers_state}, &Event::Stale).unwrap();
 				let memory_type_index = 1;
@@ -313,21 +324,243 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 				memory.map(MemoryMapInfo{offset: 0, size: allocation_size, ..default()}).unwrap();
 				let fd = memory.export_fd(ExternalMemoryHandleType::DmaBuf).unwrap();
 				(memory, fd, [(0*image_size, image_size), (1*image_size, image_size), (2*image_size, image_size), (3*image_size, image_size)])
+			});*/
+			framebuffer.rotate_left(1);
+			let ref mut framebuffer = framebuffer[0];
+			let ref mut framebuffer = framebuffer.get_or_insert_with(|| {
+				println!("{size}");
+				let image = Image::new(dmabuf_memory_allocator.clone(), ImageCreateInfo{format, extent: [size.x, size.y, 1], usage: ImageUsage::COLOR_ATTACHMENT, 
+					tiling: ImageTiling::DrmFormatModifier, drm_format_modifiers: vec![0], external_memory_handle_types: ExternalMemoryHandleTypes::DMA_BUF, ..default()}, default()).unwrap();
+				println!("OK");
+				image
 			});
+			//let (offset, len) = framebuffer;
 			
-			let (offset, len) = framebuffers[0];
-			framebuffers.rotate_left(1);
 			{
-				let stride = {assert_eq!(pitch%4, 0); pitch/4};
+				/*let stride = {assert_eq!(pitch%4, 0); pitch/4};
 				let map = memory.mapping_state().unwrap();
 				let mut map = map.slice(offset..offset+len).unwrap();
 				let mut target = image::Image::cast_slice_mut(unsafe{map.as_mut()}, size, stride);
-				widget.paint(&mut target, size, zero()).unwrap();
+				widget.paint(&mut target, size, zero()).unwrap();*/
+    #[derive(BufferContents, Vertex)]
+        #[repr(C)]
+        struct MyVertex {
+            #[format(R32G32_SFLOAT)]
+            position: [f32; 2],
+        }
+        	use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexDefinition};
+
+			 	mod vs {
+            vulkano_shaders::shader! {
+                ty: "vertex",
+                src: r"
+                    #version 450
+
+                    layout(location = 0) in vec2 position;
+
+                    void main() {
+                        gl_Position = vec4(position, 0.0, 1.0);
+                    }
+                ",
+            }
+        }
+
+        mod fs {
+            vulkano_shaders::shader! {
+                ty: "fragment",
+                src: r"
+                    #version 450
+
+                    layout(location = 0) out vec4 f_color;
+
+                    void main() {
+                        f_color = vec4(1.0, 0.0, 0.0, 1.0);
+                    }
+                ",
+            }
+        }
+
+        // Before we draw, we have to create what is called a **pipeline**. A pipeline describes
+        // how a GPU operation is to be performed. It is similar to an OpenGL program, but it also
+        // contains many settings for customization, all baked into a single object. For drawing,
+        // we create a **graphics** pipeline, but there are also other types of pipeline.
+        let pipeline = {
+            // First, we load the shaders that the pipeline will use: the vertex shader and the
+            // fragment shader.
+            //
+            // A Vulkan shader can in theory contain multiple entry points, so we have to specify
+            // which one.
+            let vs = vs::load(context.device.clone())
+                .unwrap()
+                .entry_point("main")
+                .unwrap();
+            let fs = fs::load(context.device.clone())
+                .unwrap()
+                .entry_point("main")
+                .unwrap();
+
+            // Automatically generate a vertex input state from the vertex shader's input
+                        // interface, that takes a single vertex buffer containing `Vertex` structs.
+                        let vertex_input_state = MyVertex::per_vertex().definition(&vs).unwrap();
+                        
+            // Make a list of the shader stages that the pipeline will have.
+            let stages = [
+                PipelineShaderStageCreateInfo::new(vs),
+                PipelineShaderStageCreateInfo::new(fs),
+            ];
+
+            // We must now create a **pipeline layout** object, which describes the locations and
+            // types of descriptor sets and push constants used by the shaders in the pipeline.
+            //
+            // Multiple pipelines can share a common layout object, which is more efficient. The
+            // shaders in a pipeline must use a subset of the resources described in its pipeline
+            // layout, but the pipeline layout is allowed to contain resources that are not present
+            // in the shaders; they can be used by shaders in other pipelines that share the same
+            // layout. Thus, it is a good idea to design shaders so that many pipelines have common
+            // resource locations, which allows them to share pipeline layouts.
+            let layout = PipelineLayout::new(
+                context.device.clone(),
+                // Since we only have one pipeline in this example, and thus one pipeline layout,
+                // we automatically generate the creation info for it from the resources used in
+                // the shaders. In a real application, you would specify this information manually
+                // so that you can re-use one layout in multiple pipelines.
+                PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
+                    .into_pipeline_layout_create_info(context.device.clone())
+                    .unwrap(),
+            )
+            .unwrap();
+
+            // We describe the formats of attachment images where the colors, depth and/or stencil
+            // information will be written. The pipeline will only be usable with this particular
+            // configuration of the attachment images.
+            let subpass = PipelineRenderingCreateInfo {
+                // We specify a single color attachment that will be rendered to. When we begin
+                // rendering, we will specify a swapchain image to be used as this attachment, so
+                // here we set its format to be the same format as the swapchain.
+                color_attachment_formats: vec![Some(framebuffer.format())],
+                ..Default::default()
+            };
+
+         
+                        
+            // Finally, create the pipeline.
+            GraphicsPipeline::new(
+                context.device.clone(),
+                None,
+                GraphicsPipelineCreateInfo {
+                    stages: stages.into_iter().collect(),
+                    // How vertex data is read from the vertex buffers into the vertex shader.
+                    vertex_input_state: Some(vertex_input_state),
+                    // How vertices are arranged into primitive shapes. The default primitive shape
+                    // is a triangle.
+                    input_assembly_state: Some(default()),
+                    // How primitives are transformed and clipped to fit the framebuffer. We use a
+                    // resizable viewport, set to draw over the entire window.
+                    viewport_state: Some(default()),
+                    // How polygons are culled and converted into a raster of pixels. The default
+                    // value does not perform any culling.
+                    rasterization_state: Some(default()),
+                    // How multiple fragment shader samples are converted to a single pixel value.
+                    // The default value does not perform any multisampling.
+                    multisample_state: Some(default()),
+                    // How pixel values are combined with the values already present in the
+                    // framebuffer. The default value overwrites the old value with the new one,
+                    // without any blending.
+                    color_blend_state: Some(ColorBlendState::with_attachment_states(
+                        subpass.color_attachment_formats.len() as u32,
+                        ColorBlendAttachmentState::default(),
+                    )),
+                    // Dynamic states allows us to specify parts of the pipeline settings when
+                    // recording the command buffer, before we perform drawing. Here, we specify
+                    // that the viewport should be dynamic.
+                    dynamic_state: [DynamicState::Viewport].into_iter().collect(),
+                    subpass: Some(subpass.into()),
+                    ..GraphicsPipelineCreateInfo::layout(layout)
+                },
+            )
+            .unwrap()
+        };
+				let vertices = [MyVertex{position:[-0.5, -0.25]},MyVertex{position:[0.0, 0.5]},MyVertex{position:[0.25, -0.1]}];
+				use vulkano::{memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer, subbuffer::BufferContents}};
+				use vulkano::{
+					device::Device,	shader::ShaderModule,
+					command_buffer::{AutoCommandBufferBuilder, RecordingCommandBuffer, RenderingInfo, RenderingAttachmentInfo},
+					render_pass::{AttachmentStoreOp,AttachmentLoadOp},
+					image::view::ImageView, format::Format,
+					descriptor_set::{DescriptorSet, WriteDescriptorSet},
+					pipeline::{Pipeline, PipelineShaderStageCreateInfo, PipelineLayout, PipelineBindPoint, layout::PipelineDescriptorSetLayoutCreateInfo, GraphicsPipeline, DynamicState,
+						graphics::{GraphicsPipelineCreateInfo, subpass::PipelineRenderingCreateInfo, viewport::Viewport,
+							rasterization::{RasterizationState, CullMode},
+							depth_stencil::{DepthStencilState, DepthState, CompareOp},
+							color_blend::{ColorBlendState, ColorBlendAttachmentState, AttachmentBlend}
+						}
+					},
+				};
+		        let vertex_buffer = Buffer::from_iter(
+					context.memory_allocator.clone(), 
+					BufferCreateInfo{usage: BufferUsage::VERTEX_BUFFER, ..default()},
+            		AllocationCreateInfo{memory_type_filter: MemoryTypeFilter::PREFER_DEVICE|MemoryTypeFilter::HOST_SEQUENTIAL_WRITE, ..default()}, 
+              		vertices
+				).unwrap();
+				let framebuffer = ImageView::new_default(framebuffer.clone())?;
+				let mut builder = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(),
+					CommandBufferUsage::OneTimeSubmit)?;
+				let [extent@..,_] = framebuffer.image().extent().map(|u32| u32 as f32);
+				let len = vertex_buffer.len();
+				builder.begin_rendering(RenderingInfo{color_attachments: vec![Some(RenderingAttachmentInfo{
+					load_op: AttachmentLoadOp::Clear,
+					store_op: AttachmentStoreOp::Store,
+					clear_value: Some([0.0, 0.0, 1.0, 1.0].into()),
+					..RenderingAttachmentInfo::image_view(framebuffer)
+				})], ..default()})?
+				.set_viewport(0, [Viewport{extent, ..default()}].into_iter().collect())?
+				.bind_pipeline_graphics(pipeline.clone())?
+				.bind_vertex_buffers(0, vertex_buffer)?;
+				unsafe{builder.draw(len as u32, 1, 0, 0) }?;
+				builder.end_rendering()?;
+				let command_buffer = builder.build().unwrap();
+				let future = previous_frame_end.take().unwrap()
+					//.join(acquire_future)
+					.then_execute(context.queue.clone(), command_buffer)?
+				/*// The color output is now expected to contain our triangle. But in order to
+					// show it on the screen, we have to *present* the image by calling
+					// `then_swapchain_present`.
+					//
+					// This function does not actually present the image immediately. Instead it
+					// submits a present command at the end of the queue. This means that it will
+					// only be presented once the GPU has finished executing the command buffer
+					// that draws the triangle.
+					.then_swapchain_present(
+						self.queue.clone(),
+						SwapchainPresentInfo::swapchain_image_index(
+							rcx.swapchain.clone(),
+							image_index,
+						),
+					)*/
+					.then_signal_fence_and_flush();
+
+				match future.map_err(Validated::unwrap) {
+					Ok(future) => {
+						previous_frame_end = Some(future.boxed());
+					}
+					Err(VulkanError::OutOfDate) => {
+						previous_frame_end = Some(now(context.device.clone()).boxed());
+					}
+					Err(e) => {
+						println!("failed to flush future: {e}");
+						previous_frame_end = Some(now(context.device.clone()).boxed());
+					}
+				}
 			}
 			
 			dmabuf.create_params(params);
+			let ImageMemory::Normal(resource_memory) = framebuffer.memory() else {unreachable!()};
+			let ref resource_memory = resource_memory[0];
+			let device_memory = resource_memory.device_memory();
+			let fd = device_memory.export_fd(ExternalMemoryHandleType::DmaBuf).unwrap(); // FIXME: reuse
 			let modifiers = 0u64;
-			params.add(fd, 0, offset as u32, pitch, (modifiers>>32) as u32, modifiers as u32);
+			params.add(fd, 0, resource_memory.offset() as u32, pitch, (modifiers>>32) as u32, modifiers as u32);
+			let format = drm_fourcc::DrmFourcc::Xrgb8888;
 			params.create_immed(buffer_ref, size.x, size.y, format as u32, 0);
 			params.destroy();
 			window.surface.attach(&buffer_ref,0,0);
