@@ -129,17 +129,32 @@ pub use bytemuck;
 
 pub use vulkano::buffer::{Subbuffer, BufferUsage};
 use vulkano::{memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, buffer::{Buffer, BufferCreateInfo}};
+use vulkano::{Validated, buffer::AllocateBufferError};
 
-#[throws] pub fn buffer<T: BufferContents>(Context{memory_allocator, ..}: &Context, usage: BufferUsage, len: u32, iter: impl IntoIterator<Item=T>) -> Subbuffer<[T]> {
-	let buffer = Buffer::new_slice(
+pub fn buffer<T: BufferContents>(Context{memory_allocator, ..}: &Context, usage: BufferUsage, len: usize) -> Result<Subbuffer<[T]>, Validated<AllocateBufferError>> {
+	Buffer::new_slice(
 		memory_allocator.clone(),
 		BufferCreateInfo{usage, ..default()},
 		AllocationCreateInfo{memory_type_filter: {type O = MemoryTypeFilter; O::PREFER_DEVICE|O::HOST_SEQUENTIAL_WRITE}, ..default()},
 		len as u64
-	)?;
-	{
-		let mut write_guard = buffer.write()?;
-		for (o, i) in write_guard.iter_mut().zip(iter.into_iter()) { *o = i; }
-	}
-	buffer
+	)
+}
+
+/*pub fn from_data<T: BufferContents>(Context{memory_allocator, ..}: &Context, usage: BufferUsage, data: T) -> Result<Subbuffer<T>, Validated<AllocateBufferError>> {
+	Buffer::from_data(
+		memory_allocator.clone(),
+		BufferCreateInfo{usage, ..default()},
+		AllocationCreateInfo{memory_type_filter: {type O = MemoryTypeFilter; O::PREFER_DEVICE|O::HOST_SEQUENTIAL_WRITE}, ..default()},
+		data,
+	)
+}*/
+
+pub fn from_iter<T: BufferContents, I: IntoIterator<Item=T>>(Context{memory_allocator, ..}: &Context, usage: BufferUsage, iter: I) -> Result<Subbuffer<[T]>, Validated<AllocateBufferError>>
+where  I::IntoIter: ExactSizeIterator {
+	Buffer::from_iter(
+		memory_allocator.clone(),
+		BufferCreateInfo{usage, ..default()},
+		AllocationCreateInfo{memory_type_filter: {type O = MemoryTypeFilter; O::PREFER_DEVICE|O::HOST_SEQUENTIAL_WRITE}, ..default()},
+		iter
+	)
 }

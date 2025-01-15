@@ -244,7 +244,11 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dy
 					}
 					else if id == pointer.id && opcode == pointer::axis_value120 {
 						server.args({use Type::*; [UInt]});
-					} else if id == keyboard.id && opcode == keyboard::keymap {
+					}
+					else if id == pointer.id && opcode == pointer::axis_relative_direction {
+						server.args({use Type::*; [UInt, UInt]});
+					}
+					else if id == keyboard.id && opcode == keyboard::keymap {
 						server.args({use Type::*; [UInt,UInt]});
 					}
 					else if id == keyboard.id && opcode == keyboard::repeat_info {
@@ -305,8 +309,9 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dy
 				external_memory_handle_types: ExternalMemoryHandleTypes::DMA_BUF, ..default()
 			}, default()).unwrap());
 			
-   			let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(), CommandBufferUsage::OneTimeSubmit)?;
-			app.paint(&context, &mut commands, ImageView::new_default(framebuffer.clone())?, size, zero()).unwrap();
+			let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(), CommandBufferUsage::OneTimeSubmit)?;
+			let target = ImageView::new_default(framebuffer.clone())?;
+			crate::time!(app.paint(&context, &mut commands, target, size, zero()))?;
 			let future = previous_frame_end.then_execute(context.queue.clone(), commands.build()?)?.then_signal_fence_and_flush();
 			match future.map_err(Validated::unwrap) {
 				Ok(future) => previous_frame_end = future.boxed(),

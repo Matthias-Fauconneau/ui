@@ -299,7 +299,7 @@ pub(crate) mod seat {
 }
 pub use seat::Seat;
 
-// pointer: set_cursor(enter: serial, surface, hotspot_x, hotspot_y); enter(serial, surface, surface_x, surface_y), leave(serial, surface), motion(time, surface_x, surface_y), button(serial, time, button, state), axis(time, axis, value), frame, axis_source(_), axis_stop(time, axis)
+// pointer: set_cursor(enter: serial, surface, hotspot_x, hotspot_y); enter(serial, surface, surface_x, surface_y), leave(serial, surface), motion(time, surface_x, surface_y), button(serial, time, button, state), axis(time, axis, value), frame, axis_source(_), axis_stop(time, axis), axis_value120, axis_relative_direction(axis, direction)
 pub(crate) mod pointer {
 	pub const enter: u16 = 0;
 	pub const leave: u16 = 1;
@@ -310,6 +310,7 @@ pub(crate) mod pointer {
 	pub const axis_source: u16 = 6;
 	pub const axis_stop: u16 = 7;
 	pub const axis_value120: u16 =  9;
+	pub const axis_relative_direction: u16 = 10;
 	enum Requests { set_cursor }
 	use super::{Arg::*, *};
 	pub struct Pointer<'t>{server: &'t Server, pub(crate) id: u32}
