@@ -7,7 +7,7 @@ rustix={version='*', features=['fs','mm','net','event']}
 bytemuck='*'
 
 vulkano={git='https://github.com/vulkano-rs/vulkano'}
-vulkano-shaders={git='https://github.com/vulkano-rs/vulkano', features = ['shaderc-build-from-source']} # Fails to link glslang
+#vulkano-shaders={git='https://github.com/vulkano-rs/vulkano', features = ['shaderc-build-from-source']} # Fails to link glslang
 drm-fourcc='*'
 
 text-size={version='*', optional=true}
@@ -24,4 +24,3 @@ graphic=[]
 
 [patch.'https://github.com/vulkano-rs/vulkano']
 vulkano={path='../vulkano/vulkano'}
-vulkano-shaders={path='../vulkano/vulkano-shaders'}

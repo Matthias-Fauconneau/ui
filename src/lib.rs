@@ -1,10 +1,11 @@
-#![feature(coroutines, iter_from_coroutine)]
+//#![feature(coroutines, iter_from_coroutine)]
+pub fn default<T: Default>() -> T { Default::default() }
 pub type Error = Box<dyn core::error::Error>;
 pub type Result<T=(),E=Error> = core::result::Result<T, E>;
 pub use vector::{xy, uint2, int2};
 pub use image::{self, Image};
-
-pub mod widget; pub use widget::{Widget, Target, Event, EventContext, ModifiersState};
+pub mod vulkan;
+pub mod widget; pub use widget::{Widget, Event, EventContext, ModifiersState};
 mod app; pub use app::run;
 
 #[cfg(feature="text")] pub mod font;

@@ -1,5 +1,10 @@
 package={name='empty', version='0.1.0', edition='2024'}
-dependencies={ui={path='../..'}}
+
+[dependencies]
+ui={path='../..'}
+vulkano={git='https://github.com/vulkano-rs/vulkano'}
+vulkano-shaders={git='https://github.com/vulkano-rs/vulkano', features = ['shaderc-build-from-source']} # Fails to link glslang
+
 [patch.'https://github.com/vulkano-rs/vulkano']
 vulkano={path='../../../vulkano/vulkano'}
 vulkano-shaders={path='../../../vulkano/vulkano-shaders'}
