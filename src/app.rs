@@ -13,8 +13,8 @@ use {std::sync::Arc, vulkano::{VulkanLibrary, Validated, VulkanError, instance::
 }};
 
 use crate::vulkan::Context;
-   
-pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
+
+pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dyn Widget>>>) -> Result {
 	let vulkan = VulkanLibrary::new().unwrap();
 	let enabled_extensions = InstanceExtensions{ext_debug_utils: true, ..default()};
 	let enabled_layers = if false { vec!["VK_LAYER_KHRONOS_validation".to_owned()] } else { vec![] };
@@ -48,6 +48,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
         descriptor_set_allocator: Arc::new(StandardDescriptorSetAllocator::new(device.clone(), default())),
         device, queue, format,
     };
+    let mut app = app(context)?;
     
 	let ref server = Server::connect();
 	let display = Display{server, id: 1};
@@ -102,7 +103,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 	let mut previous_frame_end = now(context.device.clone()).boxed();
 
 	loop {
-		let mut need_paint = widget.event(size, &mut EventContext{modifiers_state}, &Event::Idle).unwrap(); // determines whether to wait for events
+		let mut need_paint = app.event(size, &mut EventContext{modifiers_state}, &Event::Idle).unwrap(); // determines whether to wait for events
 		// ^ could also trigger eventfd instead
 		loop {
 			let events = {
@@ -194,7 +195,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 						size = xy{x: x*scale_factor, y: y*scale_factor};
 						if size.x == 0 || size.y == 0 {
 							assert!(configure_bounds.x > 0 && configure_bounds.y > 0);
-							let app_size = widget.size(configure_bounds).map(|x| x.next_multiple_of(scale_factor));
+							let app_size = app.size(configure_bounds).map(|x| x.next_multiple_of(scale_factor));
 							size = xy{x: if size.x > 0 { size.x } else { app_size.x}, y: if size.y > 0 { size.y } else { app_size.y }};
 						}
 						assert!(size.x > 0 && size.y > 0, "{:?}", xy{x: x*scale_factor, y: y*scale_factor});
@@ -305,7 +306,7 @@ pub fn run<T:Widget>(title: &str, widget: &mut T) -> Result {
 			}, default()).unwrap());
 			
    			let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(), CommandBufferUsage::OneTimeSubmit)?;
-			widget.paint(&context, &mut commands, ImageView::new_default(framebuffer.clone())?, size, zero()).unwrap();
+			app.paint(&context, &mut commands, ImageView::new_default(framebuffer.clone())?, size, zero()).unwrap();
 			let future = previous_frame_end.then_execute(context.queue.clone(), commands.build()?)?.then_signal_fence_and_flush();
 			match future.map_err(Validated::unwrap) {
 				Ok(future) => previous_frame_end = future.boxed(),

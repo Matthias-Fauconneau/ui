@@ -7,7 +7,7 @@ image={ git='https://github.com/Matthias-Fauconneau/image' }
 rustix={ version='*', features=['fs','mm','net','event'] }
 bytemuck={ version='*', features=['extern_crate_alloc'] }
 
-vulkano={ git='https://github.com/vulkano-rs/vulkano', default-features=false }
+vulkano={ git='https://github.com/vulkano-rs/vulkano', default-features=false, features=['macros'] }
 drm-fourcc='*'
 
 text-size={ version='*', optional=true }
