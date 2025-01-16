@@ -1,5 +1,5 @@
 use super::Result;
-pub use vector::{uint2, int2};
+pub use vector::{size, int2};
 pub use {std::sync::Arc, crate::vulkan::{Context, Commands, ImageView}};
 
 #[derive(Default,Clone,Copy)] pub struct ModifiersState { pub shift: bool, pub ctrl: bool, pub logo: bool, pub alt: bool }
@@ -21,7 +21,7 @@ pub enum Event {
 }
 
 pub trait Widget {
-    fn size(&mut self, size: uint2) -> uint2 { size }
-    fn paint(&mut self, context: &Context, commands: &mut Commands, target: Arc<ImageView>, size: uint2, offset: int2) -> Result;
-    fn event(&mut self, size: uint2, context: &mut EventContext, event: &Event) -> Result<bool> { (size, context, event); Ok(false) }
+    fn size(&mut self, size: size) -> size { size }
+    fn paint(&mut self, context: &Context, commands: &mut Commands, target: Arc<ImageView>, size: size, offset: int2) -> Result;
+    fn event(&mut self, size: size, context: &mut EventContext, event: &Event) -> Result<bool> { (size, context, event); Ok(false) }
 }

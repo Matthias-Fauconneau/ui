@@ -3,7 +3,7 @@ use {vector::{num::zero, xy}, crate::{default, Result, Event, EventContext, Widg
 #[path="wayland.rs"] mod wayland;
 use wayland::*;
 
-use {std::sync::Arc, vulkano::{VulkanLibrary, Validated, VulkanError, instance::{Instance, InstanceCreateInfo, InstanceExtensions},
+use {std::sync::Arc, vulkano::{VulkanLibrary, instance::{Instance, InstanceCreateInfo, InstanceExtensions},
 	device::{Device, DeviceCreateInfo, DeviceFeatures, DeviceExtensions, physical::PhysicalDeviceType, QueueCreateInfo, QueueFlags},
 	memory::{ExternalMemoryHandleType, ExternalMemoryHandleTypes, allocator::{GenericMemoryAllocatorCreateInfo, StandardMemoryAllocator}},
 	command_buffer::{allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage},
@@ -19,7 +19,7 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dy
 	let enabled_extensions = InstanceExtensions{ext_debug_utils: true, ..default()};
 	let enabled_layers = if false { vec!["VK_LAYER_KHRONOS_validation".to_owned()] } else { vec![] };
 	let instance = Instance::new(vulkan, InstanceCreateInfo{enabled_extensions, enabled_layers, ..default()})?;
-	let enabled_extensions = DeviceExtensions{khr_external_memory_fd: true, ext_external_memory_dma_buf: true, ext_queue_family_foreign: true, ext_image_drm_format_modifier: true, ..default()};
+	let enabled_extensions = DeviceExtensions{ext_image_drm_format_modifier: true, ext_external_memory_dma_buf: true, ..default()};
 	// FIXME: select from wayland dmabuf feedback
 	let (physical_device, queue_family_index) = instance.enumerate_physical_devices()?
 		.filter(|p| [PhysicalDeviceType::DiscreteGpu,PhysicalDeviceType::IntegratedGpu].contains(&p.properties().device_type))
@@ -39,17 +39,18 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dy
 	let queue = queues.next().unwrap();
 	
 	let ref memory_types = physical_device.memory_properties().memory_types;
-    let ref export_handle_types = vec![ExternalMemoryHandleTypes::DMA_BUF; memory_types.len()];
-    let ref block_sizes = vec![256 * 1024 * 1024; memory_types.len()];
-    let dmabuf_memory_allocator = Arc::new(StandardMemoryAllocator::new(device.clone(), GenericMemoryAllocatorCreateInfo{block_sizes, export_handle_types, ..default()}));
-    let ref mut context = Context{
-        memory_allocator: Arc::new(StandardMemoryAllocator::new_default(device.clone())),
-        command_buffer_allocator: Arc::new(StandardCommandBufferAllocator::new(device.clone(), default())),
-        descriptor_set_allocator: Arc::new(StandardDescriptorSetAllocator::new(device.clone(), default())),
-        device, queue, format,
-    };
-    let mut app = app(context)?;
-    
+	let ref export_handle_types = vec![ExternalMemoryHandleTypes::DMA_BUF; memory_types.len()];
+	let ref block_sizes = vec![256 * 1024 * 1024; memory_types.len()];
+	let dmabuf_memory_allocator = Arc::new(StandardMemoryAllocator::new(device.clone(), 
+		GenericMemoryAllocatorCreateInfo{block_sizes, export_handle_types, ..default()}));
+	let ref mut context = Context{
+		memory_allocator: Arc::new(StandardMemoryAllocator::new_default(device.clone())),
+		command_buffer_allocator: Arc::new(StandardCommandBufferAllocator::new(device.clone(), default())),
+		descriptor_set_allocator: Arc::new(StandardDescriptorSetAllocator::new(device.clone(), default())),
+		device, queue, format,
+	};
+	let mut app = app(context)?;
+
 	let ref server = Server::connect();
 	let display = Display{server, id: 1};
 	let ref registry = server.new("registry");
@@ -309,15 +310,11 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dy
 				external_memory_handle_types: ExternalMemoryHandleTypes::DMA_BUF, ..default()
 			}, default()).unwrap());
 			
-			let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(), CommandBufferUsage::OneTimeSubmit)?;
+			let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(),
+				CommandBufferUsage::OneTimeSubmit)?;
 			let target = ImageView::new_default(framebuffer.clone())?;
 			crate::time!(app.paint(&context, &mut commands, target, size, zero()))?;
-			let future = previous_frame_end.then_execute(context.queue.clone(), commands.build()?)?.then_signal_fence_and_flush();
-			match future.map_err(Validated::unwrap) {
-				Ok(future) => previous_frame_end = future.boxed(),
-				Err(VulkanError::OutOfDate) => previous_frame_end = now(context.device.clone()).boxed(),
-				Err(e) => { println!("failed to flush future: {e}"); previous_frame_end = now(context.device.clone()).boxed(); }
-			}
+			let future = previous_frame_end.then_execute(context.queue.clone(), commands.build()?)?.then_signal_fence_and_flush()?;
 			
 			dmabuf.create_params(params);
 			let ImageMemory::Normal(resource_memory) = framebuffer.memory() else {unreachable!()};
@@ -336,6 +333,10 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dy
 			window.done = false;
 			let callback = window.callback.get_or_insert_with(|| server.new("callback"));
 			window.surface.frame(&callback);
+
+			future.wait(None)?; // FIXME: use linux-drm-syncobj-v1 instead of waiting (but unsupported yet by niri: https://github.com/YaLTeR/niri/issues/785)
+			previous_frame_end = future.boxed();
+
 			window.surface.commit();
 		}
 	} // {idle; event; draw;} loop
