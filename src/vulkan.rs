@@ -1,4 +1,4 @@
-use std::sync::Arc;
+pub use std::sync::Arc;
 use vulkano::{
 	device::{Device, Queue},
 	memory::allocator::StandardMemoryAllocator,
@@ -114,15 +114,15 @@ impl<S:Shader> Pass<S> {
 
 pub use bytemuck;
 #[macro_export] macro_rules! shader {
-	{$name:ident, $vertex:ty, $Name:ident} => {
+	{$name:ident} => {
 		mod $name {
-			use vulkano::{Validated, VulkanError, device::Device, shader::{ShaderModule, ShaderModuleCreateInfo}};
+			use {std::sync::Arc, vulkano::{Validated, VulkanError, device::Device, shader::{ShaderModule, ShaderModuleCreateInfo}}};
 			vulkano_spirv::shader!{$name}
 			pub struct Shader;
 			use super::*;
 			impl $crate::vulkan::Shader for Shader {
 				type Uniforms = self::Uniforms;
-				type Vertex = $vertex;
+				type Vertex = Vertex;
 				const NAME: &'static str = stringify!($name);
 				fn load(device: Arc<Device>)->Result<Arc<ShaderModule>,Validated<VulkanError>> {
 					unsafe extern "C" {
@@ -135,7 +135,6 @@ pub use bytemuck;
 			}
 			pub type Pass = $crate::vulkan::Pass<Shader>;
 		}
-		pub use $name::Pass as $Name;
 	}
 }
 
@@ -152,8 +151,8 @@ pub fn buffer<T: BufferContents>(Context{memory_allocator, ..}: &Context, usage:
 	)
 }
 
-pub fn from_iter<T: BufferContents, I: IntoIterator<Item=T>>(Context{memory_allocator, ..}: &Context, usage: BufferUsage, iter: I) -> Result<Subbuffer<[T]>, Validated<AllocateBufferError>>
-where  I::IntoIter: ExactSizeIterator {
+pub fn from_iter<T: BufferContents, I: IntoIterator<Item=T>>(Context{memory_allocator, ..}: &Context, usage: BufferUsage, iter: I)
+-> Result<Subbuffer<[T]>, Validated<AllocateBufferError>> where I::IntoIter: ExactSizeIterator {
 	Buffer::from_iter(
 		memory_allocator.clone(),
 		BufferCreateInfo{usage, ..default()},
