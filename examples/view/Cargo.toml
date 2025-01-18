@@ -5,7 +5,7 @@ bytemuck='*'
 ui = { path='../..' }
 vulkano = { git='https://github.com/vulkano-rs/vulkano', default-features=false, features=['macros'] } # same version as ui (which needs drm modifier from git version)
 vulkano-spirv = { git='https://github.com/Matthias-Fauconneau/vulkano-spirv' }
-image = { git='https://github.com/Matthias-Fauconneau/image', features = ['exr'] }
+image = { git='https://github.com/Matthias-Fauconneau/image', features = ['io', 'exr'] }
 
 [build-dependencies]
 naga = { version='*', features = ['wgsl-in','spv-out'] }
@@ -16,3 +16,6 @@ vulkano = { git='https://github.com/Matthias-Fauconneau/vulkano'  } # drm modifi
 
 [patch.crates-io] # In case vulkano-spirv would depend on crates-io version. But currently it tracks git version (breaking changes in vulkano::shader::spirv))
 vulkano = { git='https://github.com/Matthias-Fauconneau/vulkano' } # drm modifier
+
+[patch.'https://github.com/Matthias-Fauconneau/image']
+image={path='../../../image'}

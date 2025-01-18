@@ -1,6 +1,6 @@
 #![feature(slice_from_ptr_range)] // shader
 #![feature(iterator_try_collect)]
-use {ui::{Result, size, int2, Widget, EventContext, Event::{self, Key}, vulkan, shader}, ::image::{Image, f32, sRGB8_OETF12, oetf8_12, rgb, rgba8}};
+use {ui::{Result, time, size, int2, Widget, EventContext, Event::{self, Key}, vulkan, shader}, ::image::{Image, u8, f32, sRGB8_OETF12, oetf8_12, rgb, rgba8}};
 use vulkan::{Context, Commands, Arc, ImageView, from_iter, BufferUsage, Image as GPUImage, default, ImageCreateInfo, ImageType, Format, ImageUsage, CopyBufferToImageInfo, Sampler, SamplerCreateInfo, Filter, WriteDescriptorSet};
 shader!{view}
 
@@ -12,14 +12,17 @@ struct App {
 impl App {
 	fn new(context@Context{memory_allocator, ..}: &Context, commands: &mut Commands) -> Result<Self> { Ok(Self{
 		pass: view::Pass::new(context, false)?,
-		images: std::env::args().skip(1).map(|path| -> Result<_> {
-			let Image{size, data, ..} = f32(path)?;
-			fn minmax(values: &[f32]) -> [f32; 2] {
-				let [mut min, mut max] = [f32::INFINITY, -f32::INFINITY];
-				for &value in values { if value > f32::MIN && value < min { min = value; } if value > max { max = value; } }
-				[min, max]
-			}
-			let [min, max] = minmax(&data);
+		images: std::env::args().skip(1).map(|ref path| -> Result<_> {
+			let Image{size, data, ..} = if let Ok(Image{size, data, ..}) = f32(path) {
+				fn minmax(values: &[f32]) -> [f32; 2] {
+					let [mut min, mut max] = [f32::INFINITY, -f32::INFINITY];
+					for &value in values { if value > f32::MIN && value < min { min = value; } if value > max { max = value; } }
+					[min, max]
+				}
+				let [min, max] = minmax(&data);
+				let oetf = &sRGB8_OETF12;
+				Image::new(size, data.into_iter().map(|v| rgba8::from(rgb::from(oetf8_12(oetf, ((v-min)/(max-min)).clamp(0., 1.))))).collect())
+			} else { time!(u8(path)).map(|v| rgba8::from(rgb::from(v))) };
 			let image = GPUImage::new(
 				memory_allocator.clone(),
 				ImageCreateInfo{
@@ -31,8 +34,7 @@ impl App {
 				},
 				default()
 			)?;
-			let oetf = &sRGB8_OETF12;
-			let buffer = from_iter(context, BufferUsage::TRANSFER_SRC, data.into_iter().map(|v| rgba8::from(rgb::from(oetf8_12(oetf, ((v-min)/(max-min)).clamp(0., 1.))))))?;
+			let buffer = from_iter(context, BufferUsage::TRANSFER_SRC, data)?;
 			commands.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(buffer, image.clone()))?;
 			Ok(image)
 		}).try_collect()?,
