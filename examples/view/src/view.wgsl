@@ -6,8 +6,8 @@ struct VertexOutput {
 	@location(1) texture_coordinates: vec2<f32>,
 }
 
-const position = array(vec2(-1., -3.), vec2(-1., 1.), vec2(3., -3.));
-const texture_coordinates  = array(vec2(0., 2.), vec2(0., 0.), vec2(2., 2.));
+const position = array(vec2(-1., 1.), vec2(-1., -3.), vec2(3., 1.));
+const texture_coordinates  = array(vec2(0., 0.), vec2(0., 2.), vec2(2., 0.));
 
 @vertex fn vertex(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 	return VertexOutput(vec4(position[vertex_index], 0., 1.), vec2(texture_coordinates[vertex_index]));
