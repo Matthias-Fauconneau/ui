@@ -21,12 +21,14 @@ pub use vulkano::format::Format;
 use vulkano::command_buffer::{PrimaryAutoCommandBuffer, AutoCommandBufferBuilder};
 pub type Commands = AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>;
 
-pub use vulkano::image::{Image, ImageUsage, ImageCreateInfo, view::ImageView, ImageType, sampler::{Sampler, SamplerCreateInfo, Filter}};
+pub use vulkano::image::{Image, ImageUsage, ImageCreateInfo, view::ImageView, ImageType};
 
 pub use vulkano::buffer::subbuffer::BufferContents;
 pub use vulkano::pipeline::graphics::vertex_input::Vertex;
 pub use vulkano::{Validated, VulkanError};
-pub type Result<T=(), E=Box<dyn std::error::Error>/*Validated<VulkanError>*/> = std::result::Result<T,E>;
+pub type Error = Validated<VulkanError>;
+pub type VulkanResult<T=(), E=Validated<VulkanError>> = std::result::Result<T,E>;
+pub type Result<T=(), E=Box<dyn std::error::Error>> = std::result::Result<T,E>;
 pub fn default<T: Default>() -> T { Default::default() }
 pub use vulkano::descriptor_set::{WriteDescriptorSet, layout::DescriptorType};
 use vulkano::{
@@ -171,4 +173,21 @@ pub fn from_iter<T: BufferContents, I: IntoIterator<Item=T>>(Context{memory_allo
 	)
 }
 
-pub use vulkano::command_buffer::CopyBufferToImageInfo;
+use vulkano::command_buffer::CopyBufferToImageInfo;
+
+use image::{Image as CPUImage, rgba8};
+pub fn image(context@Context{memory_allocator, ..}: &Context, commands: &mut Commands, CPUImage{data, size, stride}: CPUImage<&[rgba8]>) -> Result<Arc<Image>> {
+	assert_eq!(stride, size.x);
+	use {default, ImageCreateInfo, ImageType, Format, ImageUsage, from_iter, CopyBufferToImageInfo};
+	let image = Image::new(memory_allocator.clone(), ImageCreateInfo{image_type: ImageType::Dim2d,
+			format: {assert_eq!(std::mem::size_of::<rgba8>(), 4); Format::R8G8B8A8_SRGB},
+			extent: [size.x, size.y, 1],
+			usage: ImageUsage::TRANSFER_DST|ImageUsage::SAMPLED,
+			..default()}, default())?;
+	let buffer = from_iter(context, BufferUsage::TRANSFER_SRC, data.into_iter().copied())?;
+	commands.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(buffer, image.clone()))?;
+	Ok(image)
+}
+
+use vulkano::image::sampler::{Sampler, SamplerCreateInfo, Filter};
+pub fn linear(Context{device, ..}: &Context) -> Arc<Sampler> { Sampler::new(device.clone(), SamplerCreateInfo{mag_filter: Filter::Linear, min_filter: Filter::Linear, ..default()}).unwrap() }
