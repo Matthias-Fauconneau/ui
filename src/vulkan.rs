@@ -28,13 +28,15 @@ pub use vulkano::pipeline::graphics::vertex_input::Vertex;
 pub use vulkano::{Validated, VulkanError};
 pub type Result<T=(), E=Box<dyn std::error::Error>/*Validated<VulkanError>*/> = std::result::Result<T,E>;
 pub fn default<T: Default>() -> T { Default::default() }
-pub use vulkano::{descriptor_set::{DescriptorSet, WriteDescriptorSet, layout::DescriptorType}, pipeline::{PipelineBindPoint, Pipeline/*:trait*/}};
+pub use vulkano::descriptor_set::{WriteDescriptorSet, layout::DescriptorType};
 use vulkano::{
 	shader::ShaderModule,
 	command_buffer::{RenderingInfo, RenderingAttachmentInfo},
 	render_pass::{AttachmentStoreOp,AttachmentLoadOp},
 	buffer::allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
-	pipeline::{PipelineShaderStageCreateInfo, PipelineLayout, layout::PipelineDescriptorSetLayoutCreateInfo, GraphicsPipeline, DynamicState,
+	descriptor_set::DescriptorSet,
+	pipeline::{PipelineShaderStageCreateInfo, PipelineLayout, layout::PipelineDescriptorSetLayoutCreateInfo, Pipeline/*:trait*/, PipelineBindPoint, GraphicsPipeline,
+		DynamicState,
 		graphics::{GraphicsPipelineCreateInfo, subpass::PipelineRenderingCreateInfo, viewport::Viewport,
 			vertex_input::VertexDefinition,
 			rasterization::{RasterizationState, CullMode},
@@ -110,14 +112,11 @@ impl<S:Shader> Pass<S> {
 		.bind_pipeline_graphics(self.pipeline.clone())?;
 		let ref layout = self.pipeline.layout().set_layouts()[0];
 		let uniform_buffers = *layout.descriptor_counts().get(&DescriptorType::UniformBuffer).unwrap_or(&0);
-		if uniform_buffers > 0 {
-			assert_eq!(uniform_buffers, 1);
+		if uniform_buffers > 0 || additional_descriptor_sets.len() > 0 {
+			assert!(uniform_buffers <= 1);
 			commands.bind_descriptor_sets(PipelineBindPoint::Graphics, self.pipeline.layout().clone(), 0, DescriptorSet::new(descriptor_set_allocator.clone(), layout.clone(),
-				[WriteDescriptorSet::buffer(0, {let buffer = self.uniform_buffer.allocate_sized()?; *buffer.write()? = *uniforms; buffer})].into_iter(), [])?)?;
-		}
-		if additional_descriptor_sets.len() > 0 {
-			commands.bind_descriptor_sets(PipelineBindPoint::Graphics, self.pipeline.layout().clone(), 0, DescriptorSet::new(descriptor_set_allocator.clone(), layout.clone(),
-				additional_descriptor_sets.into_iter().cloned(), [])?)?;
+				(uniform_buffers > 0).then(|| WriteDescriptorSet::buffer(0, {let buffer = self.uniform_buffer.allocate_sized().unwrap(); *buffer.write().unwrap() = *uniforms; buffer}))
+				.into_iter().chain(additional_descriptor_sets.into_iter().cloned()), [])? )?;
 		}
 		Ok(())
 	}
