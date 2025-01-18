@@ -1,6 +1,6 @@
 #![allow(incomplete_features)]#![feature(inherent_associated_types)] // shader uniforms
 //#![feature(coroutines, iter_from_coroutine)] // line
-pub fn default<T: Default>() -> T { Default::default() }
+//pub fn default<T: Default>() -> T { Default::default() }
 pub type Error = Box<dyn core::error::Error>;
 pub type Result<T=(),E=Error> = core::result::Result<T, E>;
 

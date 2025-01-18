@@ -1,4 +1,4 @@
-use {vector::{num::zero, xy}, crate::{default, Result, Event, EventContext, Widget}};
+use {vector::{num::zero, xy}, crate::{Result, Event, EventContext, Widget}};
 
 #[path="wayland.rs"] mod wayland;
 use wayland::*;
@@ -12,7 +12,7 @@ use {std::sync::Arc, vulkano::{VulkanLibrary, instance::{Instance, InstanceCreat
 	sync::{future::GpuFuture, now}
 }};
 
-use crate::vulkan::Context;
+use crate::vulkan::{Context, default};
 
 pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dyn Widget>>>) -> Result {
 	let vulkan = VulkanLibrary::new().unwrap();
