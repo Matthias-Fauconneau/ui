@@ -11,8 +11,8 @@
 		"show_command": false
 	},
 	{
-		"label": "Image example",
-		"command": "cargo run --manifest-path examples/image/Cargo.toml",
+		"label": "View example",
+		"command": "cargo run --manifest-path examples/view/Cargo.toml",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
 		"reveal": "always",
