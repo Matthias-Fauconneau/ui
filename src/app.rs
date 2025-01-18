@@ -6,15 +6,15 @@ use wayland::*;
 use {std::sync::Arc, vulkano::{VulkanLibrary, instance::{Instance, InstanceCreateInfo, InstanceExtensions},
 	device::{Device, DeviceCreateInfo, DeviceFeatures, DeviceExtensions, physical::PhysicalDeviceType, QueueCreateInfo, QueueFlags},
 	memory::{ExternalMemoryHandleType, ExternalMemoryHandleTypes, allocator::{GenericMemoryAllocatorCreateInfo, StandardMemoryAllocator}},
-	command_buffer::{allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage},
+	command_buffer::{allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract},
 	descriptor_set::allocator::StandardDescriptorSetAllocator,
 	image::{Image, ImageCreateInfo, ImageUsage, ImageMemory, ImageTiling, view::ImageView}, format::Format,
-	sync::{future::GpuFuture, now}
+	sync::future::GpuFuture
 }};
 
-use crate::vulkan::{Context, default};
+use crate::vulkan::{Context, Commands, default};
 
-pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dyn Widget>>>) -> Result {
+pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -> Result<Box<dyn Widget>>>) -> Result {
 	let vulkan = VulkanLibrary::new().unwrap();
 	let enabled_extensions = InstanceExtensions{ext_debug_utils: true, ..default()};
 	let enabled_layers = if false { vec!["VK_LAYER_KHRONOS_validation".to_owned()] } else { vec![] };
@@ -49,7 +49,10 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dy
 		descriptor_set_allocator: Arc::new(StandardDescriptorSetAllocator::new(device.clone(), default())),
 		device, queue, format,
 	};
-	let mut app = app(context)?;
+	
+	let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(),
+		CommandBufferUsage::OneTimeSubmit)?;
+	let mut app = app(context, &mut commands)?;
 
 	let ref server = Server::connect();
 	let display = Display{server, id: 1};
@@ -101,8 +104,8 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dy
 	let mut configure_bounds = zero();
 	let mut size = zero();
 	let modifiers_state = Default::default();
-	let mut previous_frame_end = now(context.device.clone()).boxed();
-
+	let mut fence = commands.build()?.execute(context.queue.clone())?.then_signal_fence_and_flush()?.boxed();
+	
 	loop {
 		let mut need_paint = app.event(size, &mut EventContext{modifiers_state}, &Event::Idle).unwrap(); // determines whether to wait for events
 		// ^ could also trigger eventfd instead
@@ -314,7 +317,7 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dy
 				CommandBufferUsage::OneTimeSubmit)?;
 			let target = ImageView::new_default(framebuffer.clone())?;
 			crate::time!(app.paint(&context, &mut commands, target, size, zero()))?;
-			let future = previous_frame_end.then_execute(context.queue.clone(), commands.build()?)?.then_signal_fence_and_flush()?;
+			let next_fence = fence.then_execute(context.queue.clone(), commands.build()?)?.then_signal_fence_and_flush()?;
 			
 			dmabuf.create_params(params);
 			let ImageMemory::Normal(resource_memory) = framebuffer.memory() else {unreachable!()};
@@ -334,8 +337,8 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context) -> Result<Box<dy
 			let callback = window.callback.get_or_insert_with(|| server.new("callback"));
 			window.surface.frame(&callback);
 
-			future.wait(None)?; // FIXME: use linux-drm-syncobj-v1 instead of waiting (but unsupported yet by niri: https://github.com/YaLTeR/niri/issues/785)
-			previous_frame_end = future.boxed();
+			next_fence.wait(None)?; // FIXME: use linux-drm-syncobj-v1 instead of waiting (but unsupported yet by niri: https://github.com/YaLTeR/niri/issues/785)
+			fence = next_fence.boxed();
 
 			window.surface.commit();
 		}

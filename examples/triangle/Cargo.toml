@@ -1,4 +1,4 @@
-package={name='triangle', version='0.0.0', edition='2024'}
+package={name='triangle', version='0.0.0', edition='2024', description='Vulkano/Wayland without Smithay/libwayland-sys'}
 
 [dependencies]
 bytemuck='*'
@@ -15,6 +15,3 @@ vulkano={ git='https://github.com/Matthias-Fauconneau/vulkano'  } # drm modifier
 
 [patch.crates-io] # In case vulkano-spirv would depend on crates-io version. But currently it tracks git version (breaking changes in vulkano::shader::spirv))
 vulkano={ git='https://github.com/Matthias-Fauconneau/vulkano' } # drm modifier
-
-[patch.'https://github.com/Matthias-Fauconneau/vulkano-spirv']
-vulkano-spirv={path='../../../vulkano-spirv'}

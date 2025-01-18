@@ -1,7 +1,18 @@
 [
 	{
-		"label": "Empty",
-		"command": "cargo run --manifest-path examples/empty/Cargo.toml",
+		"label": "Triangle example",
+		"command": "cargo run --manifest-path examples/triangle/Cargo.toml",
+		"use_new_terminal": false,
+		"allow_concurrent_runs": false,
+		"reveal": "always",
+		"reveal_target": "dock",
+		"hide": "never",
+		"show_summary": false,
+		"show_command": false
+	},
+	{
+		"label": "Image example",
+		"command": "cargo run --manifest-path examples/image/Cargo.toml",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
 		"reveal": "always",

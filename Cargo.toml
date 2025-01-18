@@ -1,4 +1,4 @@
-package={name='ui', version='0.0.0', edition='2024'}
+package={name='ui', version='0.0.0', edition='2024', description='Vulkano/Wayland without Smithay/libwayland-sys'}
 
 [dependencies]
 fehler='*'
@@ -23,4 +23,4 @@ text=['dep:text-size','dep:unicode-segmentation','dep:rustybuzz','dep:derive_mor
 graphic=[]
 
 [patch.'https://github.com/vulkano-rs/vulkano']
-vulkano={ path='../vulkano/vulkano' }
+vulkano={ git='https://github.com/Matthias-Fauconneau/vulkano' } # drm modifier fix

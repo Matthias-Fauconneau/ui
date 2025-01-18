@@ -21,14 +21,14 @@ pub use vulkano::format::Format;
 use vulkano::command_buffer::{PrimaryAutoCommandBuffer, AutoCommandBufferBuilder};
 pub type Commands = AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>;
 
-pub use vulkano::image::{Image, ImageUsage, ImageCreateInfo, view::ImageView};
+pub use vulkano::image::{Image, ImageUsage, ImageCreateInfo, view::ImageView, ImageType, sampler::{Sampler, SamplerCreateInfo, Filter}};
 
 pub use vulkano::buffer::subbuffer::BufferContents;
 pub use vulkano::pipeline::graphics::vertex_input::Vertex;
 pub use vulkano::{Validated, VulkanError};
 pub type Result<T=(), E=Box<dyn std::error::Error>/*Validated<VulkanError>*/> = std::result::Result<T,E>;
 pub fn default<T: Default>() -> T { Default::default() }
-pub use vulkano::{descriptor_set::{DescriptorSet, WriteDescriptorSet}, pipeline::{PipelineBindPoint, Pipeline/*:trait*/}};
+pub use vulkano::{descriptor_set::{DescriptorSet, WriteDescriptorSet, layout::DescriptorType}, pipeline::{PipelineBindPoint, Pipeline/*:trait*/}};
 use vulkano::{
 	shader::ShaderModule,
 	command_buffer::{RenderingInfo, RenderingAttachmentInfo},
@@ -88,8 +88,8 @@ impl<S:Shader> Pass<S> {
 		Ok(Self{pipeline, uniform_buffer, _marker: default()})
 	}
 
-	pub fn begin_rendering(&self, Context{descriptor_set_allocator,..}: &Context, commands: &mut Commands, target: Arc<ImageView>, depth: Option<Arc<ImageView>>, clear: bool, uniforms: &S::Uniforms) 
-	-> Result {
+	pub fn begin_rendering(&self, Context{descriptor_set_allocator,..}: &Context, commands: &mut Commands, target: Arc<ImageView>, depth: Option<Arc<ImageView>>, 
+		clear: bool, uniforms: &S::Uniforms, additional_descriptor_sets: &[WriteDescriptorSet]) -> Result {
 		let [extent@..,_] = target.image().extent().map(|u32| u32 as f32);
 		commands.begin_rendering(RenderingInfo{
 			color_attachments: vec![Some(RenderingAttachmentInfo{
@@ -109,10 +109,15 @@ impl<S:Shader> Pass<S> {
 		.set_viewport(0, [Viewport{extent, ..default()}].into_iter().collect())?
 		.bind_pipeline_graphics(self.pipeline.clone())?;
 		let ref layout = self.pipeline.layout().set_layouts()[0];
-		if layout.descriptor_counts().len() > 0 {
-			commands.bind_descriptor_sets(PipelineBindPoint::Graphics, self.pipeline.layout().clone(), 0,
-				DescriptorSet::new(descriptor_set_allocator.clone(), layout.clone(),
-					[WriteDescriptorSet::buffer(0, {let buffer = self.uniform_buffer.allocate_sized()?; *buffer.write()? = *uniforms; buffer})].into_iter(), [])?)?;
+		let uniform_buffers = *layout.descriptor_counts().get(&DescriptorType::UniformBuffer).unwrap_or(&0);
+		if uniform_buffers > 0 {
+			assert_eq!(uniform_buffers, 1);
+			commands.bind_descriptor_sets(PipelineBindPoint::Graphics, self.pipeline.layout().clone(), 0, DescriptorSet::new(descriptor_set_allocator.clone(), layout.clone(),
+				[WriteDescriptorSet::buffer(0, {let buffer = self.uniform_buffer.allocate_sized()?; *buffer.write()? = *uniforms; buffer})].into_iter(), [])?)?;
+		}
+		if additional_descriptor_sets.len() > 0 {
+			commands.bind_descriptor_sets(PipelineBindPoint::Graphics, self.pipeline.layout().clone(), 0, DescriptorSet::new(descriptor_set_allocator.clone(), layout.clone(),
+				additional_descriptor_sets.into_iter().cloned(), [])?)?;
 		}
 		Ok(())
 	}
@@ -166,3 +171,5 @@ pub fn from_iter<T: BufferContents, I: IntoIterator<Item=T>>(Context{memory_allo
 		iter
 	)
 }
+
+pub use vulkano::command_buffer::CopyBufferToImageInfo;
