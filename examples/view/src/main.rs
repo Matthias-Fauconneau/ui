@@ -43,7 +43,7 @@ impl App {
 					#[cfg(not(feature="jxl"))] unimplemented!()
 				}
 				else if start.starts_with(b"II*\x00") {
-					use {vector::{xy, inverse, mat3, mulv, MinMax}, image::{rgbf, XYZ}, rawloader::{decode_file, RawImageData}};
+					use {vector::{xy, inverse, mat3, dot, mulv, MinMax}, image::{rgbf, XYZ}, rawloader::{decode_file, RawImageData}};
 					let image = decode_file(path)?;
 					assert_eq!(image.cpp, 1);
 					assert_eq!(image.cfa.name, "BGGR");
@@ -64,21 +64,31 @@ impl App {
 						.map(|row| row * wb_coeffs / white_level as f32)
 						.map(|rgb{r,g,b}| rgb{r, g: g/2. /*g01+g10*/, b})
 						.map(<[_;_]>::from);
-					let mut target = Image::uninitialized(cfa.size/2);
-					for y in 0..target.size.y { for x in 0..target.size.x {
-						let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[dx,dy]| cfa[xy{x: x*2 + dx, y: y*2 + dy}]);
+					
+					let luma = Image::from_xy(cfa.size/2, |p| {
+						let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[x,y]| cfa[p*2+xy{x,y}]);
 						let rgb = rgb{r, g: g01.strict_add(g10), b};
 						{let rgb{r,g,b} = rgb; assert!(r <= white_level); assert!(g <= white_level*2); assert!(b <= white_level);}
 						let rgb = rgb::<f32>::from(rgb) ;
+						dot(rgb::from(xyz_from[1]), rgb)
+					});
+					let MinMax{min, max} = vector::minmax(luma.data.iter().copied()).unwrap();
+					let luma = luma.map(|luma| (f32::ceil((luma-min)/(max-min)*(0x10000 as f32))-1.) as u16); // FIXME: 14bit/16K should be enough
+					let mut histogram = vec![0; 0x10000];
+					for &luma in &luma.data  { histogram[luma as usize] += 1; }
+					let cdf = histogram.into_iter().scan(0, |a, h| { *a += h; Some(*a) }).collect::<Box<_>>();
+					let len = luma.data.len();
+					assert_eq!(cdf[0xFFFF], len);
+					let oetf = &sRGB8_OETF12;
+					Image::from_xy(cfa.size/2, |p| {
+						let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[x,y]| cfa[p*2+xy{x,y}]);
+						let rgb = rgb{r, g: g01.strict_add(g10), b};
+						let rgb = rgb::<f32>::from(rgb) ;
 						pub fn apply(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(mulv(m, v.into())) }
 						let xyz = apply(xyz_from, rgb);
-						target[xy{x,y}] = rgb::<f32>::from(xyz)
-					}}
-					let MinMax{min, max} = vector::minmax(target.data.iter().copied()).unwrap();
-					let MinMax{min, max} = MinMax{min: min.into_iter().min_by(f32::total_cmp).unwrap(), max: max.into_iter().max_by(f32::total_cmp).unwrap()};
-					let oetf = &sRGB8_OETF12;
-					target.map(|rgb| {
-						let rgb = (rgb-rgb::from(min))/(max-min);
+						let luma = (f32::ceil((xyz.Y-min)/(max-min)*(0x10000 as f32))-1.) as u16;
+						let f = (cdf[luma as usize] as f32 / len as f32) / xyz.Y;
+						let rgb = rgb::<f32>::from(f*xyz);
 						let rgb = rgb.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
 						rgba8::from(rgb)
 					})
