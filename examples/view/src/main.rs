@@ -1,7 +1,7 @@
 #![feature(slice_from_ptr_range)] // shader
 #![feature(iterator_try_collect)]
 #![feature(strict_overflow_ops)]
-//#![feature(generic_arg_infer)] // rgb::from(<[_;_]>::from(xyz))
+#![feature(generic_arg_infer)] // <[_;_]>::from
 use {ui::{Result, time, size, int2, Widget, EventContext, Event::{self, Key}, vulkan, shader}, ::image::{Image, rgb, rgb8, rgba8, f32, sRGB8_OETF12, oetf8_12}};
 use vulkan::{Context, Commands, Arc, ImageView, Image as GPUImage, image, WriteDescriptorSet, linear};
 shader!{view}
@@ -43,7 +43,7 @@ impl App {
 					#[cfg(not(feature="jxl"))] unimplemented!()
 				}
 				else if start.starts_with(b"II*\x00") {
-					use {vector::{xy, inverse, mat3, MinMax}, image::XYZ, rawloader::{decode_file, RawImageData}};
+					use {vector::{xy, inverse, mat3, mulv, MinMax}, image::{rgbf, XYZ}, rawloader::{decode_file, RawImageData}};
 					let image = decode_file(path)?;
 					assert_eq!(image.cpp, 1);
 					assert_eq!(image.cfa.name, "BGGR");
@@ -52,23 +52,32 @@ impl App {
 					assert!(image.whitelevels.into_iter().all(|w| w==white_level));
 					let RawImageData::Integer(data) = image.data else {unimplemented!()};
 					let cfa = Image::new(xy{x: image.width as u32, y: image.height as u32}, data);
-					let mut rgb = Image::uninitialized(cfa.size/2);
-					for y in 0..rgb.size.y { for x in 0..rgb.size.x {
+					let xyz_to_cam : [_; 3] = *image.xyz_to_cam.first_chunk()/*RGB*/.unwrap();
+					let xyz_to_cam = xyz_to_cam.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from);
+					//let xyz_to_cam = transpose(transpose(xyz_to_cam).map(|column| XYZ::<f32>::from(column)).map(|column| column/column.sum()).map(<[_;_]>::from));
+					assert_eq!(mulv(xyz_to_cam, [1.,1.,1.]), [1.,1.,1.]);
+					let xyz_from = inverse::<3>(xyz_to_cam);
+					//assert_eq!(mulv(xyz_from, [1.,1.,1.]), [1.,1.,1.]);
+					let wb_coeffs = rgbf::from(*image.wb_coeffs.first_chunk().unwrap()); // 1/AsShotNeutral
+					let xyz_from = xyz_from
+						.map(|row| rgbf::from(row))
+						.map(|row| row * wb_coeffs / white_level as f32)
+						.map(|rgb{r,g,b}| rgb{r, g: g/2. /*g01+g10*/, b})
+						.map(<[_;_]>::from);
+					let mut target = Image::uninitialized(cfa.size/2);
+					for y in 0..target.size.y { for x in 0..target.size.x {
 						let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[dx,dy]| cfa[xy{x: x*2 + dx, y: y*2 + dy}]);
-						rgb[xy{x,y}] = rgb{r, g: g01.strict_add(g10)/2, b};
-					}}
-					let xyz_from = inverse::<3>(*image.xyz_to_cam.first_chunk()/*RGB*/.unwrap());
-					let rgb = rgb.map(|rgb| {
-						assert!(rgb.into_iter().all(|c| c <= white_level));
-						let rgb = rgb::<f32>::from(rgb) / white_level as f32;
-						pub fn apply(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(vector::mulv(m, v.into())) }
+						let rgb = rgb{r, g: g01.strict_add(g10), b};
+						{let rgb{r,g,b} = rgb; assert!(r <= white_level); assert!(g <= white_level*2); assert!(b <= white_level);}
+						let rgb = rgb::<f32>::from(rgb) ;
+						pub fn apply(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(mulv(m, v.into())) }
 						let xyz = apply(xyz_from, rgb);
-						rgb::<f32>::from(xyz)
-					});
-					let MinMax{min, max} = vector::minmax(rgb.data.iter().copied()).unwrap();
-					let MinMax{min, max} = MinMax{min: min.into_iter().min_by(f32::total_cmp).unwrap(), max: max.into_iter().min_by(f32::total_cmp).unwrap()};
+						target[xy{x,y}] = rgb::<f32>::from(xyz)
+					}}
+					let MinMax{min, max} = vector::minmax(target.data.iter().copied()).unwrap();
+					let MinMax{min, max} = MinMax{min: min.into_iter().min_by(f32::total_cmp).unwrap(), max: max.into_iter().max_by(f32::total_cmp).unwrap()};
 					let oetf = &sRGB8_OETF12;
-					rgb.map(|rgb| {
+					target.map(|rgb| {
 						let rgb = (rgb-rgb::from(min))/(max-min);
 						let rgb = rgb.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
 						rgba8::from(rgb)
