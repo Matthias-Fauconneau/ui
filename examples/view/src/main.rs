@@ -1,6 +1,7 @@
 #![feature(slice_from_ptr_range)] // shader
 #![feature(iterator_try_collect)]
 #![feature(strict_overflow_ops)]
+#![feature(generic_arg_infer)] // rgb::from(<[_;_]>::from(xyz))
 use {ui::{Result, time, size, int2, Widget, EventContext, Event::{self, Key}, vulkan, shader}, ::image::{Image, rgb, rgb8, rgba8, f32, sRGB8_OETF12, oetf8_12}};
 use vulkan::{Context, Commands, Arc, ImageView, Image as GPUImage, image, WriteDescriptorSet, linear};
 shader!{view}
@@ -42,19 +43,35 @@ impl App {
 					#[cfg(not(feature="jxl"))] unimplemented!()
 				}
 				else if start.starts_with(b"II*\x00") {
-					use {image::xy, rawloader::{decode_file, RawImageData}};
+					use {vector::{xy, xyz, inverse, mat3, MinMax}, rawloader::{decode_file, RawImageData}};
 					let image = decode_file(path)?;
 					assert_eq!(image.cpp, 1);
 					assert_eq!(image.cfa.name, "BGGR");
+					assert_eq!(image.blacklevels, [0,0,0,0]);
+					let [white_level, ..] = image.whitelevels;
+					assert!(image.whitelevels.into_iter().all(|w| w==white_level));
 					let RawImageData::Integer(data) = image.data else {unimplemented!()};
 					let cfa = Image::new(xy{x: image.width as u32, y: image.height as u32}, data);
-					let mut target = Image::uninitialized(cfa.size/2);
-					for y in 0..target.size.y { for x in 0..target.size.x {
+					let mut rgb = Image::uninitialized(cfa.size/2);
+					for y in 0..rgb.size.y { for x in 0..rgb.size.x {
 						let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[dx,dy]| cfa[xy{x: x*2 + dx, y: y*2 + dy}]);
-						target[xy{x,y}] = rgb{r, g: g01.strict_add(g10)/2, b};
+						rgb[xy{x,y}] = rgb{r, g: g01.strict_add(g10)/2, b};
 					}}
-					let (min, max) = (97, 15343);
-					target.map(|rgb| rgba8::from(rgb.map(|u16| ((u16-min) as u32 * 0xFF / max) as u8)))
+					let xyz_from = inverse::<3>(*image.xyz_to_cam.first_chunk()/*RGB*/.unwrap());
+					let xyz = rgb.map(|rgb| {
+						assert!(rgb.into_iter().all(|c| c <= white_level));
+						let rgb = rgb::<f32>::from(rgb) / white_level as f32;
+						pub fn apply(m: mat3, v: rgb<f32>) -> xyz<f32> { xyz::<f32>::from(vector::mulv(m, v.into())) }
+						apply(xyz_from, rgb)
+					});
+					let MinMax{min, max} = time!(vector::minmax(xyz.data.iter().copied()).unwrap());
+					let oetf = &sRGB8_OETF12;
+					xyz.map(|xyz| {
+						let xyz = (xyz-min)/(max-min);
+						let xyz = xyz.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
+						let rgb = rgb::from(<[_;_]>::from(xyz)); // FIXME
+						rgba8::from(rgb)
+					})
 				}
 				else { time!(rgb8(path)).map(|v| rgba8::from(v)) }
 			}.as_ref())
