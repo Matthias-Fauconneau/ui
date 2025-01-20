@@ -188,6 +188,9 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 					else if id == feedback.id && opcode == dmabuf::feedback::tranche_flags {
 						server.args({use Type::*; [UInt]});
 					}
+					else if id == window.toplevel.id && opcode == toplevel::close {
+						return Ok(());
+					}
 					else if id == window.toplevel.id && opcode == toplevel::wm_capabilities {
 						let [Array(_)] = server.args({use Type::*; [Array]}) else {unreachable!()};
 					}

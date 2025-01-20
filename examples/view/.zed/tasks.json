@@ -1,7 +1,7 @@
 [
 	{
 		"label": "View",
-		"command": "cargo run",
+		"command": "cargo run --release ~/PXL_20241214_152524941.RAW-02.ORIGINAL.raw",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
 		"reveal": "always",
