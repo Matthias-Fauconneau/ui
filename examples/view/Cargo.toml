@@ -6,6 +6,7 @@ ui = { path='../..' }
 vulkano = { git='https://github.com/vulkano-rs/vulkano', default-features=false, features=['macros'] } # same version as ui (which needs drm modifier from git version)
 vulkano-spirv = { git='https://github.com/Matthias-Fauconneau/vulkano-spirv' }
 image = { git='https://github.com/Matthias-Fauconneau/image', features = ['io', 'exr'] }
+jxl-oxide = {  version='*', features=['lcms2'] }
 
 [build-dependencies]
 naga = { version='*', features = ['wgsl-in','spv-out'] }

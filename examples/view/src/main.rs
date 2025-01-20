@@ -1,6 +1,6 @@
 #![feature(slice_from_ptr_range)] // shader
 #![feature(iterator_try_collect)]
-use {ui::{Result, time, size, int2, Widget, EventContext, Event::{self, Key}, vulkan, shader}, ::image::{Image, rgb, rgb8, rgba8, f32, sRGB8_OETF12, oetf8_12}};
+use {ui::{Result, time, size, int2, Widget, EventContext, Event::{self, Key}, vulkan, shader}, ::image::{Image, xy, rgb, rgb8, rgba8, f32, sRGB8_OETF12, oetf8_12}};
 use vulkan::{Context, Commands, Arc, ImageView, Image as GPUImage, image, WriteDescriptorSet, linear};
 shader!{view}
 
@@ -21,7 +21,20 @@ impl App {
 				let [min, max] = minmax(&data);
 				let oetf = &sRGB8_OETF12;
 				Image::new(size, data.into_iter().map(|v| rgba8::from(rgb::from(oetf8_12(oetf, ((v-min)/(max-min)).clamp(0., 1.))))).collect())
-			} else { time!(rgb8(path)).map(|v| rgba8::from(v)) }.as_ref())
+			}
+			else {
+				let file = std::fs::read(path)?;
+				if file.starts_with(&[0x00, 0x00, 0x00, 0x0C, 0x4A, 0x58, 0x4C, 0x20, 0x0D, 0x0A, 0x87, 0x0A]) {
+					use jxl_oxide::{JxlImage, EnumColourEncoding, color};
+					let mut image = JxlImage::builder().open(path).unwrap();
+					let size = xy{x: image.width(), y: image.height()};
+					let mut target = Image::uninitialized(size);
+					image.request_color_encoding(EnumColourEncoding::srgb(color::RenderingIntent::Relative));
+					image.render_frame(0).unwrap().stream().write_to_buffer::<u8>(bytemuck::cast_slice_mut::<rgb8, _>(&mut target.data));
+					target.map(|v| rgba8::from(v))
+				}
+				else { time!(rgb8(path)).map(|v| rgba8::from(v)) }
+			}.as_ref())
 		).try_collect()?,
 		index: 0,
 	})}
