@@ -23,5 +23,5 @@ vulkano = { git='https://github.com/Matthias-Fauconneau/vulkano'  } # drm modifi
 [patch.crates-io] # In case vulkano-spirv would depend on crates-io version. But currently it tracks git version (breaking changes in vulkano::shader::spirv))
 vulkano = { git='https://github.com/Matthias-Fauconneau/vulkano' } # drm modifier
 
-[patch.'https://github.com/Matthias-Fauconneau/vector' ]
-vector = { path='../../../vector' }
+[patch.'https://github.com/Matthias-Fauconneau/image' ]
+image = { path='../../../image' }

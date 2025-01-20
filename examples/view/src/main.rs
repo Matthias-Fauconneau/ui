@@ -1,7 +1,7 @@
 #![feature(slice_from_ptr_range)] // shader
 #![feature(iterator_try_collect)]
 #![feature(strict_overflow_ops)]
-#![feature(generic_arg_infer)] // rgb::from(<[_;_]>::from(xyz))
+//#![feature(generic_arg_infer)] // rgb::from(<[_;_]>::from(xyz))
 use {ui::{Result, time, size, int2, Widget, EventContext, Event::{self, Key}, vulkan, shader}, ::image::{Image, rgb, rgb8, rgba8, f32, sRGB8_OETF12, oetf8_12}};
 use vulkan::{Context, Commands, Arc, ImageView, Image as GPUImage, image, WriteDescriptorSet, linear};
 shader!{view}
@@ -43,7 +43,7 @@ impl App {
 					#[cfg(not(feature="jxl"))] unimplemented!()
 				}
 				else if start.starts_with(b"II*\x00") {
-					use {vector::{xy, xyz, inverse, mat3, MinMax}, rawloader::{decode_file, RawImageData}};
+					use {vector::{xy, inverse, mat3, MinMax}, image::XYZ, rawloader::{decode_file, RawImageData}};
 					let image = decode_file(path)?;
 					assert_eq!(image.cpp, 1);
 					assert_eq!(image.cfa.name, "BGGR");
@@ -58,18 +58,19 @@ impl App {
 						rgb[xy{x,y}] = rgb{r, g: g01.strict_add(g10)/2, b};
 					}}
 					let xyz_from = inverse::<3>(*image.xyz_to_cam.first_chunk()/*RGB*/.unwrap());
-					let xyz = rgb.map(|rgb| {
+					let rgb = rgb.map(|rgb| {
 						assert!(rgb.into_iter().all(|c| c <= white_level));
 						let rgb = rgb::<f32>::from(rgb) / white_level as f32;
-						pub fn apply(m: mat3, v: rgb<f32>) -> xyz<f32> { xyz::<f32>::from(vector::mulv(m, v.into())) }
-						apply(xyz_from, rgb)
+						pub fn apply(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(vector::mulv(m, v.into())) }
+						let xyz = apply(xyz_from, rgb);
+						rgb::<f32>::from(xyz)
 					});
-					let MinMax{min, max} = time!(vector::minmax(xyz.data.iter().copied()).unwrap());
+					let MinMax{min, max} = vector::minmax(rgb.data.iter().copied()).unwrap();
+					let MinMax{min, max} = MinMax{min: min.into_iter().min_by(f32::total_cmp).unwrap(), max: max.into_iter().min_by(f32::total_cmp).unwrap()};
 					let oetf = &sRGB8_OETF12;
-					xyz.map(|xyz| {
-						let xyz = (xyz-min)/(max-min);
-						let xyz = xyz.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
-						let rgb = rgb::from(<[_;_]>::from(xyz)); // FIXME
+					rgb.map(|rgb| {
+						let rgb = (rgb-rgb::from(min))/(max-min);
+						let rgb = rgb.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
 						rgba8::from(rgb)
 					})
 				}
