@@ -71,34 +71,34 @@ impl App {
 						dot(rgb::from(xyz_from[1]), rgb)
 					});
 					let MinMax{min, max} = vector::minmax(luma.data.iter().copied()).unwrap();
+					let len = luma.data.len() as u32;
+					let bins = 0x10000; // ~> white_level (dY ~ dG)
+					let luma16 = luma.as_ref().map(|luma| (f32::ceil((luma-min)/(max-min)*(bins as f32))-1.) as u16);
+					let mut histogram = vec![0; 0x10000];
+					for &luma in &luma16.data  { histogram[luma as usize] += 1; }
+					let cdf = histogram.into_iter().scan(0, |a, h| { *a += h; Some(*a) }).collect::<Box<[u32]>>();
+					assert_eq!(cdf[0xFFFF], len);
 					if argument_index == 0 {
-						let (bins, luma) = if true {
-							let bins = 0x10000; // > white_level .next_power_of_two() as usize
-							let luma = luma.map(|luma| (f32::ceil((luma-min)/(max-min)*(bins as f32))-1.) as u16);
-							let mut histogram = vec![0; 0x10000];
-							for &luma in &luma.data  { histogram[luma as usize] += 1; }
-							let cdf = histogram.into_iter().scan(0, |a, h| { *a += h; Some(*a) }).collect::<Box<[u32]>>();
-							let len = luma.data.len() as u32;
-							assert_eq!(cdf[0xFFFF], len);
+						let (bins, luma) = if false {
 							let bins = 0x800; // TODO: multilevel histogram, SIMD
-							let luma = luma.map(|luma| u16::try_from(cdf[luma as usize] as u64 * (bins-1) as u64 / (len-1) as u64).unwrap());
+							let luma = luma16.map(|luma| u16::try_from(cdf[luma as usize] as u64 * (bins-1) as u64 / (len-1) as u64).unwrap());
 							(bins, luma)
 						} else {
 							let bins = 0x800; // TODO: multilevel histogram, SIMD
 							let luma = luma.map(|luma| (f32::ceil((luma-min)/(max-min)*(bins as f32))-1.) as u16);
 							(bins, luma)
 						};
-						let radius = 367i32; //std::cmp::min(luma.size.x, luma.size.y)/4;
-						//assert!((radius+1+radius).pow(2) <= 0xFFFF);
-						//assert!((radius+1+radius) as usize >= bins, "{bins} {radius}"); // TODO: multilevel histogram, SIMD
-						assert!(luma.size.x as usize*bins as usize*2 <= 64*1024*1024);
+						let radius = ((std::cmp::min(luma.size.x, luma.size.y) - 1) / 2) as i32;
+						//assert_eq!(radius, 733);
+						//assert!((radius+1+radius) as usize >= bins);
+						//assert!(luma.size.x as usize*bins as usize*2 <= 64*1024*1024);
 						let mut column_histograms = vec![vec![0; bins as usize]; luma.size.x as usize]; // ~120M. More efficient to slide : packed add vs indirect scatter add
-						let mut f = Image::<Box<[u32]>>::zero(luma.size);
+						let mut rank = Image::<Box<[u32]>>::zero(luma.size);
 						let mut y = 0;
 						for y in -radius..=radius { for x in 0..luma.size.x { column_histograms[x as usize][luma[xy{x,y: y.max(0) as u32}] as usize] += 1; } }
 						let [w, h] = luma.size.signed().into();
 						let stride = luma.stride as i32; // Slightly less verbose sign casting
-						assert_eq!(f.stride as i32, stride);
+						assert_eq!(rank.stride as i32, stride);
 						let start = std::time::Instant::now();
 						loop {
 							if !(y < h) { break; }
@@ -107,7 +107,7 @@ impl App {
 							for x in -radius..=radius { for bin in 0..bins { histogram[bin as usize] += column_histograms[x.max(0) as usize][bin as usize]; } }
 							for x in 0..w-1 {
 								let luma = luma[(y*stride+x) as usize];
-								f[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
+								rank[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
 								// Slide right
 								for bin in 0..bins { histogram[bin as usize] = (histogram[bin as usize] as i32
 									+ column_histograms[(x+radius+1).min(w-1) as usize][bin as usize] as i32
@@ -117,7 +117,7 @@ impl App {
 							{ // Last of row iteration (not sliding further right after)
 								let x = w-1;
 								let luma = luma[(y*stride+x) as usize];
-								f[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
+								rank[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
 							}
 							// Slide down
 							for x in 0..w {
@@ -130,7 +130,7 @@ impl App {
 							for x in (w-1)-radius..=(w-1)+radius { for bin in 0..bins { histogram[bin as usize] += column_histograms[x.min(w-1) as usize][bin as usize]; } }
 							for x in (1..w).into_iter().rev() {
 								let luma = luma[(y*stride+x) as usize];
-								f[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
+								rank[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
 								// Slide left
 								for bin in 0..bins { histogram[bin as usize] = (histogram[bin as usize] as i32
 									+ column_histograms[(x-radius-1).max(0) as usize][bin as usize] as i32
@@ -140,7 +140,7 @@ impl App {
 							{ // Back to first of row iteration (not sliding further left after)
 								let x = 0;
 								let luma = luma[(y*stride+x) as usize];
-								f[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
+								rank[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
 							}
 							// Slide down
 							for x in 0..w {
@@ -157,7 +157,7 @@ impl App {
 							let rgb = rgb::<f32>::from(rgb) ;
 							pub fn apply(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(mulv(m, v.into())) }
 							let xyz = apply(xyz_from, rgb);
-							let f = f[p] as f32 / (radius+1+radius).pow(2) as f32;
+							let f = rank[p] as f32 / (radius+1+radius).pow(2) as f32;
 							let rgb = rgb::<f32>::from(f*xyz/xyz.Y);
 							let rgb = rgb.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
 							rgba8::from(rgb)
@@ -170,7 +170,13 @@ impl App {
 							let rgb = rgb::<f32>::from(rgb) ;
 							pub fn apply(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(mulv(m, v.into())) }
 							let xyz = apply(xyz_from, rgb);
-							let f = (xyz.Y-min)/(max-min);
+							let luma = if true { luma16[p] as usize }
+							else { // or better recompute (if bandwidth limited) ?
+								let luma = (xyz.Y-min)/(max-min);
+								(f32::ceil(luma*(bins as f32))-1.) as usize
+							};
+							let rank = cdf[luma as usize];
+							let f = rank as f32 / (len-1) as f32;
 							let rgb = rgb::<f32>::from(f*xyz/xyz.Y);
 							let rgb = rgb.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
 							rgba8::from(rgb)
