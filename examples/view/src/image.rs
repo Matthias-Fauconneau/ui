@@ -44,31 +44,29 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 		let file = std::fs::File::open(path)?;
 		let exif = exif::Reader::new().read_from_container(&mut std::io::BufReader::new(&file))?;
 		use exif::Tag;
-		//#[allow(non_upper_case_globals)] pub const ForwardMatrix1: Tag = Tag(exif::Context::Tiff, 50964);
 		#[allow(non_upper_case_globals)] pub const ForwardMatrix2: Tag = Tag(exif::Context::Tiff, 50965);
-		//let exif::Value::SRational(ref forward_matrix_1) = exif.get_field(ForwardMatrix1, exif::In::PRIMARY).unwrap().value else {panic!()};
-		let exif::Value::SRational(ref forward_matrix_2) = exif.get_field(ForwardMatrix2, exif::In::PRIMARY).unwrap().value else {panic!()};
 		//#[allow(non_upper_case_globals)] pub const ProfileToneCurve: Tag = Tag(exif::Context::Tiff, 50940);
-		//let exif::Value::Float(ref profile_tone_curve) = exif.get_field(ProfileToneCurve, exif::In::PRIMARY).unwrap().value else {panic!()};
 		
-		let xyz_from = if true {
-			//let forward_matrix_1 = *forward_matrix_1.as_array::<{3*3}>().unwrap().map(|v| v.to_f32()).as_chunks().0.as_array().unwrap();
-			let forward_matrix_2 = *forward_matrix_2.as_array::<{3*3}>().unwrap().map(|v| v.to_f32()).as_chunks().0.as_array().unwrap();
-			forward_matrix_2.map(rgbf::from).map(|column| rcp_as_shot_neutral * column)
+		let xyz_from = if let Some(exif::Field{value: exif::Value::SRational(forward_matrix_2), ..}) = exif.get_field(ForwardMatrix2, exif::In::PRIMARY) {
+			*forward_matrix_2.as_array::<{3*3}>().unwrap().map(|v| v.to_f32()).as_chunks().0.as_array().unwrap()
 		} else {
 			let color_matrix_2 : [_; 3] = *color_matrix_2.first_chunk()/*RGB*/.unwrap(); // normally D65
 			let color_matrix = color_matrix_2; // FIXME: mix(color_matrix_1, color_matrix_2, as_shot_neutral) i.e interpolate color_matrix[] for shot illuminant
 			let color_matrix = color_matrix.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from); // Not sure about this
 			assert_eq!(mulv(color_matrix, [1.,1.,1.]), [1.,1.,1.]);
-			let xyz_from = inverse::<3>(color_matrix);
-			let xyz_from = xyz_from.map(rgbf::from).map(|row| rcp_as_shot_neutral * row);
-			println!("{:?}", xyz_from.map(|r| r.map(|v| (v*10_000.) as i32)));
-			xyz_from
-				.map(|row| row / white_level as f32)
-				.map(|rgb{r,g,b}| rgb{r, g: g/2. /*g01+g10*/, b})
-		}.map(<[_;_]>::from);
-		
+			inverse::<3>(color_matrix)
+		};
+		println!("{:?}", xyz_from.map(|r| r.map(|v| (v*10_000.) as i32)));
+		let xyz_from = xyz_from.map(rgbf::from)
+			.map(|row| rcp_as_shot_neutral * row)
+			.map(|row| row / white_level as f32)
+			.map(|rgb{r,g,b}| rgb{r, g: g/2. /*g01+g10*/, b})
+			.map(<[_;_]>::from);
+
 		let cfa = Image::new(xy{x: width as u32, y: height as u32}, data);
+
+		//if let Some(exif::Field{value: exif::Value::Float(ref profile_tone_curve), ..} = exif.get_field(ProfileToneCurve, exif::In::PRIMARY) else {
+
 		let luma = Image::from_xy(cfa.size/2, |p| {
 			let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[x,y]| cfa[p*2+xy{x,y}]);
 			let rgb = rgb{r, g: g01.strict_add(g10), b};
