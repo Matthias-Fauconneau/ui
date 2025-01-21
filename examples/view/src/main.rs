@@ -127,7 +127,7 @@ impl App {
 							y += 1;
 							if !(y < h) { break; }
 							let mut histogram = vec![0; bins as usize];
-							for x in -radius..=radius { for bin in 0..bins { histogram[bin as usize] += column_histograms[x.max(0) as usize][bin as usize]; } }
+							for x in (w-1)-radius..=(w-1)+radius { for bin in 0..bins { histogram[bin as usize] += column_histograms[x.min(w-1) as usize][bin as usize]; } }
 							for x in (1..w).into_iter().rev() {
 								let luma = luma[(y*stride+x) as usize];
 								f[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
