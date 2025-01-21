@@ -247,10 +247,10 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 						server.args({use Type::*; [UInt]});
 					}
 					else if id == pointer.id && opcode == pointer::axis_stop {
-						server.args({use Type::*; [UInt,UInt]});
+						server.args({use Type::*; [UInt, UInt]});
 					}
 					else if id == pointer.id && opcode == pointer::axis_value120 {
-						server.args({use Type::*; [UInt]});
+						server.args({use Type::*; [UInt, UInt]});
 					}
 					else if id == pointer.id && opcode == pointer::axis_relative_direction {
 						server.args({use Type::*; [UInt, UInt]});
@@ -301,8 +301,12 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 					}
 					else if id == lease_device.id && opcode == drm_lease_device::released {
 					}*/
-					else { println!("! {id:?} {opcode:?} {:?} {:?}", [registry.id, keyboard.id, pointer.id, seat.id, display.id], server.names); }
-					//println!("{id:?} {opcode:?}");
+					else {
+						use itertools::Itertools;
+						println!("! {id:?}:{opcode:?} {:?}", server.names.lock().unwrap().iter().format_with(" ", |(id,name),f| f(&format_args!("{id}:{name}"))));
+						assert!(server.names.lock().unwrap().iter().any(|&(known,_)| known==id));
+					}
+					//print!("{id:?}:{opcode:?} ");
 				} else { println!("No messages :("); }
 			} else {
 				break;

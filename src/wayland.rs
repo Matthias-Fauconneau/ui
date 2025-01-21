@@ -299,7 +299,7 @@ pub(crate) mod seat {
 }
 pub use seat::Seat;
 
-// pointer: set_cursor(enter: serial, surface, hotspot_x, hotspot_y); enter(serial, surface, surface_x, surface_y), leave(serial, surface), motion(time, surface_x, surface_y), button(serial, time, button, state), axis(time, axis, value), frame, axis_source(_), axis_stop(time, axis), axis_value120, axis_relative_direction(axis, direction)
+// pointer: set_cursor(enter: serial, surface, hotspot_x, hotspot_y); enter(serial, surface, surface_x, surface_y), leave(serial, surface), motion(time, surface_x, surface_y), button(serial, time, button, state), axis(time, axis, value), frame, axis_source(_), axis_stop(time, axis), axis_value120(axis, value), axis_relative_direction(axis, direction)
 pub(crate) mod pointer {
 	pub const enter: u16 = 0;
 	pub const leave: u16 = 1;
