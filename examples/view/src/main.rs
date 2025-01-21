@@ -30,10 +30,11 @@ impl App {
 				let mut start = [0; 12];
 				file.read_exact(&mut start)?;
         		file.seek(std::io::SeekFrom::Start(0))?;
-				if &start == b"\x00\x00\x00\x0cJXL \x0d\x0a\x87\x0a" {
+          		//if &start == b"\x00\x00\x00\x0cJXL \x0d\x0a\x87\x0a"
+			 	if let Ok(mut image) = jxl_oxide::JxlImage::builder().open(path) {
 					#[cfg(feature="jxl")] {
-						use {image::xy, jxl_oxide::{JxlImage, EnumColourEncoding, color}};
-						let mut image = JxlImage::builder().open(path).unwrap();
+						use {image::xy, jxl_oxide::{/JxlImage, EnumColourEncoding, color}};
+						//let mut image = JxlImage::builder().open(path).unwrap();
 						let size = xy{x: image.width(), y: image.height()};
 						let mut target = Image::uninitialized(size);
 						image.request_color_encoding(EnumColourEncoding::srgb(color::RenderingIntent::Relative));
@@ -43,26 +44,26 @@ impl App {
 					#[cfg(not(feature="jxl"))] unimplemented!()
 				}
 				else if start.starts_with(b"II*\x00") {
-					use {vector::{xy, inverse, mat3, dot, mulv, MinMax}, image::{rgbf, XYZ}, rawloader::{decode_file, RawImageData}};
-					let image = decode_file(path)?;
-					assert_eq!(image.cpp, 1);
-					assert_eq!(image.cfa.name, "BGGR");
-					assert_eq!(image.blacklevels, [0,0,0,0]);
-					let [white_level, ..] = image.whitelevels;
-					assert!(image.whitelevels.into_iter().all(|w| w==white_level));
-					let RawImageData::Integer(data) = image.data else {unimplemented!()};
-					let cfa = Image::new(xy{x: image.width as u32, y: image.height as u32}, data);
-					let xyz_to_cam : [_; 3] = *image.xyz_to_cam.first_chunk()/*RGB*/.unwrap();
+					use {vector::{xy, inverse, mat3, dot, mulv, MinMax}, image::{rgbf, XYZ}, rawloader::{decode_file, RawImage, RawImageData, Orientation}};
+					let RawImage{cpp, cfa, blacklevels, whitelevels, data: RawImageData::Integer(data), width, height, xyz_to_cam, wb_coeffs, orientation, ..}
+						= decode_file(path)? else {unimplemented!()};
+					assert_eq!(cpp, 1);
+					assert_eq!(cfa.name, "BGGR");
+					assert_eq!(blacklevels, [0,0,0,0]);
+					let [white_level, ..] = whitelevels;
+					assert!(whitelevels.into_iter().all(|w| w==white_level));
+					let xyz_to_cam : [_; 3] = *xyz_to_cam.first_chunk()/*RGB*/.unwrap();
 					let xyz_to_cam = xyz_to_cam.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from);
 					assert_eq!(mulv(xyz_to_cam, [1.,1.,1.]), [1.,1.,1.]);
 					let xyz_from = inverse::<3>(xyz_to_cam);
-					let wb_coeffs = rgbf::from(*image.wb_coeffs.first_chunk().unwrap()); // 1/AsShotNeutral
+					let wb_coeffs = rgbf::from(*wb_coeffs.first_chunk().unwrap()); // 1/AsShotNeutral
 					let xyz_from = xyz_from
 						.map(|row| rgbf::from(row))
 						.map(|row| row * wb_coeffs / white_level as f32)
 						.map(|rgb{r,g,b}| rgb{r, g: g/2. /*g01+g10*/, b})
 						.map(<[_;_]>::from);
 					
+					let cfa = Image::new(xy{x: width as u32, y: height as u32}, data);
 					let luma = Image::from_xy(cfa.size/2, |p| {
 						let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[x,y]| cfa[p*2+xy{x,y}]);
 						let rgb = rgb{r, g: g01.strict_add(g10), b};
@@ -78,7 +79,8 @@ impl App {
 					for &luma in &luma16.data  { histogram[luma as usize] += 1; }
 					let cdf = histogram.into_iter().scan(0, |a, h| { *a += h; Some(*a) }).collect::<Box<[u32]>>();
 					assert_eq!(cdf[0xFFFF], len);
-					if argument_index == 0 {
+					let adaptive_histogram_equalization = argument_index > 1;
+					let image = if adaptive_histogram_equalization {
 						let (bins, luma) = if false {
 							let bins = 0x800; // TODO: multilevel histogram, SIMD
 							let luma = luma16.map(|luma| u16::try_from(cdf[luma as usize] as u64 * (bins-1) as u64 / (len-1) as u64).unwrap());
@@ -158,11 +160,16 @@ impl App {
 							pub fn apply(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(mulv(m, v.into())) }
 							let xyz = apply(xyz_from, rgb);
 							let f = rank[p] as f32 / (radius+1+radius).pow(2) as f32;
-							let rgb = rgb::<f32>::from(f*xyz/xyz.Y);
+							let rgb = rgb::<f32>::from(f*xyz);
 							let rgb = rgb.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
 							rgba8::from(rgb)
 						})
 					} else {
+						/*let file = std::fs::File::open(path)?;
+						let exif = exif::Reader::new().read_from_container(&mut std::io::BufReader::new(&file))?;
+						use exif::Tag;
+						#[allow(non_upper_case_globals)] pub const ProfileToneCurve: Tag = Tag(exif::Context::Tiff, 50940);
+						let exif::Value::Float(ref profile_tone_curve) = exif.get_field(ProfileToneCurve, exif::In::PRIMARY).unwrap().value else {panic!()};*/
 						let oetf = &sRGB8_OETF12;
 						Image::from_xy(cfa.size/2, |p| {
 							let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[x,y]| cfa[p*2+xy{x,y}]);
@@ -170,17 +177,33 @@ impl App {
 							let rgb = rgb::<f32>::from(rgb) ;
 							pub fn apply(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(mulv(m, v.into())) }
 							let xyz = apply(xyz_from, rgb);
-							let luma = if true { luma16[p] as usize }
-							else { // or better recompute (if bandwidth limited) ?
-								let luma = (xyz.Y-min)/(max-min);
-								(f32::ceil(luma*(bins as f32))-1.) as usize
+							let profile_tone_curve = false;
+							let global_histogram_equalization = true;
+							let xyz = if profile_tone_curve {
+								unimplemented!("ProfileToneCurve (as used in on-board processed version)")
+							} else if global_histogram_equalization {
+								let luma = if true { luma16[p] as usize }
+								else { // or better recompute (if bandwidth limited) ?
+									let luma = (xyz.Y-min)/(max-min);
+									(f32::ceil(luma*(bins as f32))-1.) as usize
+								};
+								let rank = cdf[luma as usize];
+								let f = rank as f32 / (len-1) as f32;
+								f * xyz / xyz.Y
+							} else {
+								let f = (xyz.Y-min)/(max-min);
+								f * xyz / xyz.Y
 							};
-							let rank = cdf[luma as usize];
-							let f = rank as f32 / (len-1) as f32;
-							let rgb = rgb::<f32>::from(f*xyz/xyz.Y);
+							let rgb = rgb::<f32>::from(xyz);
 							let rgb = rgb.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
 							rgba8::from(rgb)
 						})
+					};
+					use Orientation::*;
+					match orientation {
+						Normal => image,
+						Rotate90 => Image::from_xy({let xy{x,y} = image.size; xy{x: y, y: x}}, |xy{x,y}| image[xy{x: y, y: image.size.y-1-x}]),
+						o => { dbg!(o); image },
 					}
 				}
 				else { time!(rgb8(path)).map(|v| rgba8::from(v)) }

@@ -1,17 +1,16 @@
 package = { name='view', version='0.0.0', edition='2024', description = 'View EXR image'}
-features = { jxl=['jxl-oxide'] }
+features = { jxl=['dep:jxl-oxide'], default = ['jxl'] }
 [dependencies]
 bytemuck='*'
 vector = { git='https://github.com/Matthias-Fauconneau/vector' }
+image = { git='https://github.com/Matthias-Fauconneau/image', features = ['io', 'exr'] }
 ui = { path='../..' }
 vulkano = { git='https://github.com/vulkano-rs/vulkano', default-features=false, features=['macros'] } # same version as ui (which needs drm modifier from git version)
 vulkano-spirv = { git='https://github.com/Matthias-Fauconneau/vulkano-spirv' }
-image = { git='https://github.com/Matthias-Fauconneau/image', features = ['io', 'exr'] }
 
 jxl-oxide = {  version='*', features=['lcms2'], optional=true }
-#dng='*'
 rawloader='*'
-#image-io={package='image', version='*', default-features=false, features=['tiff']}
+#exif={ package='kamadak-exif', version='*' }
 
 [build-dependencies]
 naga = { version='*', features = ['wgsl-in','spv-out'] }
