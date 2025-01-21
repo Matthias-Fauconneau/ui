@@ -88,63 +88,68 @@ impl App {
 							let luma = luma.map(|luma| (f32::ceil((luma-min)/(max-min)*(bins as f32))-1.) as u16);
 							(bins, luma)
 						};
-						let radius = 126u32; //std::cmp::min(luma.size.x, luma.size.y)/4;
-						assert!((radius+1+radius).pow(2) <= 0xFFFF);
+						let radius = 367i32; //std::cmp::min(luma.size.x, luma.size.y)/4;
+						//assert!((radius+1+radius).pow(2) <= 0xFFFF);
 						//assert!((radius+1+radius) as usize >= bins, "{bins} {radius}"); // TODO: multilevel histogram, SIMD
 						assert!(luma.size.x as usize*bins as usize*2 <= 64*1024*1024);
 						let mut column_histograms = vec![vec![0; bins as usize]; luma.size.x as usize]; // ~120M. More efficient to slide : packed add vs indirect scatter add
-						for y in 0..radius+1+radius { for x in 0..luma.size.x { column_histograms[x as usize][luma[xy{x,y}] as usize] += 1; } }
-						let mut f = Image::<Box<[u16]>>::zero(luma.size);
-						let mut y = radius;
+						let mut f = Image::<Box<[u32]>>::zero(luma.size);
+						let mut y = 0;
+						for y in -radius..=radius { for x in 0..luma.size.x { column_histograms[x as usize][luma[xy{x,y: y.max(0) as u32}] as usize] += 1; } }
+						let [w, h] = luma.size.signed().into();
+						let stride = luma.stride as i32; // Slightly less verbose sign casting
+						assert_eq!(f.stride as i32, stride);
+						let start = std::time::Instant::now();
 						loop {
-							if !(y < luma.size.y-1-radius) { break; }
-							println!("{y}");
+							if !(y < h) { break; }
+							//println!("{y}");
 							let mut histogram = vec![0; bins as usize];
-							for x in 0..radius+1+radius { for bin in 0..bins { histogram[bin as usize] += column_histograms[x as usize][bin as usize]; } }
-							for x in radius..luma.size.x-1-radius {
-								let luma = luma[xy{x,y}];
-								f[xy{x,y}] = histogram[0..=luma as usize].iter().sum();
+							for x in -radius..=radius { for bin in 0..bins { histogram[bin as usize] += column_histograms[x.max(0) as usize][bin as usize]; } }
+							for x in 0..w-1 {
+								let luma = luma[(y*stride+x) as usize];
+								f[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
 								// Slide right
 								for bin in 0..bins { histogram[bin as usize] = (histogram[bin as usize] as i32
-									+ column_histograms[(x+1+radius) as usize][bin as usize] as i32
-									- column_histograms[(x-radius) as usize][bin as usize] as i32) as u16;
+									+ column_histograms[(x+radius+1).min(w-1) as usize][bin as usize] as i32
+									- column_histograms[(x-radius).max(0) as usize][bin as usize] as i32) as u32;
 								}
 							}
-							{
-								let x = luma.size.x-1-radius;
-								let luma = luma[xy{x,y}];
-								f[xy{x,y}] = histogram[0..=luma as usize].iter().sum();
+							{ // Last of row iteration (not sliding further right after)
+								let x = w-1;
+								let luma = luma[(y*stride+x) as usize];
+								f[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
 							}
 							// Slide down
-							for x in 0..luma.size.x {
-								column_histograms[x as usize][luma[xy{x,y: y-radius}] as usize] -= 1;
-								column_histograms[x as usize][luma[xy{x,y: y+1+radius}] as usize] += 1;
+							for x in 0..w {
+								column_histograms[x as usize][luma[((y-radius).max(0)*stride+x) as usize] as usize] -= 1;
+								column_histograms[x as usize][luma[((y+radius+1).min(h-1)*stride+x) as usize] as usize] += 1;
 							}
 							y += 1;
-							if !(y < luma.size.y-1-radius) { break; }
+							if !(y < h) { break; }
 							let mut histogram = vec![0; bins as usize];
-							for x in luma.size.x-(radius+1+radius)..luma.size.x { for bin in 0..bins { histogram[bin as usize] += column_histograms[x as usize][bin as usize]; } }
-							for x in (radius+1..luma.size.x-radius).into_iter().rev() {
-								let luma = luma[xy{x,y}];
-								f[xy{x,y}] = histogram[0..=luma as usize].iter().sum();
+							for x in -radius..=radius { for bin in 0..bins { histogram[bin as usize] += column_histograms[x.max(0) as usize][bin as usize]; } }
+							for x in (1..w).into_iter().rev() {
+								let luma = luma[(y*stride+x) as usize];
+								f[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
 								// Slide left
 								for bin in 0..bins { histogram[bin as usize] = (histogram[bin as usize] as i32
-									+ column_histograms[(x-1-radius) as usize][bin as usize] as i32
-									- column_histograms[(x+radius) as usize][bin as usize] as i32) as u16;
+									+ column_histograms[(x-radius-1).max(0) as usize][bin as usize] as i32
+									- column_histograms[(x+radius).min(w-1) as usize][bin as usize] as i32) as u32;
 								}
 							}
-							{
-								let x = radius;
-								let luma = luma[xy{x,y}];
-								f[xy{x,y}] = histogram[0..=luma as usize].iter().sum();
+							{ // Back to first of row iteration (not sliding further left after)
+								let x = 0;
+								let luma = luma[(y*stride+x) as usize];
+								f[(y*stride+x) as usize] = histogram[0..=luma as usize].iter().sum();
 							}
 							// Slide down
-							for x in 0..luma.size.x {
-								column_histograms[x as usize][luma[xy{x,y: y-radius}] as usize] -= 1;
-								column_histograms[x as usize][luma[xy{x,y: y+1+radius}] as usize] += 1;
+							for x in 0..w {
+								column_histograms[x as usize][luma[((y-radius).max(0)*stride+x) as usize] as usize] -= 1;
+								column_histograms[x as usize][luma[((y+radius+1).min(h-1)*stride+x) as usize] as usize] += 1;
 							}
 							y += 1;
 						}
+						println!("{}ms", start.elapsed().as_millis());
 						let oetf = &sRGB8_OETF12;
 						Image::from_xy(cfa.size/2, |p| {
 							let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[x,y]| cfa[p*2+xy{x,y}]);
