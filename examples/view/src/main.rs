@@ -54,10 +54,8 @@ impl App {
 					let cfa = Image::new(xy{x: image.width as u32, y: image.height as u32}, data);
 					let xyz_to_cam : [_; 3] = *image.xyz_to_cam.first_chunk()/*RGB*/.unwrap();
 					let xyz_to_cam = xyz_to_cam.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from);
-					//let xyz_to_cam = transpose(transpose(xyz_to_cam).map(|column| XYZ::<f32>::from(column)).map(|column| column/column.sum()).map(<[_;_]>::from));
 					assert_eq!(mulv(xyz_to_cam, [1.,1.,1.]), [1.,1.,1.]);
 					let xyz_from = inverse::<3>(xyz_to_cam);
-					//assert_eq!(mulv(xyz_from, [1.,1.,1.]), [1.,1.,1.]);
 					let wb_coeffs = rgbf::from(*image.wb_coeffs.first_chunk().unwrap()); // 1/AsShotNeutral
 					let xyz_from = xyz_from
 						.map(|row| rgbf::from(row))
@@ -73,12 +71,65 @@ impl App {
 						dot(rgb::from(xyz_from[1]), rgb)
 					});
 					let MinMax{min, max} = vector::minmax(luma.data.iter().copied()).unwrap();
-					let luma = luma.map(|luma| (f32::ceil((luma-min)/(max-min)*(0x10000 as f32))-1.) as u16); // FIXME: 14bit/16K should be enough
-					let mut histogram = vec![0; 0x10000];
-					for &luma in &luma.data  { histogram[luma as usize] += 1; }
-					let cdf = histogram.into_iter().scan(0, |a, h| { *a += h; Some(*a) }).collect::<Box<_>>();
-					let len = luma.data.len();
-					assert_eq!(cdf[0xFFFF], len);
+					let radius = 126u32; //std::cmp::min(luma.size.x, luma.size.y);
+					assert!((radius+1+radius).pow(2) <= 0xFFFF);
+					let bins = 0x100; //white_level.next_power_of_two() as usize; // TODO: multilevel histogram, SIMD
+					//assert!((radius+1+radius) as usize >= bins, "{bins} {radius}"); // TODO: multilevel histogram
+					let luma = luma.map(|luma| (f32::ceil((luma-min)/(max-min)*(bins as f32))-1.) as u16);
+					assert!(luma.size.x as usize*bins*2 <= 64*1024*1024);
+					let mut column_histograms = vec![vec![0; bins]; luma.size.x as usize]; // ~120M. More efficient to slide : packed add vs indirect scatter add
+					for y in 0..radius+1+radius { for x in 0..luma.size.x { column_histograms[x as usize][luma[xy{x,y}] as usize] += 1; } }
+					let mut f = Image::<Box<[u16]>>::zero(luma.size);
+					let mut y = radius;
+					loop {
+						if !(y < luma.size.y-1-radius) { break; }
+						//println!("{y}");
+						let mut histogram = vec![0; bins];
+						for x in 0..radius+1+radius { for bin in 0..bins { histogram[bin] += column_histograms[x as usize][bin]; } }
+						for x in radius..luma.size.x-1-radius {
+							let luma = luma[xy{x,y}];
+							f[xy{x,y}] = histogram[0..=luma as usize].iter().sum();
+							// Slide right
+							for bin in 0..bins { histogram[bin] = (histogram[bin] as i32
+								+ column_histograms[(x+1+radius) as usize][bin] as i32
+								- column_histograms[(x-radius) as usize][bin] as i32) as u16;
+							}
+						}
+						{
+							let x = luma.size.x-1-radius;
+							let luma = luma[xy{x,y}];
+							f[xy{x,y}] = histogram[0..=luma as usize].iter().sum();
+						}
+						// Slide down
+						for x in 0..luma.size.x {
+							column_histograms[x as usize][luma[xy{x,y: y-radius}] as usize] -= 1;
+							column_histograms[x as usize][luma[xy{x,y: y+1+radius}] as usize] += 1;
+						}
+						y += 1;
+						if !(y < luma.size.y-1-radius) { break; }
+						let mut histogram = vec![0; bins];
+						for x in luma.size.x-(radius+1+radius)..luma.size.x { for bin in 0..bins { histogram[bin] += column_histograms[x as usize][bin]; } }
+						for x in (radius+1..luma.size.x-radius).into_iter().rev() {
+							let luma = luma[xy{x,y}];
+							f[xy{x,y}] = histogram[0..=luma as usize].iter().sum();
+							// Slide left
+							for bin in 0..bins { histogram[bin] = (histogram[bin] as i32 
+								+ column_histograms[(x-1-radius) as usize][bin] as i32
+								- column_histograms[(x+radius) as usize][bin] as i32) as u16;
+							}
+						}
+						{
+							let x = radius;
+							let luma = luma[xy{x,y}];
+							f[xy{x,y}] = histogram[0..=luma as usize].iter().sum();
+						}
+						// Slide down
+						for x in 0..luma.size.x {
+							column_histograms[x as usize][luma[xy{x,y: y-radius}] as usize] -= 1;
+							column_histograms[x as usize][luma[xy{x,y: y+1+radius}] as usize] += 1;
+						}
+						y += 1;
+					}
 					let oetf = &sRGB8_OETF12;
 					Image::from_xy(cfa.size/2, |p| {
 						let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[x,y]| cfa[p*2+xy{x,y}]);
@@ -86,9 +137,8 @@ impl App {
 						let rgb = rgb::<f32>::from(rgb) ;
 						pub fn apply(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(mulv(m, v.into())) }
 						let xyz = apply(xyz_from, rgb);
-						let luma = (f32::ceil((xyz.Y-min)/(max-min)*(0x10000 as f32))-1.) as u16;
-						let f = (cdf[luma as usize] as f32 / len as f32) / xyz.Y;
-						let rgb = rgb::<f32>::from(f*xyz);
+						let f = f[p] as f32 / (radius+1+radius).pow(2) as f32;
+						let rgb = rgb::<f32>::from(f*xyz/xyz.Y);
 						let rgb = rgb.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
 						rgba8::from(rgb)
 					})
