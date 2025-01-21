@@ -10,7 +10,7 @@ vulkano-spirv = { git='https://github.com/Matthias-Fauconneau/vulkano-spirv' }
 
 jxl-oxide = {  version='*', features=['lcms2'], optional=true }
 rawloader='*'
-#exif={ package='kamadak-exif', version='*' }
+exif={ package='kamadak-exif', version='*' } # FIXME: fork rawloader
 
 [build-dependencies]
 naga = { version='*', features = ['wgsl-in','spv-out'] }
