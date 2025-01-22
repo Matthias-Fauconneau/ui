@@ -1,5 +1,3 @@
-#![allow(non_snake_case)]
-
 fn minmax(values: &[f32]) -> [f32; 2] {
 	let [mut min, mut max] = [f32::INFINITY, -f32::INFINITY];
 	for &value in values { if value > f32::MIN && value < min { min = value; } if value > max { max = value; } }
@@ -32,8 +30,8 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 	file.read_exact(&mut start)?;
 	file.seek(std::io::SeekFrom::Start(0))?;
 	if start.starts_with(b"II*\x00") {
-		use {vector::{xy, inverse, mat3, dot, mulv, MinMax}, image::{rgbf, XYZ}, rawloader::{decode_file, RawImage, RawImageData, Orientation}};
-		let RawImage{cpp, cfa, blacklevels, whitelevels, data: RawImageData::Integer(data), width, height, xyz_to_cam: color_matrix_2, wb_coeffs: rcp_as_shot_neutral, orientation, ..}
+		use {vector::{xy, /*inverse,*/ mat3, dot, mulv, MinMax}, image::{rgbf, XYZ}, rawloader::{decode_file, RawImage, RawImageData, Orientation}};
+		let RawImage{cpp, cfa, blacklevels, whitelevels, data: RawImageData::Integer(data), width, height, xyz_to_cam: _color_matrix_2, wb_coeffs: rcp_as_shot_neutral, orientation, ..}
 			= decode_file(path)? else {unimplemented!()};
 		assert_eq!(cpp, 1);
 		assert_eq!(cfa.name, "BGGR");
@@ -50,34 +48,56 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 		//#[allow(non_upper_case_globals)] pub const ProfileToneCurve: Tag = Tag(exif::Context::Tiff, 50940);
 		
 		let mut xyz_from = [[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]];
+		fn xy(XYZ{X,Y,Z}: XYZ<f64>) -> xy<f64> { xy{x: X/(X+Y+Z), y: Y/(X+Y+Z)}  }
+		fn xy_from_temperature(T: f64) -> xy<f64> {
+			fn g(µ: f64, σ: f64, λ: f64) -> f64 { f64::exp(-((λ-µ)/σ).powi(2)/2.) }
+			fn x(λ: f64) -> f64 { 1.065*g(595.8, 33.33, λ) + 0.366*g(446.8, 19.44, λ) }
+			fn gln(µ: f64, σ: f64, λ: f64) -> f64 { f64::exp(-((f64::ln(λ)-f64::ln(µ))/σ).powi(2)/2.) }
+			fn y(λ: f64) -> f64 { 1.014*gln(556.3, 0.075, λ) }
+			fn z(λ: f64) -> f64 { 1.839*gln(449.8, 0.051, λ) }
+			use std::f64::consts::PI as π;
+			const h: f64 = 6.62607015e-34;
+			const c: f64 = 299792458.;
+			const k: f64 = 1.380649e-23;
+			fn M(T: f64, λ: f64) -> f64 { 2.*π*h*c.powi(2)/λ.powi(5) / (f64::exp(h*c/k / (λ*T))-1.) }
+			let ref domain = 400..700;
+			let M = domain.clone().map(|λ| M(T, λ as f64)).collect::<Box<_>>();
+			let [X,Y,Z] = [x,y,z].map(|cmf| domain.clone().zip(&M).map(|(λ, Mλ)| cmf(λ as f64)*Mλ).sum::<f64>());
+			xy{x: X/(X+Y+Z), y: Y/(X+Y+Z)}
+		}
+		fn CCT_from_xy(xy{x,y}: xy<f64>) -> f64 {
+			let [xe, ye] = [0.3320, 0.1858];
+			let n = -(x-xe)/(y-ye);
+			let T = 449.*n.powi(3) + 3525.*n.powi(2) + 6823.3*n + 5520.33;
+			assert_eq!(xy_from_temperature(T), xy{x,y});
+			T
+		}
+		let mut CCT = CCT_from_xy(xy(XYZ::<f32>::from(mulv(xyz_from, <[_;_]>::from(as_shot_neutral))).into()));
 		
 		for _ in  0..2 {
-			fn CCT(xy{x,y}: xy<f32>) -> f32 {
-				let [xe, ye] = [0.3320, 0.1858];
-				let n = (x-xe)/(y-ye);
-				449.*n.powi(3) + 3525.*n.powi(2) + 6823.3*n + 5520.33
-			}
-			fn xy(XYZ{X,Y,Z}: XYZ<f32>) -> xy<f32> { xy{x: X/(X+Y+Z), y: Y/(X+Y+Z)}  }
-			let CCT = CCT(xy(XYZ::from(mulv(xyz_from, <[_;_]>::from(as_shot_neutral)))));
 			xyz_from = if let Some([exif::Field{value: exif::Value::SRational(forward_matrix_1), ..}, exif::Field{value: exif::Value::SRational(forward_matrix_2), ..}])
 			= [ForwardMatrix1,ForwardMatrix2].try_map(|tag| exif.get_field(tag, exif::In::PRIMARY)) {
 				let illuminants = [/*A*/2856., /*D*/6500.]; // FIXME: assert DNG tags
 				let forward_matrix = [forward_matrix_1, forward_matrix_2].map(|fm| *fm.as_array::<{3*3}>().unwrap().map(|v| v.to_f32()).as_chunks().0.as_array().unwrap());
 				//let forward_matrix = forward_matrix.map(|forward_matrix| forward_matrix.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from)); // Not sure
-				let t = (CCT-illuminants[0])/(illuminants[1]-illuminants[0]);
-				let T = lerp(t, forward_matrix[0], forward_matrix[1]);
-				//let T = T.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from); // Not sure
+				let t = (CCT -illuminants[0])/(illuminants[1]-illuminants[0]);
+				let T = lerp(t as f32, forward_matrix[0], forward_matrix[1]);
+				let T = T.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from); // Just to be sure
 				//println!("{CCT} {t}\n{:?}\n{:?}\n{:?}", forward_matrix[0], forward_matrix[1], T);
 				T
 			} else {
 				unimplemented!("missing color matrix 1: get directly from exif or expose through rawloader (fork)");
-				let color_matrix_2 : [_; 3] = *color_matrix_2.first_chunk()/*RGB*/.unwrap(); // normally D65
-				let color_matrix = color_matrix_2; // FIXME: lerp(color_matrix_1, color_matrix_2, CCT(as_shot_neutral)) i.e interpolate color_matrix[] for shot illuminant
+				/*let color_matrix_2 : [_; 3] = *color_matrix_2.first_chunk()/*RGB*/.unwrap(); // normally D65
+				//let t = (1./CCT-1./illuminants[0])/(1./illuminants[1]-1./illuminants[0]);
+				let color_matrix = color_matrix_2; // FIXME: lerp(t, color_matrix_1, color_matrix_2) i.e interpolate color_matrix[] for shot illuminant
 				//let color_matrix = color_matrix.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from); // Not sure about this
 				assert_eq!(mulv(color_matrix, [1.,1.,1.]), [1.,1.,1.]);
-				inverse::<3>(color_matrix)
+				inverse::<3>(color_matrix)*/
 			};
+			CCT = CCT_from_xy(xy(XYZ::<f32>::from(mulv(xyz_from, <[_;_]>::from(as_shot_neutral))).into()));
+			println!("{CCT}");
 		}
+		assert_eq!(CCT, 5728.);
 		const D50 : [[f32; 3]; 3] = [[3.1338561, -1.6168667, -0.4906146], [-0.9787684, 1.9161415, 0.0334540], [0.0719450, -0.2289914, 1.4052427]];
 		let R = vector::mul(D50, xyz_from.map(rgbf::from)
 			.map(|row| row / as_shot_neutral) // ~ * 1/D
@@ -97,7 +117,7 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 			let rgb = rgb::<f32>::from(rgb) ;
 			dot(rgb::from(xyz_from[1]), rgb)
 		});
-		let [min, max] = ui::time!(minmax(&luma.data));
+		let [_min, _max] = ui::time!(minmax(&luma.data));
 		let MinMax{min, max} = ui::time!(vector::minmax(luma.data.iter().copied()).unwrap());
 		let len = luma.data.len() as u32;
 		let bins = 0x10000; // ~> white_level (dY ~ dG)
@@ -106,7 +126,7 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 		for &luma in &luma16.data  { histogram[luma as usize] += 1; }
 		let cdf = histogram.into_iter().scan(0, |a, h| { *a += h; Some(*a) }).collect::<Box<[u32]>>();
 		assert_eq!(cdf[0xFFFF], len);
-		let adaptive_histogram_equalization = false; //argument_index > 1;
+		let _adaptive_histogram_equalization = false; //argument_index > 1;
 		let image = /*if adaptive_histogram_equalization {
 			let (bins, luma) = if false {
 				let bins = 0x800; // TODO: multilevel histogram, SIMD

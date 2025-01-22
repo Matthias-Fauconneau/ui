@@ -1,8 +1,7 @@
 [
 	{
 		"label": "View",
-		"command": "cargo", "args": ["run" , "--release", "--",
-		"~/PXL_20241214_152524941.RAW-02.ORIGINAL.raw", "~/PXL_20241214_152524941.RAW-02.ORIGINAL.jxl" , "~/PXL_20241214_152524941.RAW-01.COVER.jpg"],
+		"command": "cargo", "args": ["run" , "--release", "--", "~/PXL_20241214_152524941.RAW-02.ORIGINAL.raw", "~/PXL_20241214_152524941.RAW-02.ORIGINAL.jxl"],
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
 		"reveal": "always",
