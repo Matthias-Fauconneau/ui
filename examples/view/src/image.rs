@@ -1,10 +1,12 @@
+#![allow(non_snake_case)]
+
 fn minmax(values: &[f32]) -> [f32; 2] {
 	let [mut min, mut max] = [f32::INFINITY, -f32::INFINITY];
 	for &value in values { if value > f32::MIN && value < min { min = value; } if value > max { max = value; } }
 	[min, max]
 }
 
-use ::image::{Image, rgb, rgb8, rgba8, f32, sRGB8_OETF12, oetf8_12};
+use {num::lerp, image::{Image, rgb, rgb8, rgba8, f32, sRGB8_OETF12, oetf8_12}};
 
 pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>, Box<dyn std::error::Error>> {
 	if let Ok(image) = f32(path) {
@@ -38,30 +40,51 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 		assert_eq!(blacklevels, [0,0,0,0]);
 		let [white_level, ..] = whitelevels;
 		assert!(whitelevels.into_iter().all(|w| w==white_level));
-		let rcp_as_shot_neutral = rgbf::from(*rcp_as_shot_neutral.first_chunk().unwrap());
-		
+		let as_shot_neutral = 1./rgbf::from(*rcp_as_shot_neutral.first_chunk().unwrap()); // FIXME: fork rawloader to remove confusing inversion
 		// FIXME: fork rawloader
 		let file = std::fs::File::open(path)?;
 		let exif = exif::Reader::new().read_from_container(&mut std::io::BufReader::new(&file))?;
 		use exif::Tag;
+		#[allow(non_upper_case_globals)] pub const ForwardMatrix1: Tag = Tag(exif::Context::Tiff, 50964);
 		#[allow(non_upper_case_globals)] pub const ForwardMatrix2: Tag = Tag(exif::Context::Tiff, 50965);
 		//#[allow(non_upper_case_globals)] pub const ProfileToneCurve: Tag = Tag(exif::Context::Tiff, 50940);
 		
-		let xyz_from = if let Some(exif::Field{value: exif::Value::SRational(forward_matrix_2), ..}) = exif.get_field(ForwardMatrix2, exif::In::PRIMARY) {
-			*forward_matrix_2.as_array::<{3*3}>().unwrap().map(|v| v.to_f32()).as_chunks().0.as_array().unwrap()
-		} else {
-			let color_matrix_2 : [_; 3] = *color_matrix_2.first_chunk()/*RGB*/.unwrap(); // normally D65
-			let color_matrix = color_matrix_2; // FIXME: mix(color_matrix_1, color_matrix_2, as_shot_neutral) i.e interpolate color_matrix[] for shot illuminant
-			let color_matrix = color_matrix.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from); // Not sure about this
-			assert_eq!(mulv(color_matrix, [1.,1.,1.]), [1.,1.,1.]);
-			inverse::<3>(color_matrix)
-		};
-		println!("{:?}", xyz_from.map(|r| r.map(|v| (v*10_000.) as i32)));
-		let xyz_from = xyz_from.map(rgbf::from)
-			.map(|row| rcp_as_shot_neutral * row)
+		let mut xyz_from = [[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]];
+		
+		for _ in  0..2 {
+			fn CCT(xy{x,y}: xy<f32>) -> f32 {
+				let [xe, ye] = [0.3320, 0.1858];
+				let n = (x-xe)/(y-ye);
+				449.*n.powi(3) + 3525.*n.powi(2) + 6823.3*n + 5520.33
+			}
+			fn xy(XYZ{X,Y,Z}: XYZ<f32>) -> xy<f32> { xy{x: X/(X+Y+Z), y: Y/(X+Y+Z)}  }
+			let CCT = CCT(xy(XYZ::from(mulv(xyz_from, <[_;_]>::from(as_shot_neutral)))));
+			xyz_from = if let Some([exif::Field{value: exif::Value::SRational(forward_matrix_1), ..}, exif::Field{value: exif::Value::SRational(forward_matrix_2), ..}])
+			= [ForwardMatrix1,ForwardMatrix2].try_map(|tag| exif.get_field(tag, exif::In::PRIMARY)) {
+				let illuminants = [/*A*/2856., /*D*/6500.]; // FIXME: assert DNG tags
+				let forward_matrix = [forward_matrix_1, forward_matrix_2].map(|fm| *fm.as_array::<{3*3}>().unwrap().map(|v| v.to_f32()).as_chunks().0.as_array().unwrap());
+				//let forward_matrix = forward_matrix.map(|forward_matrix| forward_matrix.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from)); // Not sure
+				let t = (CCT-illuminants[0])/(illuminants[1]-illuminants[0]);
+				let T = lerp(t, forward_matrix[0], forward_matrix[1]);
+				//let T = T.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from); // Not sure
+				//println!("{CCT} {t}\n{:?}\n{:?}\n{:?}", forward_matrix[0], forward_matrix[1], T);
+				T
+			} else {
+				unimplemented!("missing color matrix 1: get directly from exif or expose through rawloader (fork)");
+				let color_matrix_2 : [_; 3] = *color_matrix_2.first_chunk()/*RGB*/.unwrap(); // normally D65
+				let color_matrix = color_matrix_2; // FIXME: lerp(color_matrix_1, color_matrix_2, CCT(as_shot_neutral)) i.e interpolate color_matrix[] for shot illuminant
+				//let color_matrix = color_matrix.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from); // Not sure about this
+				assert_eq!(mulv(color_matrix, [1.,1.,1.]), [1.,1.,1.]);
+				inverse::<3>(color_matrix)
+			};
+		}
+		const D50 : [[f32; 3]; 3] = [[3.1338561, -1.6168667, -0.4906146], [-0.9787684, 1.9161415, 0.0334540], [0.0719450, -0.2289914, 1.4052427]];
+		let R = vector::mul(D50, xyz_from.map(rgbf::from)
+			.map(|row| row / as_shot_neutral) // ~ * 1/D
 			.map(|row| row / white_level as f32)
 			.map(|rgb{r,g,b}| rgb{r, g: g/2. /*g01+g10*/, b})
-			.map(<[_;_]>::from);
+			.map(<[_;_]>::from));
+		//assert_eq!(rgb::from(mulv(R, (rgb{r: white_level as f32, g: 2.*white_level as f32, b: white_level as f32}*as_shot_neutral).into())), rgb{r: 1., g: 1., b: 1.});
 
 		let cfa = Image::new(xy{x: width as u32, y: height as u32}, data);
 
@@ -84,7 +107,7 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 		let cdf = histogram.into_iter().scan(0, |a, h| { *a += h; Some(*a) }).collect::<Box<[u32]>>();
 		assert_eq!(cdf[0xFFFF], len);
 		let adaptive_histogram_equalization = false; //argument_index > 1;
-		let image = if adaptive_histogram_equalization {
+		let image = /*if adaptive_histogram_equalization {
 			let (bins, luma) = if false {
 				let bins = 0x800; // TODO: multilevel histogram, SIMD
 				let luma = luma16.map(|luma| u16::try_from(cdf[luma as usize] as u64 * (bins-1) as u64 / (len-1) as u64).unwrap());
@@ -162,22 +185,24 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 				let rgb = rgb{r, g: g01.strict_add(g10), b};
 				let rgb = rgb::<f32>::from(rgb) ;
 				pub fn apply(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(mulv(m, v.into())) }
-				let xyz = apply(xyz_from, rgb);
+				let rgb = apply(R, rgb);
 				let f = rank[p] as f32 / (radius+1+radius).pow(2) as f32;
-				let rgb = rgb::<f32>::from(f*xyz);
+				let rgb = f*rgb;
 				let rgb = rgb.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
 				rgba8::from(rgb)
 			})
-		} else {
+		} else*/ {
 			let oetf = &sRGB8_OETF12;
 			Image::from_xy(cfa.size/2, |p| {
 				let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[x,y]| cfa[p*2+xy{x,y}]);
 				let rgb = rgb{r, g: g01.strict_add(g10), b};
 				let rgb = rgb::<f32>::from(rgb) ;
-				pub fn apply(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(mulv(m, v.into())) }
-				let xyz = apply(xyz_from, rgb);
-				let profile_tone_curve = false;
+				//pub fn xyz_from_rgb(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(mulv(m, v.into())) }
+				pub fn rotate(R: mat3, v: rgb<f32>) -> rgb<f32> { rgb::<f32>::from(mulv(R, v.into())) }
+				let rgb = rotate(R, rgb);
+				/*let profile_tone_curve = false;
 				let global_histogram_equalization = false;
+				let normalize = false;
 				let xyz = if profile_tone_curve {
 					unimplemented!("ProfileToneCurve (as used in on-board processed version)")
 				} else if global_histogram_equalization {
@@ -189,11 +214,13 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 					let rank = cdf[luma as usize];
 					let f = rank as f32 / (len-1) as f32;
 					f * xyz / xyz.Y
-				} else {
+				} else if normalize {
 					let f = (xyz.Y-min)/(max-min);
 					f * xyz / xyz.Y
+				} else {
+					xyz
 				};
-				let rgb = rgb::<f32>::from(xyz);
+				let rgb = D50(xyz);*/
 				let rgb = rgb.map(|c| oetf8_12(oetf, c.clamp(0., 1.)));
 				rgba8::from(rgb)
 			})

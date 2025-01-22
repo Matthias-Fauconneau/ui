@@ -3,6 +3,7 @@
 #![feature(strict_overflow_ops)]
 #![feature(generic_arg_infer)] // <[_;_]>::from
 #![feature(slice_as_chunks, slice_as_array)]
+#![feature(array_try_map)]
 mod image; use image::load;
 use {ui::{Result, time, size, int2, Widget, EventContext, Event::{self, Key}, vulkan, shader}, ::image::{Image, rgb, rgb8, rgba8, f32, sRGB8_OETF12, oetf8_12}};
 use vulkan::{Context, Commands, Arc, ImageView, Image as GPUImage, image, WriteDescriptorSet, linear};
