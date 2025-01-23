@@ -1,5 +1,3 @@
-macro_rules! dbg { ($($e:expr),+) => { $(eprint!(std::stringify!($e)); eprint!(": "); eprint!("{:.4?}", $e); eprint!(", "); )+ eprintln!(""); } }
-
 fn minmax(values: &[f32]) -> [f32; 2] {
 	let [mut min, mut max] = [f32::INFINITY, -f32::INFINITY];
 	for &value in values { if value > f32::MIN && value < min { min = value; } if value > max { max = value; } }
@@ -32,7 +30,7 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 	file.read_exact(&mut start)?;
 	file.seek(std::io::SeekFrom::Start(0))?;
 	if start.starts_with(b"II*\x00") {
-		use {vector::{xy, /*inverse,*/ mat3, dot, mulv, MinMax}, image::{rgbf, XYZ}, rawloader::{decode_file, RawImage, RawImageData, Orientation}};
+		use {vector::{xy, mat3, dot, mulv, MinMax}, image::{rgbf, XYZ}, rawloader::{decode_file, RawImage, RawImageData, Orientation}};
 		let RawImage{cpp, cfa, blacklevels, whitelevels, data: RawImageData::Integer(data), width, height, xyz_to_cam: _color_matrix_2, wb_coeffs: rcp_as_shot_neutral, orientation, ..}
 			= decode_file(path)? else {unimplemented!()};
 		assert_eq!(cpp, 1);
@@ -49,93 +47,19 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 		//#[allow(non_upper_case_globals)] pub const ForwardMatrix1: Tag = Tag(exif::Context::Tiff, 50964);
 		#[allow(non_upper_case_globals)] pub const ForwardMatrix2: Tag = Tag(exif::Context::Tiff, 50965);
 		//#[allow(non_upper_case_globals)] pub const ProfileToneCurve: Tag = Tag(exif::Context::Tiff, 50940);
-		
-		//let mut xyz_from = [[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]];
+
 		fn xy(XYZ{X,Y,Z}: XYZ<f64>) -> xy<f64> { xy{x: X/(X+Y+Z), y: Y/(X+Y+Z)}  }
-		/*fn XYZ_from_temperature(T: f64) -> XYZ<f64> {
-			fn g(µ: f64, σ: f64, λ: f64) -> f64 { f64::exp(-((λ-µ)/σ).powi(2)/2.) }
-			fn X(λ: f64) -> f64 { 1.065*g(595.8, 33.33, λ) + 0.366*g(446.8, 19.44, λ) }
-			fn gln(µ: f64, σ: f64, λ: f64) -> f64 { f64::exp(-((f64::ln(λ)-f64::ln(µ))/σ).powi(2)/2.) }
-			fn Y(λ: f64) -> f64 { 1.014*gln(556.3, 0.075, λ) }
-			fn Z(λ: f64) -> f64 { 1.839*gln(449.8, 0.051, λ) }
-			const h: f64 = 6.62607015e-34;
-			const c: f64 = 299792458.;
-			const k: f64 = 1.380649e-23;
-			const c2 : f64 = h*c/k;
-			fn M(T: f64, λ: f64) -> f64 { 1./λ.powi(5) / (f64::exp(c2 / (λ*T))-1.) }
-			let ref domain = 400..700;
-			let M = domain.clone().map(|λ| M(T, λ as f64*1e-9)).collect::<Box<_>>();
-			[X,Y,Z].map(|cmf| domain.clone().zip(&M).map(|(λ, Mλ)| cmf(λ as f64)*Mλ).sum::<f64>()).into()
+		fn CCT_from_xy(xy{x,y}: xy<f64>) -> f64 {
+			let [xe, ye] = [0.3320, 0.1858];
+			let n = -(x-xe)/(y-ye);
+			449.*n.powi(3) + 3525.*n.powi(2) + 6823.3*n + 5520.33
 		}
-		fn xy_from_temperature(T: f64) -> xy<f64> { xy(XYZ_from_temperature(T)) }*/
-		fn CCT_from_xy/*(xy0: xy<f64>) -> f64 {
-			fn T*/(xy{x,y}: xy<f64>) -> f64 {
-				/*let [xe, ye] = [0.3320, 0.1858];
-				let n = -(x-xe)/(y-ye);
-				449.*n.powi(3) + 3525.*n.powi(2) + 6823.3*n + 5520.33*/
-				let n = (x - 0.3366)/(y - 0.1735);
-				-949.86315 + 6253.80338 * f64::exp(-n / 0.92159) + 28.70599 * f64::exp(-n / 0.20039) + 0.00004 * f64::exp(-n / 0.07125)
-			}
-			/*let T0 = T(xy0);
-			fn daylight(T: f64) -> xy<f64> {
-				//let x = -3.0258469e9/T.powi(3)+2.1070379e6/T.powi(2)+0.2226347e3/T+0.240390; 
-				//let y = 3.0817580*x.powi(3)-5.87338670*x.powi(2)+3.75112997*x-0.37001483;
-				let x = ((-4.6070e9 / T + 2.9678e6) / T + 0.09911e3) / T + 0.244063;
-				let y = (-3. * x + 2.87) * x - 0.275;
-				xy{x, y}
-			}
-			fn planckian_normal(x: f64) -> xy<f64> { xy{x: (9.2452740 * x  - 11.7467734) * x + 3.75112997, y: 1.} }
-			fn d(xy0: xy<f64>, xy: xy<f64>) -> f64 { f64::abs(dot(xy-xy0, planckian_normal(xy0.x))) }
-			let T1 = (4000..6500).map(|T| (T as f64, daylight(T as f64))).min_by(|&(_, a),&(_,b)| d(xy0, a).total_cmp(&d(xy0, b)) ).unwrap().0;
-			dbg!(xy0);
-			let d = |xy| (xy, sq(xy-xy0), f64::abs(dot(xy-xy0, planckian_normal(xy0.x))));
-			dbg!(T0, d(xy_from_temperature(T0)), d(daylight(T0)));
-			dbg!(T1, d(xy_from_temperature(T1)), d(daylight(T1)));
-			T1
-			/*let MinMax{mut min,mut max} = MinMax{min: 4000., max: 6500.};
-			let mut T;
-			loop {
-				T = (min+max)/2.;
-				let XYZ{X,Y,Z} = XYZ_from_temperature(T);
-				{let xy = xy{x: X/(X+Y+Z), y: Y/(X+Y+Z)}; dbg!(T, xy);}
-				let t = Z / X;
-				*(if t < t0 { &mut min } else { &mut max }) = T; // T α -t
-				if max-min < 1.  { return T; }
-			}*/
-		}*/
 		fn CCT_from_XYZ(XYZ: XYZ<f64>) -> f64 { CCT_from_xy(xy(XYZ)) }
-		/*let mut CCT = CCT_from_XYZ(XYZ::<f32>::from(mulv(xyz_from, <[_;_]>::from(as_shot_neutral))).into());
-		
-		for _ in 0..3 {
-			xyz_from = if let Some([exif::Field{value: exif::Value::SRational(forward_matrix_1), ..}, exif::Field{value: exif::Value::SRational(forward_matrix_2), ..}])
-			= [ForwardMatrix1,ForwardMatrix2].try_map(|tag| exif.get_field(tag, exif::In::PRIMARY)) {
-				let illuminants = [/*A*/2856., /*D*/6500.]; // FIXME: assert DNG tags
-				let forward_matrix = [forward_matrix_1, forward_matrix_2].map(|fm| *fm.as_array::<{3*3}>().unwrap().map(|v| v.to_f32()).as_chunks().0.as_array().unwrap());
-				//let forward_matrix = forward_matrix.map(|forward_matrix| forward_matrix.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from)); // Not sure
-				//let t = (CCT -illuminants[0])/(illuminants[1]-illuminants[0]);
-				let t = (1./CCT -1./illuminants[0])/(1./illuminants[1]-1./illuminants[0]);
-				let T = lerp(t as f32, forward_matrix[0], forward_matrix[1]);
-				let T = T.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from); // Just to be sure
-				//println!("{CCT} {t}\n{:?}\n{:?}\n{:?}", forward_matrix[0], forward_matrix[1], T);
-				T
-			} else {
-				unimplemented!("missing color matrix 1: get directly from exif or expose through rawloader (fork)");
-				/*let color_matrix_2 : [_; 3] = *color_matrix_2.first_chunk()/*RGB*/.unwrap(); // normally D65
-				//let t = (1./CCT-1./illuminants[0])/(1./illuminants[1]-1./illuminants[0]);
-				let color_matrix = color_matrix_2; // FIXME: lerp(t, color_matrix_1, color_matrix_2) i.e interpolate color_matrix[] for shot illuminant
-				//let color_matrix = color_matrix.map(|row| XYZ::<f32>::from(row)).map(|row| row/row.sum()).map(<[_;_]>::from); // Not sure about this
-				assert_eq!(mulv(color_matrix, [1.,1.,1.]), [1.,1.,1.]);
-				inverse::<3>(color_matrix)*/
-			};
-			CCT = CCT_from_XYZ(XYZ::<f32>::from(mulv(xyz_from, <[_;_]>::from(as_shot_neutral))).into());
-			println!("{CCT}");
-		}*/
 		let Some([exif::Field{value: exif::Value::SRational(forward_matrix_2), ..}]) = [ForwardMatrix2].try_map(|tag| exif.get_field(tag, exif::In::PRIMARY)) else {panic!()};
 		let forward_matrix = [forward_matrix_2].map(|fm| *fm.as_array::<{3*3}>().unwrap().map(|v| v.to_f32()).as_chunks().0.as_array().unwrap());
 		let xyz_from = forward_matrix[0]; // FIXME: Always using ForwardMatrix2 (D65) (this is what darktable does...)
 		let CCT = CCT_from_XYZ(XYZ::<f32>::from(mulv(xyz_from, <[_;_]>::from(as_shot_neutral))).into());
 		println!("CCT: {CCT}");
-		//assert_eq!(CCT, 5728.);
 
 		const D50 : [[f32; 3]; 3] = [[3.1338561, -1.6168667, -0.4906146], [-0.9787684, 1.9161415, 0.0334540], [0.0719450, -0.2289914, 1.4052427]];
 		let R = vector::mul(D50, xyz_from.map(rgbf::from)
@@ -143,7 +67,6 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 			.map(|row| row / white_level as f32)
 			.map(|rgb{r,g,b}| rgb{r, g: g/2. /*g01+g10*/, b})
 			.map(<[_;_]>::from));
-		//assert_eq!(rgb::from(mulv(R, (rgb{r: white_level as f32, g: 2.*white_level as f32, b: white_level as f32}*as_shot_neutral).into())), rgb{r: 1., g: 1., b: 1.});
 
 		let cfa = Image::new(xy{x: width as u32, y: height as u32}, data);
 
