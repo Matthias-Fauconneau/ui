@@ -1,10 +1,11 @@
+pub fn default<T: Default>() -> T { Default::default() }
 fn minmax(values: &[f32]) -> [f32; 2] {
 	let [mut min, mut max] = [f32::INFINITY, -f32::INFINITY];
 	for &value in values { if value > f32::MIN && value < min { min = value; } if value > max { max = value; } }
 	[min, max]
 }
 
-use image::{Image, rgb, rgb8, rgba8, f32, sRGB8_OETF12, oetf8_12};
+use {vector::vec2, image::{Image, rgb, rgb8, rgba8, f32, sRGB8_OETF12, oetf8_12, uint2, bilinear_sample}};
 
 pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>, Box<dyn std::error::Error>> {
 	if let Ok(image) = f32(path) {
@@ -23,31 +24,27 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 			image.render_frame(0).unwrap().stream().write_to_buffer::<u8>(bytemuck::cast_slice_mut::<rgb8, _>(&mut target.data));
 			return Ok(target.map(|v| rgba8::from(v)));
 		}
-	}	
+	}
 	use std::io::{Read, Seek};
 	let mut file = std::fs::File::open(path)?;
 	let mut start = [0; 12];
 	file.read_exact(&mut start)?;
 	file.seek(std::io::SeekFrom::Start(0))?;
 	if start.starts_with(b"II*\x00") {
-		use {vector::{xy, mat3, dot, mulv, MinMax}, image::{rgbf, XYZ}, rawloader::{decode_file, RawImage, RawImageData, Orientation}};
-		let RawImage{cpp, cfa, blacklevels, whitelevels, data: RawImageData::Integer(data), width, height, xyz_to_cam: _color_matrix_2, wb_coeffs: rcp_as_shot_neutral, orientation, ..}
-			= decode_file(path)? else {unimplemented!()};
+		use {vector::{xy, mat3, dot, mulv, MinMax}, image::{rgbf, XYZ}};
+		use rawler::{rawsource::RawSource, get_decoder, RawImage, RawImageData, Orientation, decoders::WellKnownIFD, tags::DngTag::{ForwardMatrix2, OpcodeList2},
+			formats::tiff::{Entry, Value}};
+		let ref file = RawSource::new(path.as_ref())?;
+		let decoder = get_decoder(file)?;
+		let RawImage{cpp, whitelevel, data: RawImageData::Integer(data), width, height, xyz_to_cam: _color_matrix_2, wb_coeffs: rcp_as_shot_neutral, orientation, ..} 
+			= decoder.raw_image(file, &default(), false)? else {unimplemented!()};
 		assert_eq!(cpp, 1);
-		assert_eq!(cfa.name, "BGGR");
-		assert_eq!(blacklevels, [0,0,0,0]);
-		let [white_level, ..] = whitelevels;
-		assert!(whitelevels.into_iter().all(|w| w==white_level));
+		//assert_eq!(cfa.name, "BGGR");
+		//assert_eq!(blacklevel, [0,0,0,0]);
+		let &[white_level] = whitelevel.0.as_array().unwrap();
 		let as_shot_neutral = 1./rgbf::from(*rcp_as_shot_neutral.first_chunk().unwrap()); // FIXME: fork rawloader to remove confusing inversion
 		assert_eq!(as_shot_neutral.g, 1.);
-		// FIXME: fork rawloader
-		let file = std::fs::File::open(path)?;
-		let exif = exif::Reader::new().read_from_container(&mut std::io::BufReader::new(&file))?;
-		use exif::Tag;
-		//#[allow(non_upper_case_globals)] pub const ForwardMatrix1: Tag = Tag(exif::Context::Tiff, 50964);
-		#[allow(non_upper_case_globals)] pub const ForwardMatrix2: Tag = Tag(exif::Context::Tiff, 50965);
-		//#[allow(non_upper_case_globals)] pub const ProfileToneCurve: Tag = Tag(exif::Context::Tiff, 50940);
-
+		
 		fn xy(XYZ{X,Y,Z}: XYZ<f64>) -> xy<f64> { xy{x: X/(X+Y+Z), y: Y/(X+Y+Z)}  }
 		fn CCT_from_xy(xy{x,y}: xy<f64>) -> f64 {
 			let [xe, ye] = [0.3320, 0.1858];
@@ -55,8 +52,56 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 			449.*n.powi(3) + 3525.*n.powi(2) + 6823.3*n + 5520.33
 		}
 		fn CCT_from_XYZ(XYZ: XYZ<f64>) -> f64 { CCT_from_xy(xy(XYZ)) }
-		let Some([exif::Field{value: exif::Value::SRational(forward_matrix_2), ..}]) = [ForwardMatrix2].try_map(|tag| exif.get_field(tag, exif::In::PRIMARY)) else {panic!()};
-		let forward_matrix = [forward_matrix_2].map(|fm| *fm.as_array::<{3*3}>().unwrap().map(|v| v.to_f32()).as_chunks().0.as_array().unwrap());
+		
+		let tags = decoder.ifd(WellKnownIFD::VirtualDngRawTags)?.unwrap();
+
+		let Some(Entry{value: Value::Undefined(code), ..}) = tags.get_entry(OpcodeList2) else {panic!()};
+		use bytemuck::{Zeroable, Pod, cast, cast_slice};
+		let ref code = cast_slice::<_,u32>(code);
+		let [len, mut ref code @ ..] = code[..] else {panic!()};
+		let len = u32::from_be(len);
+		let gain = (0..len).map(|_| {
+			#[repr(transparent)] #[allow(non_camel_case_types)] #[derive(Clone,Copy,Zeroable,Pod)] struct u32be(u32);
+			impl From<u32be> for u32 { fn from(u32be(be): u32be) -> Self { Self::from_be(be) } }
+			impl std::fmt::Debug for u32be { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { u32::from(*self).fmt(f) } }
+			#[repr(transparent)] #[allow(non_camel_case_types)] #[derive(Clone,Copy,Zeroable,Pod)] struct f32be([u8; 4]);
+			impl From<f32be> for f32 { fn from(f32be(be): f32be) -> Self { Self::from_be_bytes(be) } }
+			impl std::fmt::Debug for f32be { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f32::from(*self).fmt(f) } }
+			#[repr(transparent)] #[allow(non_camel_case_types)] #[derive(Clone,Copy,Zeroable,Pod)] struct f64be([u8; 8]);
+			impl From<f64be> for f64 { fn from(f64be(be): f64be) -> Self { Self::from_be_bytes(be) } }
+			impl std::fmt::Debug for f64be { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f64::from(*self).fmt(f) } }
+			#[repr(C,packed)] #[derive(Debug,Clone,Copy,Zeroable,Pod)] struct GainMap {
+				id: u32be,
+				version: u32be,
+				flags: u32be,
+				len: u32be,
+				top: u32be,
+				left: u32be,
+				bottom: u32be,
+				right: u32be,
+				plane: u32be,
+				planes: u32be,
+				row_pitch: u32be,
+				column_pitch: u32be,
+				size_y: u32be,
+				size_x: u32be,
+				map_spacing_vertical: f64be,
+				map_spacing_horizontal: f64be,
+				map_origin_vertical: f64be,
+				map_origin_horizontal: f64be,
+				map_planes: u32be,
+			}
+			let opcode : &[_; 23]; (opcode, code) = code.split_first_chunk().unwrap();
+			let GainMap{id, map_planes, size_x, size_y, ..} = dbg!(cast::<_,GainMap>(*opcode));
+			assert_eq!(u32::from(id), 9);
+			assert_eq!(u32::from(map_planes), 1);
+			let size = uint2{x: size_x.into(), y: size_y.into()};
+			let gain; (gain, code) = code.split_at((size.y*size.x) as usize);
+			Image::new(size, cast_slice::<_, f32be>(gain)).map(|&gain| f32::from(gain))
+		}).collect::<Box<_>>();
+
+		let Some([Entry{value: Value::SRational(forward_matrix_2), ..}]) = [ForwardMatrix2].try_map(|tag| tags.get_entry(tag)) else {panic!()};
+		let forward_matrix = [forward_matrix_2].map(|fm| *fm.as_array::<{3*3}>().unwrap().map(|v| v.try_into().unwrap()).as_chunks().0.as_array().unwrap());
 		let xyz_from = forward_matrix[0]; // FIXME: Always using ForwardMatrix2 (D65) (this is what darktable does...)
 		let CCT = CCT_from_XYZ(XYZ::<f32>::from(mulv(xyz_from, <[_;_]>::from(as_shot_neutral))).into());
 		println!("CCT: {CCT}");
@@ -65,18 +110,24 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 		let R = vector::mul(D50, xyz_from.map(rgbf::from)
 			.map(|row| row / as_shot_neutral) // ~ * 1/D
 			.map(|row| row / white_level as f32)
-			.map(|rgb{r,g,b}| rgb{r, g: g/2. /*g01+g10*/, b})
 			.map(<[_;_]>::from));
 
 		let cfa = Image::new(xy{x: width as u32, y: height as u32}, data);
 
 		//if let Some(exif::Field{value: exif::Value::Float(ref profile_tone_curve), ..} = exif.get_field(ProfileToneCurve, exif::In::PRIMARY) else {
 
+		assert!(gain.iter().all(|&Image{size,..}| size==gain[0].size));
+		let scale = vec2::from(gain[0].size)/vec2::from(cfa.size/2);
 		let luma = Image::from_xy(cfa.size/2, |p| {
 			let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[x,y]| cfa[p*2+xy{x,y}]);
-			let rgb = rgb{r, g: g01.strict_add(g10), b};
-			{let rgb{r,g,b} = rgb; assert!(r <= white_level); assert!(g <= white_level*2); assert!(b <= white_level);}
-			let rgb = rgb::<f32>::from(rgb) ;
+			//{assert!(b <= white_level as u16); assert!(g10 <= white_level as u16); assert!(g01 <= white_level as u16); assert!(r <= white_level as u16);}
+			let [b, g10, g01, r] = [b, g10, g01, r].map(f32::from);
+			let p = scale*vec2::from(p);
+			let b = bilinear_sample(&gain[0], p) * b;
+			let g10 = bilinear_sample(&gain[1], p) * g10;
+			let g01 = bilinear_sample(&gain[2], p) * g01;
+			let r = bilinear_sample(&gain[3], p) * r;
+			let rgb = rgb{r, g: (g01+g10)/2., b};
 			dot(rgb::from(xyz_from[1]), rgb)
 		});
 		let [_min, _max] = ui::time!(minmax(&luma.data));
