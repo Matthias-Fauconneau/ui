@@ -5,7 +5,7 @@ fn minmax(values: &[f32]) -> [f32; 2] {
 	[min, max]
 }
 
-use {vector::vec2, image::{Image, rgb, rgb8, rgba8, f32, sRGB8_OETF12, oetf8_12, uint2, bilinear_sample}};
+use {image::{bilinear_sample, f32, oetf8_12, rgb, rgb8, rgba8, sRGB8_OETF12, uint2, Image}, std::f32, vector::vec2};
 
 pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>, Box<dyn std::error::Error>> {
 	if let Ok(image) = f32(path) {
@@ -32,17 +32,17 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 	file.seek(std::io::SeekFrom::Start(0))?;
 	if start.starts_with(b"II*\x00") {
 		use {vector::{xy, mat3, dot, mulv, MinMax}, image::{rgbf, XYZ}};
-		use rawler::{rawsource::RawSource, get_decoder, RawImage, RawImageData, Orientation, decoders::WellKnownIFD, tags::DngTag::{ForwardMatrix2, OpcodeList2},
-			formats::tiff::{Entry, Value}};
+		use rawler::{rawsource::RawSource, get_decoder, RawImage, RawImageData, Orientation, decoders::{Camera, WellKnownIFD}, formats::tiff::{Entry, Value}};
+		use rawler::{imgop::xyz::Illuminant::D65, tags::DngTag::{/*ForwardMatrix2,*/ OpcodeList2}};
 		let ref file = RawSource::new(path.as_ref())?;
 		let decoder = get_decoder(file)?;
-		let RawImage{cpp, whitelevel, data: RawImageData::Integer(data), width, height, xyz_to_cam: _color_matrix_2, wb_coeffs: rcp_as_shot_neutral, orientation, ..} 
-			= decoder.raw_image(file, &default(), false)? else {unimplemented!()};
+		let RawImage{cpp, whitelevel, data: RawImageData::Integer(data), width, height, wb_coeffs: rcp_as_shot_neutral, orientation, 
+			camera: Camera{forward_matrix, ..}, ..} = decoder.raw_image(file, &default(), false)? else {unimplemented!()};
 		assert_eq!(cpp, 1);
 		//assert_eq!(cfa.name, "BGGR");
 		//assert_eq!(blacklevel, [0,0,0,0]);
 		let &[white_level] = whitelevel.0.as_array().unwrap();
-		let as_shot_neutral = 1./rgbf::from(*rcp_as_shot_neutral.first_chunk().unwrap()); // FIXME: fork rawloader to remove confusing inversion
+		let as_shot_neutral = 1./rgbf::from(*rcp_as_shot_neutral.first_chunk().unwrap()); // FIXME: rawler: expose non-inverted
 		assert_eq!(as_shot_neutral.g, 1.);
 		
 		fn xy(XYZ{X,Y,Z}: XYZ<f64>) -> xy<f64> { xy{x: X/(X+Y+Z), y: Y/(X+Y+Z)}  }
@@ -92,7 +92,7 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 				map_planes: u32be,
 			}
 			let opcode : &[_; 23]; (opcode, code) = code.split_first_chunk().unwrap();
-			let GainMap{id, map_planes, size_x, size_y, ..} = dbg!(cast::<_,GainMap>(*opcode));
+			let GainMap{id, map_planes, size_x, size_y, ..} = cast::<_,GainMap>(*opcode);
 			assert_eq!(u32::from(id), 9);
 			assert_eq!(u32::from(map_planes), 1);
 			let size = uint2{x: size_x.into(), y: size_y.into()};
@@ -100,14 +100,14 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 			Image::new(size, cast_slice::<_, f32be>(gain)).map(|&gain| f32::from(gain))
 		}).collect::<Box<_>>();
 
-		let Some([Entry{value: Value::SRational(forward_matrix_2), ..}]) = [ForwardMatrix2].try_map(|tag| tags.get_entry(tag)) else {panic!()};
-		let forward_matrix = [forward_matrix_2].map(|fm| *fm.as_array::<{3*3}>().unwrap().map(|v| v.try_into().unwrap()).as_chunks().0.as_array().unwrap());
-		let xyz_from = forward_matrix[0]; // FIXME: Always using ForwardMatrix2 (D65) (this is what darktable does...)
-		let CCT = CCT_from_XYZ(XYZ::<f32>::from(mulv(xyz_from, <[_;_]>::from(as_shot_neutral))).into());
-		println!("CCT: {CCT}");
+		// FIXME: darktable always load D65 and has a dedicated color temperature (chromatic adaptation) much later in the pipeline
+		let ref forward = forward_matrix[&D65];
+		let forward = *forward.as_array::<{3*3}>().unwrap().map(|v| v.try_into().unwrap()).as_chunks().0.as_array().unwrap();
+		let CCT = CCT_from_XYZ(XYZ::<f32>::from(mulv(forward, <[_;_]>::from(as_shot_neutral))).into());
+		//println!("CCT: {CCT}");
 
 		const D50 : [[f32; 3]; 3] = [[3.1338561, -1.6168667, -0.4906146], [-0.9787684, 1.9161415, 0.0334540], [0.0719450, -0.2289914, 1.4052427]];
-		let R = vector::mul(D50, xyz_from.map(rgbf::from)
+		let R = vector::mul(D50, forward.map(rgbf::from)
 			.map(|row| row / as_shot_neutral) // ~ * 1/D
 			.map(|row| row / white_level as f32)
 			.map(<[_;_]>::from));
@@ -117,7 +117,7 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 		//if let Some(exif::Field{value: exif::Value::Float(ref profile_tone_curve), ..} = exif.get_field(ProfileToneCurve, exif::In::PRIMARY) else {
 
 		assert!(gain.iter().all(|&Image{size,..}| size==gain[0].size));
-		let scale = vec2::from(gain[0].size)/vec2::from(cfa.size/2);
+		let scale = vec2::from(gain[0].size-uint2::from(1))/vec2::from(cfa.size/2-uint2::from(1))-vec2::from(f32::EPSILON);
 		let luma = Image::from_xy(cfa.size/2, |p| {
 			let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[x,y]| cfa[p*2+xy{x,y}]);
 			//{assert!(b <= white_level as u16); assert!(g10 <= white_level as u16); assert!(g01 <= white_level as u16); assert!(r <= white_level as u16);}
@@ -128,7 +128,7 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 			let g01 = bilinear_sample(&gain[2], p) * g01;
 			let r = bilinear_sample(&gain[3], p) * r;
 			let rgb = rgb{r, g: (g01+g10)/2., b};
-			dot(rgb::from(xyz_from[1]), rgb)
+			dot(rgb::from(forward[1]), rgb)
 		});
 		let [_min, _max] = ui::time!(minmax(&luma.data));
 		let MinMax{min, max} = ui::time!(vector::minmax(luma.data.iter().copied()).unwrap());
@@ -228,9 +228,14 @@ pub fn load(ref path: impl AsRef<std::path::Path>) -> Result<Image<Box<[rgba8]>>
 			let oetf = &sRGB8_OETF12;
 			Image::from_xy(cfa.size/2, |p| {
 				let [b, g10, g01, r] = [[0,0],[1,0],[0,1],[1,1]].map(|[x,y]| cfa[p*2+xy{x,y}]);
-				let rgb = rgb{r, g: g01.strict_add(g10), b};
-				let rgb = rgb::<f32>::from(rgb) ;
-				//pub fn xyz_from_rgb(m: mat3, v: rgb<f32>) -> XYZ<f32> { XYZ::<f32>::from(mulv(m, v.into())) }
+				//{assert!(b <= white_level as u16); assert!(g10 <= white_level as u16); assert!(g01 <= white_level as u16); assert!(r <= white_level as u16);}
+				let [b, g10, g01, r] = [b, g10, g01, r].map(f32::from);
+				let p = scale*vec2::from(p);
+				let b = bilinear_sample(&gain[0], p) * b;
+				let g10 = bilinear_sample(&gain[1], p) * g10;
+				let g01 = bilinear_sample(&gain[2], p) * g01;
+				let r = bilinear_sample(&gain[3], p) * r;
+				let rgb = rgb{r, g: (g01+g10)/2., b};
 				pub fn rotate(R: mat3, v: rgb<f32>) -> rgb<f32> { rgb::<f32>::from(mulv(R, v.into())) }
 				let rgb = rotate(R, rgb);
 				/*let profile_tone_curve = false;

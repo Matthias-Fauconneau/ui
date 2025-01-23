@@ -3,8 +3,8 @@
 #![feature(strict_overflow_ops)]
 #![feature(generic_arg_infer)] // <[_;_]>::from
 #![feature(slice_as_chunks, slice_as_array)]
-#![allow(incomplete_features)]#![feature(array_try_map)]
-#![feature(mut_ref)]
+#![feature(array_try_map)]
+#![allow(incomplete_features)]#![feature(mut_ref)]
 #![allow(non_snake_case, non_upper_case_globals, uncommon_codepoints, confusable_idents)]
 mod image; use image::load;
 use ui::{Result, size, int2, Widget, EventContext, Event::{self, Key}, vulkan, shader};
