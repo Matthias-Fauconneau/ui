@@ -92,7 +92,7 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 			Self{surface, xdg_surface, toplevel, can_paint: false, callback: None, done: true}
 		}
 	}
-	let mut window = Surface::new(server, compositor, wm_base, title, None/*Some(output)*/);
+	let mut window = Surface::new(server, compositor, wm_base, title, if true { Some(output) } else { None });
 	
 	let ref feedback : dmabuf::Feedback = server.new("feedback");
 	dmabuf.get_surface_feedback(feedback, &window.surface);
