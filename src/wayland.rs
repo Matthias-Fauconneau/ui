@@ -12,22 +12,20 @@ unsafe impl bytemuck::Zeroable for Message {}
 unsafe impl bytemuck::Pod for Message {}
 
 fn recvmsg(fd: impl rustix::fd::AsFd, buffer: &mut [u8], ancillary: &mut rustix::net::RecvAncillaryBuffer) -> usize {
-	let rustix::net::RecvMsgReturn{bytes, ..} = rustix::net::recvmsg(fd, &mut [rustix::io::IoSliceMut::new(buffer)], ancillary, rustix::net::RecvFlags::empty()).unwrap();
+	let rustix::net::RecvMsg{bytes, ..} = rustix::net::recvmsg(fd, &mut [rustix::io::IoSliceMut::new(buffer)], ancillary, rustix::net::RecvFlags::empty()).unwrap();
 	bytes
 }
 
 #[track_caller] fn read(fd: impl rustix::fd::AsFd, buffer: &mut [u8]) -> usize {
-	let mut ancillary = [0; 32];
-	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
+	let mut ancillary = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
-	let rustix::net::RecvMsgReturn{bytes, ..} = rustix::net::recvmsg(fd, &mut [rustix::io::IoSliceMut::new(buffer)], &mut ancillary, rustix::net::RecvFlags::empty()).unwrap();
+	let rustix::net::RecvMsg{bytes, ..} = rustix::net::recvmsg(fd, &mut [rustix::io::IoSliceMut::new(buffer)], &mut ancillary, rustix::net::RecvFlags::empty()).unwrap();
 	assert!(ancillary.drain().next().is_none());
 	bytes
 }
 
 pub(crate) fn message(fd: impl rustix::fd::AsFd) -> Option<(Message, Option<rustix::fd::OwnedFd>)> {
-	let mut ancillary = [0; 32];
-	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
+	let mut ancillary = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	use rustix::net::RecvAncillaryMessage::ScmRights;
 	let mut buffer = [0; std::mem::size_of::<Message>()];
@@ -45,8 +43,7 @@ pub(crate) fn message(fd: impl rustix::fd::AsFd) -> Option<(Message, Option<rust
 
 pub(crate) enum Type { UInt, Int, Array, String }
 #[track_caller] fn args<const N: usize>(ref fd: impl rustix::fd::AsFd, types: [Type; N]) -> [Arg; N] { types.map(|r#type| {
-	let mut ancillary = [0; 32];
-	assert_eq!(ancillary.len(), rustix::cmsg_space!(ScmRights(1)));
+	let mut ancillary = [std::mem::MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
 	let mut ancillary = rustix::net::RecvAncillaryBuffer::new(&mut ancillary);
 	let mut read = |buffer: &mut [u8]| recvmsg(fd, buffer, &mut ancillary);
 	let mut buffer = [0; 4];
@@ -79,7 +76,7 @@ impl Server {
 	pub fn connect() -> Self {
 		let socket = rustix::net::socket(rustix::net::AddressFamily::UNIX, rustix::net::SocketType::STREAM, None).unwrap();
 		let addr = rustix::net::SocketAddrUnix::new([std::env::var_os("XDG_RUNTIME_DIR").unwrap().to_str().unwrap(), "/", std::env::var_os("WAYLAND_DISPLAY").unwrap().to_str().unwrap()].concat()).unwrap();
-		rustix::net::connect_unix(&socket, &addr).unwrap();
+		rustix::net::connect(&socket, &addr).unwrap();
 		Self{server: std::cell::RefCell::new(socket), last_id: std::sync::atomic::AtomicU32::new(2), names: std::sync::Mutex::new([(1,"display")].into())}
 	}
 	pub(crate) fn next_id(&self, name: &'static str) -> u32 {
@@ -107,8 +104,7 @@ impl Server {
 		if let Some(fd) = fd {
 			use rustix::net::SendAncillaryMessage::ScmRights;
 			let ref fds = [fd];
-			let mut buffer = [0; 32];
-			assert_eq!(buffer.len(), rustix::cmsg_space!(ScmRights(fds.len())));
+			let mut buffer = vec![std::mem::MaybeUninit::<u8>::uninit(); rustix::cmsg_space!(ScmRights(fds.len()))];
 			let mut buffer = rustix::net::SendAncillaryBuffer::new(&mut buffer);
 			assert!(buffer.push(ScmRights(fds)));
 			rustix::net::sendmsg(&*self.server.borrow(), &[rustix::io::IoSlice::new(&request)], &mut buffer, rustix::net::SendFlags::empty()).unwrap();

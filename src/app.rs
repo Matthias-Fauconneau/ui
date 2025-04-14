@@ -107,14 +107,17 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 	let mut fence = commands.build()?.execute(context.queue.clone())?.then_signal_fence_and_flush()?.boxed();
 	
 	loop {
-		let mut need_paint = app.event(size, &mut EventContext{modifiers_state}, &Event::Idle).unwrap(); // determines whether to wait for events
+		let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(),
+			CommandBufferUsage::OneTimeSubmit)?;
+		let mut need_paint = app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Idle).unwrap(); // determines whether to wait for events
 		// ^ could also trigger eventfd instead
 		loop {
 			let events = {
 				use rustix::event::{PollFd,PollFlags};
 				let server = &*server.server.borrow();
 				let mut fds = [PollFd::new(server, PollFlags::IN)];
-				rustix::event::poll(&mut fds, if window.can_paint && window.done && need_paint {0} else {-1}).unwrap();
+				let zero = default();
+				rustix::event::poll(&mut fds, if window.can_paint && window.done && need_paint {Some(&zero)} else {None}).unwrap();
 				let events = fds.map(|fd| fd.revents().contains(PollFlags::IN));
 				events
 			};
@@ -279,7 +282,7 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 						if key == 1 { return Ok(()); }
 						if state > 0 {
 							#[allow(non_upper_case_globals)] const usb_hid_usage_table: [char; 126] = ['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪','\u{F701}','\u{F702}','\u{F703}','\u{F704}','\u{F705}','\u{F706}','\u{F707}','\u{F708}','\u{F709}','\u{F70A}','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\u{F70B}','\u{F70C}','\0','\0','\0','\0','\0','\0','\0','\0','⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘'];
-							if app.event(size, &mut EventContext{modifiers_state}, &Event::Key(usb_hid_usage_table[key as usize]))? { need_paint = true; }
+							if app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Key(usb_hid_usage_table[key as usize]))? { need_paint = true; }
 						}
 					}
 					else if window.callback.as_ref().is_some_and(|callback| id == callback.id) && opcode == callback::done {
@@ -324,8 +327,6 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 				external_memory_handle_types: ExternalMemoryHandleTypes::DMA_BUF, ..default()
 			}, default()).unwrap());
 			
-			let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(),
-				CommandBufferUsage::OneTimeSubmit)?;
 			let target = ImageView::new_default(framebuffer.clone())?;
 			crate::time!(app.paint(&context, &mut commands, target, size, zero()))?;
 			let next_fence = fence.then_execute(context.queue.clone(), commands.build()?)?.then_signal_fence_and_flush()?;
