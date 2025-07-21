@@ -7,8 +7,7 @@ vulkano={git='https://github.com/vulkano-rs/vulkano', default-features=false, fe
 vulkano-spirv={git='https://github.com/Matthias-Fauconneau/vulkano-spirv'}
 
 [build-dependencies]
-naga = {version='*', features = ['wgsl-in','spv-out']}
-bytemuck = {version='*'}
+wgsl = {path='../../wgsl'}
 
 [patch.'https://github.com/vulkano-rs/vulkano'] # Also switches vulkano dependency for vulkano-spirv to use same version
 vulkano={ git='https://github.com/Matthias-Fauconneau/vulkano'  } # drm modifier

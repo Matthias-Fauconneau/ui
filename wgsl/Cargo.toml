@@ -1,0 +1,3 @@
+package={name='wgsl', version='0.0.0', edition='2024', description='Translates WGSL to SPIRV using naga and static link SPIRV modules'}
+lib={path='lib.rs'}
+dependencies={naga={version='*', features = ['wgsl-in','spv-out']}, bytemuck = {version='*'}}
