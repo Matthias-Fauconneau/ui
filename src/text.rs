@@ -211,7 +211,7 @@ impl<D:AsRef<str>> View<'_, D> {
 }
 
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
-	pub fn paint(&mut self, target: &mut Target, size: size, scale: Ratio, offset: int2) {
+	pub fn paint(&mut self, target: &mut Arc<ImageView>, size: size, scale: Ratio, offset: int2) {
 		let Self{font, data, ..} = &*self;
 		//let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
@@ -289,16 +289,16 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 			}
 		}
 	}
-	#[track_caller] pub fn paint_fit(&mut self, target: &mut Target, size: size, offset: int2) -> Ratio {
+	#[track_caller] pub fn paint_fit(&mut self, target: &mut Arc<ImageView>, size: size, offset: int2) -> Ratio {
 		let scale = self.scale(size);
 		self.paint(target, size, scale, offset);
 		scale
 	}
 }
-use crate::widget::{Widget, Target};
+use crate::widget::{Widget, Arc, ImageView};
 impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 	fn size(&mut self, size: size) -> size { fit(size/*fit_width(size.x*/, Self::size(self)) }
-	#[track_caller] fn paint(&mut self, target: &mut Target, size: size, offset: int2) -> Result { self.paint_fit(target, size, offset); Ok(()) }
+	#[track_caller] fn paint(&mut self, target: &mut Arc<ImageView>, size: size, offset: int2) -> Result { self.paint_fit(target, size, offset); Ok(()) }
 }
 
 pub struct Plain<T>(pub T);

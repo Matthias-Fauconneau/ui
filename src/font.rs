@@ -1,4 +1,5 @@
-#[derive(derive_more::Deref)] pub struct Face<'t>(rustybuzz::Face<'t>);
+/*#[derive(derive_more::Deref)] #[deref(forward)]*/ pub struct Face<'t>(rustybuzz::Face<'t>);
+impl<'t> core::ops::Deref for Face<'t> { type Target = rustybuzz::Face<'t>; fn deref(&self) -> &Self::Target { &self.0 } }
 pub use rustybuzz::ttf_parser::{self, GlyphId};
 use vector::{xy, vec2, Rect, num::Ratio};
 impl<'t> Face<'t> {

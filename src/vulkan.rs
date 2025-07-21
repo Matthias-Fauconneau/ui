@@ -31,6 +31,7 @@ pub type VulkanResult<T=(), E=Validated<VulkanError>> = std::result::Result<T,E>
 pub type Result<T=(), E=Box<dyn std::error::Error>> = std::result::Result<T,E>;
 pub fn default<T: Default>() -> T { Default::default() }
 pub use vulkano::descriptor_set::{WriteDescriptorSet, layout::DescriptorType};
+pub use vulkano::pipeline::graphics::input_assembly::PrimitiveTopology;
 use vulkano::{
 	shader::ShaderModule,
 	command_buffer::{RenderingInfo, RenderingAttachmentInfo},
@@ -39,7 +40,7 @@ use vulkano::{
 	descriptor_set::DescriptorSet,
 	pipeline::{PipelineShaderStageCreateInfo, PipelineLayout, layout::PipelineDescriptorSetLayoutCreateInfo, Pipeline/*:trait*/, PipelineBindPoint, GraphicsPipeline,
 		DynamicState,
-		graphics::{GraphicsPipelineCreateInfo, subpass::PipelineRenderingCreateInfo, viewport::Viewport,
+		graphics::{GraphicsPipelineCreateInfo, subpass::PipelineRenderingCreateInfo, viewport::Viewport, input_assembly::InputAssemblyState,
 			vertex_input::VertexDefinition,
 			rasterization::{RasterizationState, CullMode},
 			depth_stencil::{DepthStencilState, DepthState, CompareOp},
@@ -64,7 +65,7 @@ pub struct Pass<S> {
 impl<S:Shader> Pass<S> {
 	pub type Uniforms = S::Uniforms;
 	
-	pub fn new(Context{device, format, memory_allocator, ..}: &Context, depth: bool) -> Result<Self, Box<dyn std::error::Error>> {
+	pub fn new(Context{device, format, memory_allocator, ..}: &Context, depth: bool, topology: PrimitiveTopology) -> Result<Self, Box<dyn std::error::Error>> {
 		let shader = S::load(device.clone())?;
 		let [vertex, fragment] = ["vertex","fragment"].map(|name| PipelineShaderStageCreateInfo::new(shader.entry_point(name).unwrap()));
 		let vertex_input_state = (!S::Vertex::per_vertex().members.is_empty()).then_some(S::Vertex::per_vertex().definition(&vertex.entry_point)?);
@@ -73,7 +74,7 @@ impl<S:Shader> Pass<S> {
 		let pipeline = GraphicsPipeline::new(device.clone(), None, GraphicsPipelineCreateInfo{
 			stages: [vertex, fragment].into_iter().collect(),
 			vertex_input_state: vertex_input_state.or(Some(default())),
-			input_assembly_state: Some(default()),
+			input_assembly_state: Some(InputAssemblyState{topology, ..default()}),
 			viewport_state: Some(default()),
 			rasterization_state: Some(RasterizationState{cull_mode: CullMode::Back, ..default()}),
 			depth_stencil_state: depth.then_some(DepthStencilState{depth: Some(DepthState{compare_op: CompareOp::LessOrEqual, ..DepthState::simple()}), ..default()}),
@@ -85,7 +86,7 @@ impl<S:Shader> Pass<S> {
 				depth_attachment_format: depth.then_some(Format::D16_UNORM),
 				..default()
 			}.into()),
-			..GraphicsPipelineCreateInfo::layout(layout)
+			..GraphicsPipelineCreateInfo::new(layout)
 		})?;
 		let uniform_buffer = SubbufferAllocator::new(memory_allocator.clone(), SubbufferAllocatorCreateInfo{
 			buffer_usage: BufferUsage::UNIFORM_BUFFER, memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE, ..default()});
@@ -100,13 +101,13 @@ impl<S:Shader> Pass<S> {
 				load_op: if clear { AttachmentLoadOp::Clear } else { AttachmentLoadOp::Load },
 				store_op: AttachmentStoreOp::Store,
 				clear_value: clear.then_some([0.,0.,0.,0.].into()),
-				..RenderingAttachmentInfo::image_view(target)
+				..RenderingAttachmentInfo::new(target)
 			})],
 			depth_attachment: depth.map(|depth| RenderingAttachmentInfo{
 				load_op: if clear { AttachmentLoadOp::Clear } else { AttachmentLoadOp::Load },
 				store_op: AttachmentStoreOp::Store,
 				clear_value: clear.then_some((1.).into()),
-				..RenderingAttachmentInfo::image_view(depth)
+				..RenderingAttachmentInfo::new(depth)
 			}),
 			..default()
 		})?
@@ -185,7 +186,7 @@ pub fn image(context@Context{memory_allocator, ..}: &Context, commands: &mut Com
 			usage: ImageUsage::TRANSFER_DST|ImageUsage::SAMPLED,
 			..default()}, default())?;
 	let buffer = from_iter(context, BufferUsage::TRANSFER_SRC, data.into_iter().copied())?;
-	commands.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(buffer, image.clone()))?;
+	commands.copy_buffer_to_image(CopyBufferToImageInfo::new(buffer, image.clone()))?;
 	Ok(image)
 }
 

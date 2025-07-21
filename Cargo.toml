@@ -1,9 +1,13 @@
 package={name='ui', version='0.0.0', edition='2024', description='Vulkano/Wayland without Smithay/libwayland-sys'}
+example=[
+ {name='edit', path='examples/edit.rs', required-features=['edit']},
+]
 
 [dependencies]
 #array-concat='*' # unexpected `cfg` condition value: `const_panic`
 fehler='*'
 itertools='*' # fixme: optional
+num={ git='https://github.com/Matthias-Fauconneau/num'}
 vector={ git='https://github.com/Matthias-Fauconneau/vector', features=['int_roundings']}
 image={ git='https://github.com/Matthias-Fauconneau/image' }
 rustix={ version='*', features=['fs','mm','net','event'] }
@@ -22,6 +26,7 @@ glob={ version='*', optional=true }
 
 [features]
 text=['dep:text-size','dep:unicode-segmentation','dep:rustybuzz','dep:derive_more','dep:owning_ref','dep:kurbo','dep:glob']
+edit=['text']
 graphic=[]
 
 [patch.'https://github.com/vulkano-rs/vulkano']

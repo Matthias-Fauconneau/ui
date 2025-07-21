@@ -17,7 +17,7 @@ use crate::vulkan::{Context, Commands, default};
 pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -> Result<Box<dyn Widget>>>) -> Result {
 	let vulkan = VulkanLibrary::new().unwrap();
 	let enabled_extensions = InstanceExtensions{ext_debug_utils: true, ..default()};
-	let enabled_layers = if false { vec!["VK_LAYER_KHRONOS_validation".to_owned()] } else { vec![] };
+	let enabled_layers = if true { vec!["VK_LAYER_KHRONOS_validation".to_owned()] } else { vec![] };
 	let instance = Instance::new(vulkan, InstanceCreateInfo{enabled_extensions, enabled_layers, ..default()})?;
 	let enabled_extensions = DeviceExtensions{ext_image_drm_format_modifier: true, ext_external_memory_dma_buf: true, ..default()};
 	// FIXME: select from wayland dmabuf feedback
@@ -298,12 +298,6 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 					else if id == window.surface.id && opcode == toplevel::close {
 						return Ok(());
 					}
-					/*else if id == lease_device.id && opcode == drm_lease_device::drm_fd {
-					}
-					else if id == lease_device.id && opcode == drm_lease_device::done {
-					}
-					else if id == lease_device.id && opcode == drm_lease_device::released {
-					}*/
 					else {
 						use itertools::Itertools;
 						println!("! {id:?}:{opcode:?} {:?}", server.names.lock().unwrap().iter().format_with(" ", |(id,name),f| f(&format_args!("{id}:{name}"))));

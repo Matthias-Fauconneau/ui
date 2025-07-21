@@ -12,7 +12,15 @@ pub mod widget; pub use widget::{Widget, Event, EventContext, ModifiersState};
 mod app; pub use app::run;
 
 #[cfg(feature="text")] pub mod font;
+
+pub use image::{bgr, bgrf};
+#[allow(non_upper_case_globals)] pub const black : bgrf = bgrf{b: 0., g: 0., r: 0.};
+#[allow(non_upper_case_globals)] pub const white : bgrf = bgrf{b: 1., g: 1., r: 1.};
+#[allow(non_upper_case_globals)] pub fn background() -> bgrf { white }
+#[allow(non_upper_case_globals)] pub fn foreground() -> bgrf { black }
+
 #[cfg(feature="text")] pub mod text; #[cfg(feature="text")] pub use text::{fit,Text,text};
+#[cfg(feature="edit")] pub mod edit; #[cfg(feature="edit")] pub use edit::Edit;
 #[cfg(feature="graphic")] pub mod line; #[cfg(feature="graphic")] pub use line::{line, parallelogram};
 #[cfg(feature="graphic")] pub mod graphic; #[cfg(feature="graphic")] pub use {graphic::Graphic, vector::num::{Ratio,unit}};
 
