@@ -1,5 +1,5 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-	for name in ["triangle"] {
+	for name in ["view"] {
 		println!("cargo:rerun-if-changed=src/{name}.wgsl");
 		let ref source = std::fs::read_to_string(format!("src/{name}.wgsl"))?;
 		let ref module = naga::front::wgsl::parse_str(source)?;
