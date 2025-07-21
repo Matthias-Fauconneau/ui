@@ -38,13 +38,13 @@ use vulkano::{
 	render_pass::{AttachmentStoreOp,AttachmentLoadOp},
 	buffer::allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
 	descriptor_set::DescriptorSet,
-	pipeline::{PipelineShaderStageCreateInfo, PipelineLayout, layout::PipelineDescriptorSetLayoutCreateInfo, Pipeline/*:trait*/, PipelineBindPoint, GraphicsPipeline,
+	pipeline::{PipelineShaderStageCreateInfo, PipelineLayout, Pipeline/*:trait*/, PipelineBindPoint, GraphicsPipeline,
 		DynamicState,
 		graphics::{GraphicsPipelineCreateInfo, subpass::PipelineRenderingCreateInfo, viewport::Viewport, input_assembly::InputAssemblyState,
 			vertex_input::VertexDefinition,
 			rasterization::{RasterizationState, CullMode},
 			depth_stencil::{DepthStencilState, DepthState, CompareOp},
-			color_blend::ColorBlendState
+			color_blend::{ColorBlendState, ColorBlendAttachmentState},
 		}
 	},
 };
@@ -53,7 +53,7 @@ pub trait Shader {
 	type Uniforms: BufferContents+Copy;
 	type Vertex: Vertex;
 	const NAME: &'static str;
-	fn load(device: Arc<Device>) -> Result<Arc<ShaderModule>, Validated<VulkanError>>;
+	fn load(device: &Arc<Device>) -> Result<Arc<ShaderModule>, Validated<VulkanError>>;
 }
 
 pub struct Pass<S> {
@@ -66,29 +66,29 @@ impl<S:Shader> Pass<S> {
 	pub type Uniforms = S::Uniforms;
 	
 	pub fn new(Context{device, format, memory_allocator, ..}: &Context, depth: bool, topology: PrimitiveTopology) -> Result<Self, Box<dyn std::error::Error>> {
-		let shader = S::load(device.clone())?;
-		let [vertex, fragment] = ["vertex","fragment"].map(|name| PipelineShaderStageCreateInfo::new(shader.entry_point(name).unwrap()));
-		let vertex_input_state = (!S::Vertex::per_vertex().members.is_empty()).then_some(S::Vertex::per_vertex().definition(&vertex.entry_point)?);
-		let layout = PipelineLayout::new(device.clone(), 
-			PipelineDescriptorSetLayoutCreateInfo::from_stages([&vertex, &fragment]).into_pipeline_layout_create_info(device.clone())?)?;
-		let pipeline = GraphicsPipeline::new(device.clone(), None, GraphicsPipelineCreateInfo{
-			stages: [vertex, fragment].into_iter().collect(),
-			vertex_input_state: vertex_input_state.or(Some(default())),
-			input_assembly_state: Some(InputAssemblyState{topology, ..default()}),
-			viewport_state: Some(default()),
-			rasterization_state: Some(RasterizationState{cull_mode: CullMode::Back, ..default()}),
-			depth_stencil_state: depth.then_some(DepthStencilState{depth: Some(DepthState{compare_op: CompareOp::LessOrEqual, ..DepthState::simple()}), ..default()}),
-			multisample_state: Some(default()),
-			color_blend_state: Some(ColorBlendState::with_attachment_states(1, default())),
-			dynamic_state: [DynamicState::Viewport].into_iter().collect(),
-			subpass: Some(PipelineRenderingCreateInfo{
-				color_attachment_formats: vec![Some(*format)],
+		let shader = S::load(&device)?;
+		let [vertex, fragment] = ["vertex","fragment"].map(|name| shader.entry_point(name).unwrap());
+		let vertex_input_state = (!S::Vertex::per_vertex().members.is_empty()).then_some(S::Vertex::per_vertex().definition(&vertex)?);
+		let ref stages = [&vertex, &fragment].map(|entry_point| PipelineShaderStageCreateInfo::new(&entry_point));
+		let layout = PipelineLayout::from_stages(&device, stages)?;
+		let pipeline = GraphicsPipeline::new(&device, None, &GraphicsPipelineCreateInfo{
+			stages,
+			vertex_input_state: vertex_input_state.or(Some(default())).as_ref(),
+			input_assembly_state: Some(&InputAssemblyState{topology, ..default()}),
+			viewport_state: Some(&default()),
+			rasterization_state: Some(&RasterizationState{cull_mode: CullMode::Back, ..default()}),
+			depth_stencil_state: depth.then_some(&DepthStencilState{depth: Some(DepthState{compare_op: CompareOp::LessOrEqual, ..DepthState::simple()}), ..default()}),
+			multisample_state: Some(&default()),
+			color_blend_state: Some(&ColorBlendState{attachments: &[ColorBlendAttachmentState::default()], ..default()}),
+			dynamic_state: &[DynamicState::Viewport],
+			subpass: Some((&PipelineRenderingCreateInfo{
+				color_attachment_formats: &[Some(*format)],
 				depth_attachment_format: depth.then_some(Format::D16_UNORM),
 				..default()
-			}.into()),
-			..GraphicsPipelineCreateInfo::new(layout)
+			}).into()),
+			..GraphicsPipelineCreateInfo::new(&layout)
 		})?;
-		let uniform_buffer = SubbufferAllocator::new(memory_allocator.clone(), SubbufferAllocatorCreateInfo{
+		let uniform_buffer = SubbufferAllocator::new(&memory_allocator, &SubbufferAllocatorCreateInfo{
 			buffer_usage: BufferUsage::UNIFORM_BUFFER, memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE, ..default()});
 		Ok(Self{pipeline, uniform_buffer, _marker: default()})
 	}
@@ -114,7 +114,7 @@ impl<S:Shader> Pass<S> {
 		.set_viewport(0, [Viewport{extent, ..default()}].into_iter().collect())?
 		.bind_pipeline_graphics(self.pipeline.clone())?;
 		let ref layout = self.pipeline.layout().set_layouts()[0];
-		let uniform_buffers = *layout.descriptor_counts().get(&DescriptorType::UniformBuffer).unwrap_or(&0);
+		let uniform_buffers = layout.descriptor_counts().into_iter().find(|&&(t,_)|  t==DescriptorType::UniformBuffer).map(|&(_,c)| c).unwrap_or(0);
 		if uniform_buffers > 0 || additional_descriptor_sets.len() > 0 {
 			assert!(uniform_buffers <= 1);
 			commands.bind_descriptor_sets(PipelineBindPoint::Graphics, self.pipeline.layout().clone(), 0, DescriptorSet::new(descriptor_set_allocator.clone(), layout.clone(),
@@ -137,13 +137,13 @@ pub use bytemuck;
 				type Uniforms = self::Uniforms;
 				type Vertex = self::Vertex;
 				const NAME: &'static str = stringify!($name);
-				fn load(device: Arc<Device>) -> Result<Arc<ShaderModule>, Validated<VulkanError>> {
+				fn load(device: &Arc<Device>) -> Result<Arc<ShaderModule>, Validated<VulkanError>> {
 					unsafe extern "C" {
 						#[link_name=concat!(concat!("_binary_", stringify!($name)), "_spv_start")] static start: [u8; 1];
 						#[link_name=concat!(concat!("_binary_", stringify!($name)), "_spv_end")] static end: [u8; 1];
 					}
 					unsafe{ShaderModule::new(device,
-						ShaderModuleCreateInfo::new(&bytemuck::allocation::pod_collect_to_vec(std::slice::from_ptr_range(&start..&end))))}
+						&ShaderModuleCreateInfo::new(&bytemuck::allocation::pod_collect_to_vec(std::slice::from_ptr_range(&start..&end))))}
 				}
 			}
 			pub type Pass = $crate::vulkan::Pass<Shader>;
@@ -157,9 +157,9 @@ use vulkano::buffer::AllocateBufferError;
 
 pub fn buffer<T: BufferContents>(Context{memory_allocator, ..}: &Context, usage: BufferUsage, len: usize) -> Result<Subbuffer<[T]>, Validated<AllocateBufferError>> {
 	Buffer::new_slice(
-		memory_allocator.clone(),
-		BufferCreateInfo{usage, ..default()},
-		AllocationCreateInfo{memory_type_filter: {type O = MemoryTypeFilter; O::PREFER_DEVICE|O::HOST_SEQUENTIAL_WRITE}, ..default()},
+		&memory_allocator,
+		&BufferCreateInfo{usage, ..default()},
+		&AllocationCreateInfo{memory_type_filter: {type O = MemoryTypeFilter; O::PREFER_DEVICE|O::HOST_SEQUENTIAL_WRITE}, ..default()},
 		len as u64
 	)
 }
@@ -167,9 +167,9 @@ pub fn buffer<T: BufferContents>(Context{memory_allocator, ..}: &Context, usage:
 pub fn from_iter<T: BufferContents, I: IntoIterator<Item=T>>(Context{memory_allocator, ..}: &Context, usage: BufferUsage, iter: I)
 -> Result<Subbuffer<[T]>, Validated<AllocateBufferError>> where I::IntoIter: ExactSizeIterator {
 	Buffer::from_iter(
-		memory_allocator.clone(),
-		BufferCreateInfo{usage, ..default()},
-		AllocationCreateInfo{memory_type_filter: {type O = MemoryTypeFilter; O::PREFER_DEVICE|O::HOST_SEQUENTIAL_WRITE}, ..default()},
+		&memory_allocator,
+		&BufferCreateInfo{usage, ..default()},
+		&AllocationCreateInfo{memory_type_filter: {type O = MemoryTypeFilter; O::PREFER_DEVICE|O::HOST_SEQUENTIAL_WRITE}, ..default()},
 		iter
 	)
 }
@@ -180,15 +180,19 @@ use image::{Image as CPUImage, rgba8};
 pub fn image(context@Context{memory_allocator, ..}: &Context, commands: &mut Commands, CPUImage{data, size, stride}: CPUImage<&[rgba8]>) -> Result<Arc<Image>> {
 	assert_eq!(stride, size.x);
 	use {default, ImageCreateInfo, ImageType, Format, ImageUsage, from_iter, CopyBufferToImageInfo};
-	let image = Image::new(memory_allocator.clone(), ImageCreateInfo{image_type: ImageType::Dim2d,
+	let image = Image::new(&memory_allocator, &ImageCreateInfo{
+			image_type: ImageType::Dim2d,
 			format: {assert_eq!(std::mem::size_of::<rgba8>(), 4); Format::R8G8B8A8_SRGB},
 			extent: [size.x, size.y, 1],
 			usage: ImageUsage::TRANSFER_DST|ImageUsage::SAMPLED,
-			..default()}, default())?;
+			..default()
+		},
+		&default()
+	)?;
 	let buffer = from_iter(context, BufferUsage::TRANSFER_SRC, data.into_iter().copied())?;
 	commands.copy_buffer_to_image(CopyBufferToImageInfo::new(buffer, image.clone()))?;
 	Ok(image)
 }
 
 use vulkano::image::sampler::{Sampler, SamplerCreateInfo, Filter};
-pub fn linear(Context{device, ..}: &Context) -> Arc<Sampler> { Sampler::new(device.clone(), SamplerCreateInfo{mag_filter: Filter::Linear, min_filter: Filter::Linear, ..default()}).unwrap() }
+pub fn linear(Context{device, ..}: &Context) -> Arc<Sampler> { Sampler::new(&device, &SamplerCreateInfo{mag_filter: Filter::Linear, min_filter: Filter::Linear, ..default()}).unwrap() }

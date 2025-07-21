@@ -16,24 +16,25 @@ use crate::vulkan::{Context, Commands, default};
 
 pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -> Result<Box<dyn Widget>>>) -> Result {
 	let vulkan = VulkanLibrary::new().unwrap();
-	let enabled_extensions = InstanceExtensions{ext_debug_utils: true, ..default()};
-	let enabled_layers = if true { vec!["VK_LAYER_KHRONOS_validation".to_owned()] } else { vec![] };
-	let instance = Instance::new(vulkan, InstanceCreateInfo{enabled_extensions, enabled_layers, ..default()})?;
-	let enabled_extensions = DeviceExtensions{ext_image_drm_format_modifier: true, ext_external_memory_dma_buf: true, ..default()};
+	let ref enabled_extensions = InstanceExtensions{ext_debug_utils: true, ..default()};
+	let enabled_layers = if true { &["VK_LAYER_KHRONOS_validation"] as &[_] } else { &[] };
+	let instance = Instance::new(&vulkan, &InstanceCreateInfo{enabled_extensions, enabled_layers, ..default()})?;
+	let ref enabled_extensions = DeviceExtensions{ext_image_drm_format_modifier: true, ext_external_memory_dma_buf: true,
+		ext_dynamic_rendering_unused_attachments: true, ..default()};
 	// FIXME: select from wayland dmabuf feedback
 	let (physical_device, queue_family_index) = instance.enumerate_physical_devices()?
 		.filter(|p| [PhysicalDeviceType::DiscreteGpu,PhysicalDeviceType::IntegratedGpu].contains(&p.properties().device_type))
-		.filter(|p| p.supported_extensions().contains(&enabled_extensions))
+		.filter(|p| p.supported_extensions().contains(enabled_extensions))
 		.find_map(|p| {
 			let (i, _) = p.queue_family_properties().iter().enumerate().find(|&(_, q)| q.queue_flags.intersects(QueueFlags::GRAPHICS))?;
 			Some((p, i as u32))
 		}).unwrap();
 	
 	let format = Format::B8G8R8A8_SRGB; // B8G8R8_SRGB is not compatible as dmabuf color attachment
-	let (device, mut queues) = Device::new(physical_device.clone(), DeviceCreateInfo{
+	let (device, mut queues) = Device::new(&physical_device, &DeviceCreateInfo{
 		enabled_extensions,
-		queue_create_infos: vec![QueueCreateInfo{queue_family_index, ..default()}],
-		enabled_features: DeviceFeatures{dynamic_rendering: true, dynamic_rendering_unused_attachments: true, ..default()},
+		queue_create_infos: &[QueueCreateInfo{queue_family_index, ..default()}],
+		enabled_features: &DeviceFeatures{dynamic_rendering: true, dynamic_rendering_unused_attachments: true, ..default()},
 		..default()
 	})?;
 	let queue = queues.next().unwrap();
@@ -41,12 +42,12 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 	let ref memory_types = physical_device.memory_properties().memory_types;
 	let ref export_handle_types = vec![ExternalMemoryHandleTypes::DMA_BUF; memory_types.len()];
 	let ref block_sizes = vec![256 * 1024 * 1024; memory_types.len()];
-	let dmabuf_memory_allocator = Arc::new(StandardMemoryAllocator::new(device.clone(), 
-		GenericMemoryAllocatorCreateInfo{block_sizes, export_handle_types, ..default()}));
+	let dmabuf_memory_allocator = Arc::new(StandardMemoryAllocator::new(&device,
+		&GenericMemoryAllocatorCreateInfo{block_sizes, export_handle_types, ..default()}));
 	let ref mut context = Context{
-		memory_allocator: Arc::new(StandardMemoryAllocator::new_default(device.clone())),
-		command_buffer_allocator: Arc::new(StandardCommandBufferAllocator::new(device.clone(), default())),
-		descriptor_set_allocator: Arc::new(StandardDescriptorSetAllocator::new(device.clone(), default())),
+		memory_allocator: Arc::new(StandardMemoryAllocator::new(&device, &default())),
+		command_buffer_allocator: Arc::new(StandardCommandBufferAllocator::new(&device, &default())),
+		descriptor_set_allocator: Arc::new(StandardDescriptorSetAllocator::new(&device, &default())),
 		device, queue, format,
 	};
 	
@@ -312,16 +313,16 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 		if need_paint && size.x > 0 && size.y > 0 {
 			framebuffer.rotate_left(1);
 			let ref mut framebuffer = framebuffer[0];
-			let ref mut framebuffer = framebuffer.get_or_insert_with(|| Image::new(dmabuf_memory_allocator.clone(), ImageCreateInfo{
+			let ref mut framebuffer = framebuffer.get_or_insert_with(|| Image::new(&dmabuf_memory_allocator, &ImageCreateInfo{
 				format, 
 				extent: [size.x, size.y, 1], 
 				usage: ImageUsage::COLOR_ATTACHMENT, 
 				tiling: ImageTiling::DrmFormatModifier, 
-				drm_format_modifiers: vec![0], 
+				drm_format_modifiers: &[0], 
 				external_memory_handle_types: ExternalMemoryHandleTypes::DMA_BUF, ..default()
-			}, default()).unwrap());
+			}, &default()).unwrap());
 			
-			let target = ImageView::new_default(framebuffer.clone())?;
+			let target = ImageView::new_default(&framebuffer)?;
 			crate::time!(app.paint(&context, &mut commands, target, size, zero()))?;
 			let next_fence = fence.then_execute(context.queue.clone(), commands.build()?)?.then_signal_fence_and_flush()?;
 			
@@ -329,7 +330,8 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 			let ImageMemory::Normal(resource_memory) = framebuffer.memory() else {unreachable!()};
 			let ref resource_memory = resource_memory[0];
 			let device_memory = resource_memory.device_memory();
-			let fd = device_memory.export_fd(ExternalMemoryHandleType::DmaBuf).unwrap(); // FIXME: reuse
+			use rustix::fd::FromRawFd;
+			let fd = unsafe {std::os::fd::OwnedFd::from_raw_fd(device_memory.export_fd(ExternalMemoryHandleType::DmaBuf).unwrap())}; // FIXME: reuse
 			let pitch = size.x*4;
 			let modifiers = 0u64;
 			params.add(fd, 0, resource_memory.offset() as u32, pitch, (modifiers>>32) as u32, modifiers as u32);
