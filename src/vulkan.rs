@@ -1,9 +1,8 @@
 // FIXME: split into own crate
 
 pub use std::sync::Arc;
-use vulkano::{
-	device::{Device, Queue},
-	memory::allocator::StandardMemoryAllocator,
+use vulkano::{device::{Device, Queue},
+	memory::allocator::{StandardMemoryAllocator, DeviceLayout, suballocator::BumpAllocator},
 	command_buffer::allocator::StandardCommandBufferAllocator,
 	descriptor_set::allocator::StandardDescriptorSetAllocator,
 };
@@ -36,7 +35,7 @@ use vulkano::{
 	shader::ShaderModule,
 	command_buffer::{RenderingInfo, RenderingAttachmentInfo},
 	render_pass::{AttachmentStoreOp,AttachmentLoadOp},
-	buffer::allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
+	buffer::allocator::{BufferAllocator, BufferAllocatorCreateInfo},
 	descriptor_set::DescriptorSet,
 	pipeline::{PipelineShaderStageCreateInfo, PipelineLayout, Pipeline/*:trait*/, PipelineBindPoint, GraphicsPipeline,
 		DynamicState,
@@ -58,7 +57,7 @@ pub trait Shader {
 
 pub struct Pass<S> {
 	pub pipeline: Arc<GraphicsPipeline>,
-	uniform_buffer: SubbufferAllocator,
+	uniform_buffer: BufferAllocator<BumpAllocator>,
 	_marker: std::marker::PhantomData<S>
 }
 
@@ -88,12 +87,12 @@ impl<S:Shader> Pass<S> {
 			}).into()),
 			..GraphicsPipelineCreateInfo::new(&layout)
 		})?;
-		let uniform_buffer = SubbufferAllocator::new(&memory_allocator, &SubbufferAllocatorCreateInfo{
+		let uniform_buffer = BufferAllocator::new(&memory_allocator, &BufferAllocatorCreateInfo{
 			buffer_usage: BufferUsage::UNIFORM_BUFFER, memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE, ..default()});
 		Ok(Self{pipeline, uniform_buffer, _marker: default()})
 	}
 
-	pub fn begin_rendering(&self, Context{descriptor_set_allocator,..}: &Context, commands: &mut Commands, target: Arc<ImageView>, depth: Option<Arc<ImageView>>, 
+	pub fn begin_rendering(&mut self, Context{descriptor_set_allocator,..}: &Context, commands: &mut Commands, target: Arc<ImageView>, depth: Option<Arc<ImageView>>,
 		clear: bool, uniforms: &S::Uniforms, additional_descriptor_sets: &[WriteDescriptorSet]) -> Result {
 		let [extent@..,_] = target.image().extent().map(|u32| u32 as f32);
 		commands.begin_rendering(RenderingInfo{
@@ -118,7 +117,11 @@ impl<S:Shader> Pass<S> {
 		if uniform_buffers > 0 || additional_descriptor_sets.len() > 0 {
 			assert!(uniform_buffers <= 1);
 			commands.bind_descriptor_sets(PipelineBindPoint::Graphics, self.pipeline.layout().clone(), 0, DescriptorSet::new(descriptor_set_allocator.clone(), layout.clone(),
-				(uniform_buffers > 0).then(|| WriteDescriptorSet::buffer(0, {let buffer = self.uniform_buffer.allocate_sized().unwrap(); *buffer.write().unwrap() = *uniforms; buffer}))
+				(uniform_buffers > 0).then(|| WriteDescriptorSet::buffer(0, {
+					let buffer = self.uniform_buffer.allocate(DeviceLayout::for_value(uniforms).unwrap()).unwrap();
+					let buffer = Subbuffer::from(buffer.buffer.clone()).slice(buffer.as_range()).reinterpret::<S::Uniforms>();
+					*buffer.write().unwrap() = *uniforms; buffer
+				}))
 				.into_iter().chain(additional_descriptor_sets.into_iter().cloned()), [])? )?;
 		}
 		Ok(())

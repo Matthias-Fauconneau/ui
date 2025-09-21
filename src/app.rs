@@ -14,7 +14,10 @@ use {std::sync::Arc, vulkano::{VulkanLibrary, instance::{Instance, InstanceCreat
 
 use crate::vulkan::{Context, Commands, default};
 
-pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -> Result<Box<dyn Widget>>>) -> Result {
+pub fn new_trigger() -> rustix::io::Result<std::os::fd::OwnedFd> { rustix::event::eventfd(0, rustix::event::EventfdFlags::empty()) }
+pub fn trigger(fd: impl std::os::fd::AsFd) -> rustix::io::Result<()> { if rustix::io::write(fd, &1u64.to_ne_bytes())? != 8 { Err(rustix::io::Errno::XFULL) } else { Ok(()) } }
+
+pub fn run(ref trigger: impl std::os::fd::AsFd, title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -> Result<Box<dyn Widget>>>) -> Result {
 	let vulkan = VulkanLibrary::new().unwrap();
 	let ref enabled_extensions = InstanceExtensions{ext_debug_utils: true, ..default()};
 	let enabled_layers = if true { &["VK_LAYER_KHRONOS_validation"] as &[_] } else { &[] };
@@ -116,7 +119,7 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 			let events = {
 				use rustix::event::{PollFd,PollFlags};
 				let server = &*server.server.borrow();
-				let mut fds = [PollFd::new(server, PollFlags::IN)];
+				let mut fds = [PollFd::new(server, PollFlags::IN), PollFd::new(trigger, PollFlags::IN)];
 				let zero = default();
 				rustix::event::poll(&mut fds, if window.can_paint && window.done && need_paint {Some(&zero)} else {None}).unwrap();
 				let events = fds.map(|fd| fd.revents().contains(PollFlags::IN));
@@ -307,6 +310,12 @@ pub fn run(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -
 					//print!("{id:?}:{opcode:?} ");
 				} else { println!("No messages :("); }
 			} else {
+				if events[1] {
+					let trigger_count = {let mut buf = [0; 8]; assert!(rustix::io::read(&trigger, &mut buf)? == buf.len()); u64::from_ne_bytes(buf)};
+					assert!(trigger_count < 38);
+					need_paint = app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Trigger).unwrap();
+					continue;
+				}
 				break;
 			}
 		} // event loop

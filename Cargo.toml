@@ -29,5 +29,5 @@ text=['dep:text-size','dep:unicode-segmentation','dep:rustybuzz','dep:derive_mor
 edit=['text']
 graphic=[]
 
-[patch.'https://github.com/vulkano-rs/vulkano']
-vulkano={ git='https://github.com/Matthias-Fauconneau/vulkano' } # drm modifier fix
+#[patch.'https://github.com/vulkano-rs/vulkano']
+#vulkano={ git='https://github.com/Matthias-Fauconneau/vulkano' } # drm modifier fix

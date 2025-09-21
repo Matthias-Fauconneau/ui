@@ -1,13 +1,11 @@
-package={name='triangle', version='0.0.0', edition='2024', description='Vulkano/Wayland without Smithay/libwayland-sys'}
+package={name='view', version='0.0.0', edition='2024', description='Vulkano/Wayland without Smithay/libwayland-sys'}
+build-dependencies={wgsl = {path='../../wgsl'}}
 
 [dependencies]
 bytemuck='*'
 ui={path='../..'}
-vulkano={git='https://github.com/vulkano-rs/vulkano', default-features=false, features=['macros']} # same version as ui (which needs drm modifier from git version)
+vulkano={git='https://github.com/vulkano-rs/vulkano', default-features=false, features=['macros']}
 vulkano-spirv={git='https://github.com/Matthias-Fauconneau/vulkano-spirv'}
-
-[build-dependencies]
-wgsl = {path='../../wgsl'}
 
 [patch.'https://github.com/vulkano-rs/vulkano'] # Also switches vulkano dependency for vulkano-spirv to use same version
 vulkano={ git='https://github.com/Matthias-Fauconneau/vulkano'  } # drm modifier

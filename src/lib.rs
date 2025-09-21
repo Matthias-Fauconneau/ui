@@ -9,7 +9,7 @@ pub use vector::{self, xy, size, int2};
 pub use image::{self, Image};
 pub mod vulkan;
 pub mod widget; pub use widget::{Widget, Event, EventContext, ModifiersState};
-mod app; pub use app::run;
+mod app; pub use app::{new_trigger, run, trigger};
 
 #[cfg(feature="text")] pub mod font;
 
