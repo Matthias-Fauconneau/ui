@@ -313,7 +313,7 @@ pub fn run(ref trigger: impl std::os::fd::AsFd, title: &str, app: Box<dyn std::o
 				if events[1] {
 					let trigger_count = {let mut buf = [0; 8]; assert!(rustix::io::read(&trigger, &mut buf)? == buf.len()); u64::from_ne_bytes(buf)};
 					assert!(trigger_count < 38);
-					need_paint = app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Trigger).unwrap();
+					need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Trigger).unwrap();
 					continue;
 				}
 				break;
