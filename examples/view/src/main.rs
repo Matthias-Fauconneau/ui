@@ -11,7 +11,7 @@ fn paint(&mut self, context/*@Context{device, memory_allocator, ..}*/: &Context,
 	let image = image(context, commands, Image::from_xy(xy{x: 16, y: 16}, |xy{x,y}| rgba8{r: if x%2==0 { 0 } else { 0xFF }, g: if y%2==0 { 0 } else { 0xFF }, b: 0xFF, a: 0xFF}).as_ref())?;
 	pass.begin_rendering(context, commands, target.clone(), None, true, &view::Uniforms::empty(), &[
 		WriteDescriptorSet::image_view(0, ImageView::new_default(&image)?),
-        WriteDescriptorSet::sampler(1, linear(context)),
+		WriteDescriptorSet::sampler(1, linear(context)),
 	])?;
 	unsafe{commands.draw(3, 1, 0, 0)}?;
 	commands.end_rendering()?;

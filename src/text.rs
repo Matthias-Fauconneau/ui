@@ -1,10 +1,11 @@
 #![allow(non_snake_case)]
 use {std::{cmp::{min, max}, ops::Range}, crate::Result, vector::{num::{zero, Ratio, unit}, xy, uint2, int2, size, Rect}};
-use {image::bgrf as Color, crate::{foreground, font::{self, Face, GlyphId}}};
+use {image::rgbf as Color, crate::{foreground, font::{self, Face, GlyphId}}};
 pub mod unicode_segmentation;
 use self::unicode_segmentation::UnicodeSegmentation;
 type TextIndex = usize;//GraphemeIndex
-#[derive(derive_more::Deref)] pub(crate) struct LineRange<'t> { #[deref] line: &'t str, pub(crate) range: Range<TextIndex> }
+pub(crate) struct LineRange<'t> { line: &'t str, pub(crate) range: Range<TextIndex> }
+impl<'t> core::ops::Deref for LineRange<'t> { type Target = &'t str; fn deref(&self) -> &<Self as core::ops::Deref>::Target { &self.line } }
 
 pub(crate) fn line_ranges<'t>(text: &'t str) -> impl Iterator<Item=LineRange<'t>> {
 	let mut iter = text.grapheme_indices(true).map(|(_,c)| c)/*bytes()*/.enumerate().map(|(i,c)|(i,(i,c))).peekable();
@@ -79,7 +80,8 @@ fn metrics<'t>(iter: impl Iterator<Item=Glyph<'t>>) -> LineMetrics {
 #[derive(Clone,Copy,Default,Debug)] pub enum FontStyle { #[default] Normal, Bold, /*Italic, BoldItalic*/ }
 #[derive(Clone,Copy,Default,Debug)] pub struct Style { pub color: Color, pub style: FontStyle }
 pub type TextRange = std::ops::Range<usize>;
-#[derive(Clone,derive_more::Deref,Debug)] pub struct Attribute<T> { #[deref] pub range: TextRange, pub attribute: T }
+#[derive(Clone,Debug)] pub struct Attribute<T> { pub range: TextRange, pub attribute: T }
+impl<T> core::ops::Deref for Attribute<T> { type Target = TextRange; fn deref(&self) -> &<Self as core::ops::Deref>::Target { &self.range } }
 impl /*const*/ From<Style> for Attribute<Style> { fn from(attribute: Style) -> Self { Attribute{range: 0../*GraphemeIndex*/usize::MAX, attribute} } }
 impl From<Color> for Attribute<Style> { fn from(color: Color) -> Self { Style{color, style: FontStyle::Normal}.into() } }
 
@@ -163,7 +165,6 @@ impl Span {
 }
 
 pub(crate) mod iter;
-use image::bgr;
 use iter::NthOrLast;
 fn position(font: &Font<'_>, text: &str, LineColumn{line, column}: LineColumn) -> uint2 {
 	if text.is_empty() { assert!(line==0&&column==0); zero() } else {
@@ -210,8 +211,10 @@ impl<D:AsRef<str>> View<'_, D> {
 	}*/
 }
 
+use {image::{rgb, /*rgb8,*/ rgba8}, crate::{vulkan, shader}};
+shader!{view}
 impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
-	pub fn paint(&mut self, target: &mut Arc<ImageView>, size: size, scale: Ratio, offset: int2) {
+	pub fn paint(&mut self, mut target: Image<&mut [rgba8]>, size: size, scale: Ratio, offset: int2) {
 		let Self{font, data, ..} = &*self;
 		//let (mut style, mut styles) = (None, AsRef::<[Attribute<Style>]>::as_ref(&data).iter().peekable());
 		for (line_index, line) in line_ranges(&data.as_ref()).enumerate()
@@ -249,12 +252,12 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 					let color = /*style.map(|x|x.attribute.color)*/None.unwrap_or(self.color);
 					if true { // Interpolate in compressed instead of linear domain (approximation but avoid EOTF+OETF transfer function evaluation)
 						if color == crate::white {
-							let white = u32::from(crate::white);
+							//let white = rgb8::from(crate::white).into();
 							target.slice_mut(target_offset, size).zip_map(&coverage_sRGB8.slice(source_offset.unsigned(), size),
 								|target, &t| match t {
-									0 => *target,
-									0xFF => white,
-									_ => image::bgr8::from(*target).map(|target| {
+									0 => target,
+									//0xFF => white,
+									_ => image::rgba8::from(target).map(|target| {
 										// using sRGB gamma compressed value as linear interpolation coefficient.
 										// Corrects interpolation for black background case (same as linear coefficient with linear domain points)
 										((255-t) as u16*(target as u16)/255) as u8 + t
@@ -268,15 +271,15 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 									image::bgr8::from(target).map(|target| (tt*(target as u16)/255) as u8 + t).into()
 							});*/
 						} else {
-							let color = image::bgr8::from(color); // sRGB8_OETF: linear -> sRGB
+							let color = image::rgb8::from(color); // sRGB8_OETF: linear -> sRGB
 							//let time = std::time::Instant::now();
 							/*target.slice_mut(target_offset, size).zip_map(&coverage.slice(source_offset.unsigned(), size),
 								|&target, &t| image::bgr8::from(target).zip(color).map(|(target, color)| num::lerp(t, target as f32, color as f32) as u8).into());*/
 							target.slice_mut(target_offset, size).zip_map(&coverage.slice(source_offset.unsigned(), size),
-								|&target, &t| {
+								|target, &t| {
 									let t = (t*256.) as u16;
 									let tt = 256 - t;
-									image::bgr8::from(target).zip(color).map(|(target, color)| ((tt * (target as u16) + t * (color as u16))/256) as u8).collect::<bgr<_>>().into()
+									image::rgb8::from(target).zip(color).map(|(target, color)| ((tt * (target as u16) + t * (color as u16))/256) as u8).collect::<rgb<_>>().into()
 								}
 							);
 							//eprintln!("{:?}", time.elapsed());
@@ -289,16 +292,26 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 			}
 		}
 	}
-	#[track_caller] pub fn paint_fit(&mut self, target: &mut Arc<ImageView>, size: size, offset: int2) -> Ratio {
+	#[track_caller] pub fn paint_fit(&mut self, context: &Context, commands: &mut Commands, target: Arc<ImageView>, size: size, offset: int2) -> Ratio {
 		let scale = self.scale(size);
-		self.paint(target, size, scale, offset);
+		let mut target_image = Image::fill(size, rgba8{r: 0, g: 0, b: 0, a:0xFF});
+		self.paint(target_image.as_mut(), size, scale, offset);
+		use vulkan::{PrimitiveTopology, image, WriteDescriptorSet, linear};
+		let mut pass = view::Pass::new(context, false, PrimitiveTopology::TriangleList).unwrap();
+		let image = image(context, commands, target_image.as_ref()).unwrap();
+		pass.begin_rendering(context, commands, target.clone(), None, true, &view::Uniforms::empty(), &[
+			WriteDescriptorSet::image_view(0, ImageView::new_default(&image).unwrap()),
+			WriteDescriptorSet::sampler(1, linear(context)),
+		]).unwrap();
+		unsafe{commands.draw(3, 1, 0, 0)}.unwrap();
+		commands.end_rendering().unwrap();
 		scale
 	}
 }
-use crate::widget::{Widget, Arc, ImageView};
+use crate::widget::{Widget, Arc, Context, Commands, ImageView};
 impl<'f, D:AsRef<str>+AsRef<[Attribute<Style>]>> Widget for View<'f, D> {
 	fn size(&mut self, size: size) -> size { fit(size/*fit_width(size.x*/, Self::size(self)) }
-	#[track_caller] fn paint(&mut self, target: &mut Arc<ImageView>, size: size, offset: int2) -> Result { self.paint_fit(target, size, offset); Ok(()) }
+	#[track_caller] fn paint(&mut self, context: &Context, commands: &mut Commands, target: Arc<ImageView>, size: size, offset: int2) -> Result { self.paint_fit(context, commands, target, size, offset); Ok(()) }
 }
 
 pub struct Plain<T>(pub T);

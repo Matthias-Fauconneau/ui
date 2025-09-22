@@ -1,5 +1,5 @@
-/*#[derive(derive_more::Deref)] #[deref(forward)]*/ pub struct Face<'t>(rustybuzz::Face<'t>);
-impl<'t> core::ops::Deref for Face<'t> { type Target = rustybuzz::Face<'t>; fn deref(&self) -> &Self::Target { &self.0 } }
+pub struct Face<'t>(rustybuzz::Face<'t>);
+impl<'t> core::ops::Deref for Face<'t> { type Target = rustybuzz::Face<'t>; fn deref(&self) -> &<Self as core::ops::Deref>::Target { &self.0 } }
 pub use rustybuzz::ttf_parser::{self, GlyphId};
 use vector::{xy, vec2, Rect, num::Ratio};
 impl<'t> Face<'t> {
@@ -85,13 +85,14 @@ impl ttf_parser::OutlineBuilder for PathEncoder<'_> {
 				Ok(Self{ptr: mm::mmap(std::ptr::null_mut(), len, mm::ProtFlags::READ, mm::MapFlags::SHARED, fd, 0)?, len})
 		}}
 	}
-	impl std::ops::Deref for MemoryMap { type Target = [u8]; fn deref(&self) -> &Self::Target { unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) } } }
+	impl core::ops::Deref for MemoryMap { type Target = [u8]; fn deref(&self) -> &<Self as core::ops::Deref>::Target { unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) } } }
 	impl Drop for MemoryMap { fn drop(&mut self) { unsafe { rustix::mm::munmap(self.ptr, self.len).unwrap() } } }
 	unsafe impl Sync for MemoryMap {}
 	unsafe impl Send for MemoryMap {}
 }
 
-#[derive(derive_more::Deref)] pub struct Handle<'t>(Face<'t>);
+pub struct Handle<'t>(Face<'t>);
+impl<'t> core::ops::Deref for Handle<'t> { type Target = Face<'t>; fn deref(&self) -> &<Self as core::ops::Deref>::Target { &self.0 } }
 use memory_map::MemoryMap;
 pub type File<'t> = owning_ref::OwningHandle<Box<MemoryMap>, Handle<'t>>;
 pub fn open<'t>(path: &std::path::Path) -> super::Result<File<'t>> {

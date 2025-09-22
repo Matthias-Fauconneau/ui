@@ -1,7 +1,10 @@
 package={name='ui', version='0.0.0', edition='2024', description='Vulkano/Wayland without Smithay/libwayland-sys'}
 example=[
- {name='edit', path='examples/edit.rs', required-features=['edit']},
+#view: (crate)
+{name='edit', path='examples/edit.rs', required-features=['edit']},
 ]
+
+build-dependencies={wgsl = {path='wgsl', optional = true}}
 
 [dependencies]
 #array-concat='*' # unexpected `cfg` condition value: `const_panic`
@@ -23,11 +26,14 @@ derive_more={ version='*', features=['deref'], optional=true }
 owning_ref={ version='*', optional=true }
 kurbo={ version='*', optional=true }
 glob={ version='*', optional=true }
+vulkano-spirv={git='https://github.com/Matthias-Fauconneau/vulkano-spirv', optional=true}
 
 [features]
-text=['dep:text-size','dep:unicode-segmentation','dep:rustybuzz','dep:derive_more','dep:owning_ref','dep:kurbo','dep:glob']
+text=['dep:text-size','dep:unicode-segmentation','dep:rustybuzz','dep:derive_more','dep:owning_ref','dep:kurbo','dep:glob','dep:vulkano-spirv','dep:wgsl']
 edit=['text']
 graphic=[]
 
 [patch.'https://github.com/vulkano-rs/vulkano']
 vulkano={ git='https://github.com/Matthias-Fauconneau/vulkano' } # drm modifier fix
+[patch.'https://github.com/Matthias-Fauconneau/image']
+image = { path = '../image' }
