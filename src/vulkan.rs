@@ -43,7 +43,7 @@ use vulkano::{
 			vertex_input::VertexDefinition,
 			rasterization::{RasterizationState, CullMode},
 			depth_stencil::{DepthStencilState, DepthState, CompareOp},
-			color_blend::{ColorBlendState, ColorBlendAttachmentState},
+			color_blend::{ColorBlendState, ColorBlendAttachmentState, AttachmentBlend, BlendOp, BlendFactor},
 		}
 	},
 };
@@ -63,8 +63,8 @@ pub struct Pass<S> {
 
 impl<S:Shader> Pass<S> {
 	pub type Uniforms = S::Uniforms;
-	
-	pub fn new(Context{device, format, memory_allocator, ..}: &Context, depth: bool, topology: PrimitiveTopology) -> Result<Self, Box<dyn std::error::Error>> {
+
+	pub fn new(Context{device, format, memory_allocator, ..}: &Context, depth: bool, topology: PrimitiveTopology, blend: bool) -> Result<Self, Box<dyn std::error::Error>> {
 		let shader = S::load(&device)?;
 		let [vertex, fragment] = ["vertex","fragment"].map(|name| shader.entry_point(name).unwrap());
 		let vertex_input_state = (!S::Vertex::per_vertex().members.is_empty()).then_some(S::Vertex::per_vertex().definition(&vertex)?);
@@ -78,7 +78,17 @@ impl<S:Shader> Pass<S> {
 			rasterization_state: Some(&RasterizationState{cull_mode: CullMode::Back, ..default()}),
 			depth_stencil_state: depth.then_some(&DepthStencilState{depth: Some(DepthState{compare_op: CompareOp::LessOrEqual, ..DepthState::simple()}), ..default()}),
 			multisample_state: Some(&default()),
-			color_blend_state: Some(&ColorBlendState{attachments: &[ColorBlendAttachmentState::default()], ..default()}),
+			//color_blend_state: Some(&ColorBlendState{attachments: &[ColorBlendAttachmentState::default()], ..default()}),
+			color_blend_state: Some(&ColorBlendState{attachments: &[ColorBlendAttachmentState{
+				blend: blend.then_some(AttachmentBlend {
+					color_blend_op: BlendOp::Add,
+					src_color_blend_factor: BlendFactor::SrcAlpha,
+					dst_color_blend_factor: BlendFactor::OneMinusSrcAlpha,
+					alpha_blend_op: BlendOp::Add,
+					src_alpha_blend_factor: BlendFactor::SrcAlpha,
+					dst_alpha_blend_factor: BlendFactor::OneMinusSrcAlpha,
+				}), ..default()}], ..default()
+			}),
 			dynamic_state: &[DynamicState::Viewport],
 			subpass: Some((&PipelineRenderingCreateInfo{
 				color_attachment_formats: &[Some(*format)],
@@ -87,7 +97,7 @@ impl<S:Shader> Pass<S> {
 			}).into()),
 			..GraphicsPipelineCreateInfo::new(&layout)
 		})?;
-		let uniform_buffer = BufferAllocator::new(&memory_allocator, &BufferAllocatorCreateInfo{
+		let uniform_buffer = BufferAllocator::new(&memory_allocator, &BufferAllocatorCreateInfo{block_size: 128,
 			buffer_usage: BufferUsage::UNIFORM_BUFFER, memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE, ..default()});
 		Ok(Self{pipeline, uniform_buffer, _marker: default()})
 	}
@@ -118,7 +128,7 @@ impl<S:Shader> Pass<S> {
 			assert!(uniform_buffers <= 1);
 			commands.bind_descriptor_sets(PipelineBindPoint::Graphics, self.pipeline.layout().clone(), 0, DescriptorSet::new(descriptor_set_allocator.clone(), layout.clone(),
 				(uniform_buffers > 0).then(|| WriteDescriptorSet::buffer(0, {
-					let buffer = self.uniform_buffer.allocate(DeviceLayout::for_value(uniforms).unwrap()).unwrap();
+					let buffer = self.uniform_buffer.allocate(DeviceLayout::for_value(uniforms).unwrap()).unwrap(); //FIXME: leak?
 					let buffer = Subbuffer::from(buffer.buffer.clone()).slice(buffer.as_range()).reinterpret::<S::Uniforms>();
 					*buffer.write().unwrap() = *uniforms; buffer
 				}))
