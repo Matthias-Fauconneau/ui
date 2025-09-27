@@ -6,7 +6,7 @@ pub type Owned = Buffer<String, Vec<Attribute<Style>>>;
 trait ToOwned { type Owned; fn to_owned(&self) -> Self::Owned; }
 impl ToOwned for Borrowed<'_> {
 	type Owned = Owned;
-	fn to_owned(&self) -> Self::Owned { Self::Owned{text: self.text.to_owned(), style: self.style.to_owned()} }
+	fn to_owned(&self) -> <Self as ToOwned>::Owned { Owned{text: self.text.to_owned(), style: self.style.to_owned()} }
 }
 pub enum Cow<'t> {
     Borrowed(Borrowed<'t>),
@@ -221,20 +221,22 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 	}
 }
 
+use crate::widget::{Context, Commands};
 impl Widget for Edit<'_,'_> {
 	fn size(&mut self, size : size) -> size {
 		let size = Widget::size(&mut self.view, size);
 		if !size.is_zero() { size } else { (self.view.font[0].height() as u32).into() }
 	}
-	#[throws] fn paint(&mut self, target: &mut Arc<ImageView>, size: size, offset: int2) {
+	#[throws] fn paint(&mut self, context: &Context, commands: &mut Commands, target: Arc<ImageView>, size: size, offset: int2) {
 		let Self{view, selection, ..} = self;
-		let scale = view.paint_fit(target, size, offset);
+		let scale = view.paint_fit(context, commands, target, size, offset);
 		view.paint_span(target, scale, offset, *selection, image::bgr{b: true, g: true, r: true});
 	}
-	#[throws] fn event(&mut self, size: size, event_context: &mut EventContext, event: &Event) -> bool { if self.event(size, zero(), event_context, event) != Change::None { true } else { false } }
+	#[throws] fn event(&mut self, _: &Context, _: &mut Commands, size: size, event_context: &mut EventContext, event: &Event) -> bool { if self.event(size, zero(), event_context, event) != Change::None { true } else { false } }
 }
 
-#[derive(derive_more::Deref)] pub struct Scroll<'f,'t> { #[deref] pub edit: Edit<'f, 't>, pub offset: uint2 }
+pub struct Scroll<'f,'t> { pub edit: Edit<'f, 't>, pub offset: uint2 }
+impl<'f,'t> std::ops::Deref for Scroll<'f, 't> { type Target = Edit<'f,'t>; fn deref(&self) -> &<Self as std::ops::Deref>::Target { &self.edit } }
 impl<'f,'t> Scroll<'f,'t> {
 	pub fn new(edit: Edit<'f,'t>) -> Self { Self{edit, offset: zero()} }
 	pub fn paint_fit(&mut self, target: &mut Arc<ImageView>, size: size, offset: int2) -> Ratio { self.edit.view.paint_fit(target, size, offset-self.offset.signed()) }
@@ -263,10 +265,10 @@ impl<'f,'t> Scroll<'f,'t> {
 }
 impl Widget for Scroll<'_,'_> {
 	fn size(&mut self, size : size) -> size { self.edit.size(size) }
-	#[throws] fn paint(&mut self, target: &mut Arc<ImageView>, size: size, offset: int2) {
+	#[throws] fn paint(&mut self, context: &Context, commands: &mut Commands, target: Arc<ImageView>, size: size, offset: int2) {
 		let scale = self.edit.view.paint_fit(target, size, offset);
 		let Scroll{edit: Edit{view, selection, ..}, offset} = self;
 		view.paint_span(target, scale, -offset.signed(), *selection, image::bgr{b: true, g: true, r: true});
 	}
-	#[throws] fn event(&mut self, size: size, event_context: &mut EventContext, event: &Event) -> bool { if self.event(size, event_context, event) != Change::None { true } else { false } }
+	#[throws] fn event(&mut self, _: &Context, _: &mut Commands, size: size, event_context: &mut EventContext, event: &Event) -> bool { if self.event(size, event_context, event) != Change::None { true } else { false } }
 }

@@ -26,11 +26,12 @@ derive_more={ version='*', features=['deref'], optional=true }
 owning_ref={ version='*', optional=true }
 kurbo={ version='*', optional=true }
 glob={ version='*', optional=true }
+dirs={ version='*', optional=true }
 vulkano-spirv={git='https://github.com/Matthias-Fauconneau/vulkano-spirv', optional=true}
 
 [features]
 text=['dep:text-size','dep:unicode-segmentation','dep:rustybuzz','dep:derive_more','dep:owning_ref','dep:kurbo','dep:glob','dep:vulkano-spirv','dep:wgsl']
-edit=['text']
+edit=['text','dep:dirs']
 graphic=[]
 
 [patch.'https://github.com/vulkano-rs/vulkano']

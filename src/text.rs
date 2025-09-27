@@ -297,7 +297,7 @@ impl<D:AsRef<str>+AsRef<[Attribute<Style>]>> View<'_, D> {
 		let mut target_image = Image::fill(size, rgba8{r: 0, g: 0, b: 0, a:0xFF});
 		self.paint(target_image.as_mut(), size, scale, offset);
 		use vulkan::{PrimitiveTopology, image, WriteDescriptorSet, linear};
-		let mut pass = view::Pass::new(context, false, PrimitiveTopology::TriangleList).unwrap();
+		let mut pass = view::Pass::new(context, false, PrimitiveTopology::TriangleList, false).unwrap();
 		let image = image(context, commands, target_image.as_ref()).unwrap();
 		pass.begin_rendering(context, commands, target.clone(), None, true, &view::Uniforms::empty(), &[
 			WriteDescriptorSet::image_view(0, ImageView::new_default(&image).unwrap()),
