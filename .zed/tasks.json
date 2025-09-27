@@ -1,7 +1,7 @@
 [
 	{
 		"label": "Edit",
-		"command": "cargo run --example edit --features edit",
+		"command": "cargo run --release --example edit --features edit",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
 		"reveal": "always",

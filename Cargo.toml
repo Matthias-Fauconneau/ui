@@ -13,7 +13,7 @@ itertools='*' # fixme: optional
 num={ git='https://github.com/Matthias-Fauconneau/num'}
 vector={ git='https://github.com/Matthias-Fauconneau/vector', features=['int_roundings']}
 image={ git='https://github.com/Matthias-Fauconneau/image' }
-rustix={ version='*', features=['fs','mm','net','event'] }
+rustix={ version='*', features=['fs','mm','net','event','time'] }
 bytemuck={ version='*', features=['extern_crate_alloc'] }
 
 vulkano={ git='https://github.com/vulkano-rs/vulkano', default-features=false, features=['macros'] }

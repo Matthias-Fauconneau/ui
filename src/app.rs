@@ -33,7 +33,7 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 			let (i, _) = p.queue_family_properties().iter().enumerate().find(|&(_, q)| q.queue_flags.intersects(QueueFlags::GRAPHICS))?;
 			Some((p, i as u32))
 		}).unwrap();
-	
+
 	let format = Format::B8G8R8A8_SRGB; // B8G8R8_SRGB is not compatible as dmabuf color attachment
 	let (device, mut queues) = Device::new(&physical_device, &DeviceCreateInfo{
 		enabled_extensions,
@@ -42,7 +42,7 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 		..default()
 	})?;
 	let queue = queues.next().unwrap();
-	
+
 	let ref memory_types = physical_device.memory_properties().memory_types;
 	let ref export_handle_types = vec![ExternalMemoryHandleTypes::DMA_BUF; memory_types.len()];
 	let ref block_sizes = vec![256 * 1024 * 1024; memory_types.len()];
@@ -54,7 +54,7 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 		descriptor_set_allocator: Arc::new(StandardDescriptorSetAllocator::new(&device, &default())),
 		device, queue, format,
 	};
-	
+
 	let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(),
 		CommandBufferUsage::OneTimeSubmit)?;
 	let mut app = app(context, &mut commands)?;
@@ -98,10 +98,10 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 		}
 	}
 	let mut window = Surface::new(server, compositor, wm_base, title, if true { Some(output) } else { None });
-	
+
 	let ref feedback : dmabuf::Feedback = server.new("feedback");
 	dmabuf.get_surface_feedback(feedback, &window.surface);
-	
+
 	let ref params : dmabuf::Params = server.new("params");
 	let ref buffer_ref : Buffer = server.new("buffer_ref");
 	let mut framebuffer = [None, None, None];
@@ -110,7 +110,10 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 	let mut size = zero();
 	let modifiers_state = Default::default();
 	let mut fence = commands.build()?.execute(context.queue.clone())?.then_signal_fence_and_flush()?.boxed();
-	
+
+	let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
+	let mut repeat : Option<(u64, char)> = None;
+
 	loop {
 		let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(),
 			CommandBufferUsage::OneTimeSubmit)?;
@@ -120,11 +123,17 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 			let events = {
 				use rustix::event::{PollFd,PollFlags};
 				let server = &*server.server.borrow();
-				let mut fds = [PollFd::new(server, PollFlags::IN), PollFd::new(trigger, PollFlags::IN)];
+				let mut fds = vec![PollFd::new(server, PollFlags::IN), PollFd::new(trigger, PollFlags::IN)];
+				if let Some((msec, _)) = repeat {
+					use rustix::time::{timerfd_settime,TimerfdTimerFlags,Itimerspec,Timespec};
+					timerfd_settime(&timerfd, TimerfdTimerFlags::ABSTIME,
+						&Itimerspec{it_interval: Timespec{tv_sec:0, tv_nsec:0}, it_value: Timespec{tv_sec:(msec/1000) as i64,tv_nsec:((msec%1000)*1000000) as i64}}
+					)?;
+					fds.push(PollFd::new(&timerfd, PollFlags::IN));
+				};
 				let zero = default();
 				rustix::event::poll(&mut fds, if window.can_paint && window.done && need_paint {Some(&zero)} else {None}).unwrap();
-				let events = fds.map(|fd| fd.revents().contains(PollFlags::IN));
-				events
+				fds.iter().map(|fd| fd.revents().contains(PollFlags::IN)).collect::<Box<_>>()
 			};
 			if events[0] {
 				if let Some((Message{id, opcode, ..}, _any_fd)) = message(&*server.server.borrow()) {
@@ -180,10 +189,10 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 					else if id == feedback.id && opcode == dmabuf::feedback::format_table {
 						server.args({use Type::*; [UInt]});
 						//assert!(_any_fd.is_some());
-					} 
+					}
 					else if id == feedback.id && opcode == dmabuf::feedback::main_device {
 						server.args({use Type::*; [Array]});
-					} 
+					}
 					else if id == feedback.id && opcode == dmabuf::feedback::tranche_target_device {
 						let [Array(_dev)] = server.args({use Type::*; [Array]}) else {unreachable!()};
 						// FIXME: use to select Vulkan physical device
@@ -287,7 +296,12 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 						if key == 1 { return Ok(()); }
 						if state > 0 {
 							#[allow(non_upper_case_globals)] const usb_hid_usage_table: [char; 126] = ['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪','\u{F701}','\u{F702}','\u{F703}','\u{F704}','\u{F705}','\u{F706}','\u{F707}','\u{F708}','\u{F709}','\u{F70A}','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\u{F70B}','\u{F70C}','\0','\0','\0','\0','\0','\0','\0','\0','⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘'];
-							if app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Key(usb_hid_usage_table[key as usize]))? { need_paint = true; }
+							let key = usb_hid_usage_table[key as usize];
+							if app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Key(key))? { need_paint = true; }
+							let rustix::time::Timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
+							repeat = Some(((tv_sec as u64*1000+tv_nsec as u64/1000000)+150, key));
+						} else {
+							repeat = None;
 						}
 					}
 					else if window.callback.as_ref().is_some_and(|callback| id == callback.id) && opcode == callback::done {
@@ -317,6 +331,12 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 					need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Trigger).unwrap();
 					continue;
 				}
+				if events.len() > 2 && events[2] {
+					let (msec, key) = repeat.unwrap();
+					if app.event(context, &mut commands, size, &mut EventContext{/*toplevel: &window.toplevel,*/ modifiers_state, /*cursor*/}, &Event::Key(key))? { need_paint=true; }
+					repeat = Some((msec+33, key));
+					continue;
+				}
 				break;
 			}
 		} // event loop
@@ -324,18 +344,18 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 			framebuffer.rotate_left(1);
 			let ref mut framebuffer = framebuffer[0];
 			let ref mut framebuffer = framebuffer.get_or_insert_with(|| Image::new(&dmabuf_memory_allocator, &ImageCreateInfo{
-				format, 
-				extent: [size.x, size.y, 1], 
-				usage: ImageUsage::COLOR_ATTACHMENT, 
-				tiling: ImageTiling::DrmFormatModifier, 
-				drm_format_modifiers: &[0], 
+				format,
+				extent: [size.x, size.y, 1],
+				usage: ImageUsage::COLOR_ATTACHMENT,
+				tiling: ImageTiling::DrmFormatModifier,
+				drm_format_modifiers: &[0],
 				external_memory_handle_types: ExternalMemoryHandleTypes::DMA_BUF, ..default()
 			}, &default()).unwrap());
-			
+
 			let target = ImageView::new_default(&framebuffer)?;
 			crate::time!(app.paint(&context, &mut commands, target, size, zero()))?;
 			let next_fence = fence.then_execute(context.queue.clone(), commands.build()?)?.then_signal_fence_and_flush()?;
-			
+
 			dmabuf.create_params(params);
 			let ImageMemory::Normal(resource_memory) = framebuffer.memory() else {unreachable!()};
 			let ref resource_memory = resource_memory[0];
