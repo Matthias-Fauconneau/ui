@@ -17,7 +17,8 @@ use crate::vulkan::{Context, Commands, default};
 pub fn new_trigger() -> rustix::io::Result<std::os::fd::OwnedFd> { rustix::event::eventfd(0, rustix::event::EventfdFlags::empty()) }
 pub fn trigger(fd: impl std::os::fd::AsFd) -> rustix::io::Result<()> { if rustix::io::write(fd, &1u64.to_ne_bytes())? != 8 { Err(rustix::io::Errno::XFULL) } else { Ok(()) } }
 
-pub fn run<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -> Result<Box<dyn Widget+'t>>+'t>) -> Result {
+pub fn run<'t>(title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -> Result<Box<dyn Widget+'t>>+'t>) -> Result { run_with_trigger(new_trigger()?, title, app) }
+pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, app: Box<dyn std::ops::FnOnce(&Context, &mut Commands) -> Result<Box<dyn Widget+'t>>+'t>) -> Result {
 	let vulkan = VulkanLibrary::new().unwrap();
 	let ref enabled_extensions = InstanceExtensions{ext_debug_utils: true, ..default()};
 	let enabled_layers = if true { &["VK_LAYER_KHRONOS_validation"] as &[_] } else { &[] };

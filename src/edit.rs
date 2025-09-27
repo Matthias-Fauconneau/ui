@@ -54,11 +54,11 @@ pub static COMPOSE: std::sync::LazyLock<Vec<(Vec<char>, char)>> = std::sync::Laz
 
 impl<'f, 't> Edit<'f, 't> {
 pub fn new(font: Font<'f>, data: Cow<'t>) -> Self {
-	Self{view: View{font, data, size: None}, selection: Span::new(LineColumn{line: 0, column: 0}), history: Vec::new(), history_index: 0, last_change: Change::Other, compose: None}
+	Self{view: View{font, color: text::default_color(), data, size: None}, selection: Span::new(LineColumn{line: 0, column: 0}), history: Vec::new(), history_index: 0, last_change: Change::Other, compose: None}
 }
-pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state, cursor}: &mut EventContext, event: &Event) -> Change {
+pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state, /*cursor*/}: &mut EventContext, event: &Event) -> Change {
 	let ModifiersState{ctrl,shift,alt,..} = *modifiers_state;
-	let Self{ref mut view, selection, history, history_index, last_change, compose, ..} = self;
+	let Self{view, selection, history, history_index, last_change, compose, ..} = self;
 	let change = match event {
 			&Event::Key(key) => (||{
 				let View{data, ..} = view;
@@ -202,7 +202,7 @@ pub fn event(&mut self, size : size, offset: uint2, EventContext{modifiers_state
 				}
 			})(),
 			&Event::Motion{position, mouse_buttons} => {
-				cursor.set("text");
+				//cursor.set("text");
 				if mouse_buttons != 0 {
 					let end = view.cursor(size, offset+uint2::from(position));
 					let next = Span{end, ..*selection};
@@ -230,7 +230,7 @@ impl Widget for Edit<'_,'_> {
 	#[throws] fn paint(&mut self, context: &Context, commands: &mut Commands, target: Arc<ImageView>, size: size, offset: int2) {
 		let Self{view, selection, ..} = self;
 		let scale = view.paint_fit(context, commands, target, size, offset);
-		view.paint_span(target, scale, offset, *selection, image::bgr{b: true, g: true, r: true});
+		//view.paint_span(target, scale, offset, *selection, image::bgr{b: true, g: true, r: true});
 	}
 	#[throws] fn event(&mut self, _: &Context, _: &mut Commands, size: size, event_context: &mut EventContext, event: &Event) -> bool { if self.event(size, zero(), event_context, event) != Change::None { true } else { false } }
 }
@@ -239,7 +239,7 @@ pub struct Scroll<'f,'t> { pub edit: Edit<'f, 't>, pub offset: uint2 }
 impl<'f,'t> std::ops::Deref for Scroll<'f, 't> { type Target = Edit<'f,'t>; fn deref(&self) -> &<Self as std::ops::Deref>::Target { &self.edit } }
 impl<'f,'t> Scroll<'f,'t> {
 	pub fn new(edit: Edit<'f,'t>) -> Self { Self{edit, offset: zero()} }
-	pub fn paint_fit(&mut self, target: &mut Arc<ImageView>, size: size, offset: int2) -> Ratio { self.edit.view.paint_fit(target, size, offset-self.offset.signed()) }
+	pub fn paint_fit(&mut self, context: &Context, commands: &mut Commands, target: Arc<ImageView>, size: size, offset: int2) -> Ratio { self.edit.view.paint_fit(context, commands, target, size, offset-self.offset.signed()) }
 	pub fn keep_selection_in_view(&mut self, size: size) {
 		let Self{edit: Edit{view, selection, ..}, offset} = self;
 		let Rect{min,max} = view.span(selection.min(), selection.max());
@@ -266,9 +266,9 @@ impl<'f,'t> Scroll<'f,'t> {
 impl Widget for Scroll<'_,'_> {
 	fn size(&mut self, size : size) -> size { self.edit.size(size) }
 	#[throws] fn paint(&mut self, context: &Context, commands: &mut Commands, target: Arc<ImageView>, size: size, offset: int2) {
-		let scale = self.edit.view.paint_fit(target, size, offset);
+		let scale = self.edit.view.paint_fit(context, commands, target, size, offset);
 		let Scroll{edit: Edit{view, selection, ..}, offset} = self;
-		view.paint_span(target, scale, -offset.signed(), *selection, image::bgr{b: true, g: true, r: true});
+		//view.paint_span(target, scale, -offset.signed(), *selection, image::bgr{b: true, g: true, r: true});
 	}
 	#[throws] fn event(&mut self, _: &Context, _: &mut Commands, size: size, event_context: &mut EventContext, event: &Event) -> bool { if self.event(size, event_context, event) != Change::None { true } else { false } }
 }
