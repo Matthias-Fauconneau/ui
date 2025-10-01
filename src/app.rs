@@ -114,6 +114,8 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 	let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
 	let mut repeat : Option<(u64, char)> = None;
 
+	let ref evdev = rustix::fs::open("/dev/input/event17", rustix::fs::OFlags::RDONLY, rustix::fs::Mode::empty()).unwrap();
+
 	loop {
 		let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(),
 			CommandBufferUsage::OneTimeSubmit)?;
@@ -123,7 +125,7 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 			let events = {
 				use rustix::event::{PollFd,PollFlags};
 				let server = &*server.server.borrow();
-				let mut fds = vec![PollFd::new(server, PollFlags::IN), PollFd::new(trigger, PollFlags::IN)];
+				let mut fds = vec![PollFd::new(server, PollFlags::IN), PollFd::new(trigger, PollFlags::IN), PollFd::new(evdev, PollFlags::IN)];
 				if let Some((msec, _)) = repeat {
 					use rustix::time::{timerfd_settime,TimerfdTimerFlags,Itimerspec,Timespec};
 					timerfd_settime(&timerfd, TimerfdTimerFlags::ABSTIME,
@@ -297,7 +299,7 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 						if state > 0 {
 							#[allow(non_upper_case_globals)] const usb_hid_usage_table: [char; 126] = ['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪','\u{F701}','\u{F702}','\u{F703}','\u{F704}','\u{F705}','\u{F706}','\u{F707}','\u{F708}','\u{F709}','\u{F70A}','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\u{F70B}','\u{F70C}','\0','\0','\0','\0','\0','\0','\0','\0','⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘'];
 							let key = usb_hid_usage_table[key as usize];
-							if app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Key(key))? { need_paint = true; }
+							need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Key(key))?;
 							let rustix::time::Timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
 							repeat = Some(((tv_sec as u64*1000+tv_nsec as u64/1000000)+150, key));
 						} else {
@@ -331,9 +333,42 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 					need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Trigger).unwrap();
 					continue;
 				}
-				if events.len() > 2 && events[2] {
+				if events[2] {
+					#[repr(C)] #[derive(Clone, Copy, Debug)] struct timeval { sec: i64, usec: i64 }
+					#[repr(C)] #[derive(Clone, Copy, Debug)] struct input_event { time: timeval, r#type: u16, code: u16, value: i32 }
+					unsafe impl bytemuck::Zeroable for input_event {}
+					unsafe impl bytemuck::Pod for input_event {}
+					let mut buffer = [0; std::mem::size_of::<input_event>()];
+					assert_eq!(rustix::io::read(&evdev, &mut buffer).unwrap(), buffer.len());
+				 	let input_event{r#type, code, value, ..} = *bytemuck::from_bytes(&buffer);
+					const SYN : u16 = 0; /*const KEY : u16 = 1; const REL : u16 = 2;*/ const ABS : u16 = 3;
+					match r#type {
+						SYN => {},
+						ABS => {
+							const X : u16 = 0; const Y : u16 = 1;
+							let key = {
+								if value < -4096 { match code {X => '←', Y => '↑',_=>{continue;}} }
+								else if value > 4096 { match code {X => '→', Y => '↓',_=>{continue;}} }
+								else {
+									if let Some(&(_,key)) = repeat.as_ref() {
+										if code == X && (key == '←' || key == '→') { repeat = None; }
+										if code == Y && (key == '↑' || key == '↓') { repeat = None;  }
+									}
+									continue;
+								}
+							};
+							if let Some(&(_,repeat_key)) = repeat.as_ref() && repeat_key == key { continue; }
+							need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Key(key))?;
+							let rustix::time::Timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
+							repeat = Some(((tv_sec as u64*1000+tv_nsec as u64/1000000)+150, key));
+						}
+						_ => {continue;} //unreachable!("{type}")
+					}
+					continue;
+				}
+				if events.len() > 3 && events[3] {
 					let (msec, key) = repeat.unwrap();
-					if app.event(context, &mut commands, size, &mut EventContext{/*toplevel: &window.toplevel,*/ modifiers_state, /*cursor*/}, &Event::Key(key))? { need_paint=true; }
+					need_paint |= app.event(context, &mut commands, size, &mut EventContext{/*toplevel: &window.toplevel,*/ modifiers_state, /*cursor*/}, &Event::Key(key))?;
 					repeat = Some((msec+33, key));
 					continue;
 				}
