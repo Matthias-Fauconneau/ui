@@ -346,34 +346,36 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 					const SYN : u16 = 0; const KEY : u16 = 1; /*const REL : u16 = 2;*/ const ABS : u16 = 3;
 					let key = match r#type {
 						SYN => None,
-						KEY => if value > 0 { 
+						KEY =>  {
 							const LB : u16 = 310; const RB : u16 = 311;
 							match code {
-								LB => Some('l'),
-								RB => Some('r'),
+								LB => Some(('l', value > 0)),
+								RB => Some(('r', value > 0)),
 								_ => {println!("{code}"); None}
 							}
-						} else { None },
+						},
 						ABS => {
 							const X : u16 = 0; const Y : u16 = 1; const DX : u16 = 16; const DY : u16 = 17;
-							let mut key = |threshold:i32|
-								if value < -threshold { match code {X|DX => Some('←'), Y|DY => Some('↑'),_=>None} }
-								else if value > threshold { match code {X|DX => Some('→'), Y|DY => Some('↓'),_=>None} }
-								else {
-									if code == X || code == DX { repeat.retain(|&key| key != '←' && key != '→'); }
-									if code == Y || code == DY { repeat.retain(|&key| key != '↑' && key != '↓'); }
-									None
-								};
+							let key = |threshold:i32|
+								if value < -threshold { match code {X|DX => Some(('←', true)), Y|DY => Some(('↑', true)),_=>None} }
+								else if value > threshold { match code {X|DX => Some(('→', true)), Y|DY => Some(('↓', true)),_=>None} }
+								else { match code { X|DX => Some(('↔', false)), Y|DY => Some(('↕', false)), _ => None} };
 							match code { DX|DY => key(0), X|Y => key(4096), _ => None}
 						}
 						_ => {println!("{type}"); None } //unreachable!("{type}")
 					};
-					let Some(key) = key else { continue; };
-					if repeat.contains(&key) { continue; } // Prevent analog stick moves to repeat quickly, wait for timed repeat instead
-					if !repeat.contains(&key) { repeat.push(key); }
-					need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Key(key))?;
-					let rustix::time::Timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
-					msec = (tv_sec as u64*1000+tv_nsec as u64/1000000)+150;
+					let Some((key, pressed)) = key else { continue; };
+					if pressed {
+						if repeat.contains(&key) { continue; } // Prevent analog stick moves to repeat quickly, wait for timed repeat instead
+						if !repeat.contains(&key) { repeat.push(key); }
+						need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Key(key))?;
+						let rustix::time::Timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
+						msec = (tv_sec as u64*1000+tv_nsec as u64/1000000)+150;
+					} else {
+						if key == '↔' { repeat.retain(|&key| key != '←' && key != '→'); }
+						else if key == '↕' { repeat.retain(|&key| key != '↑' && key != '↓'); }
+						else { repeat.retain(|&k| k != key); }
+					}
 					continue;
 				}
 				if events.len() > 3 && events[3] {
