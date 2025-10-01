@@ -112,7 +112,8 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 	let mut fence = commands.build()?.execute(context.queue.clone())?.then_signal_fence_and_flush()?.boxed();
 
 	let timerfd = rustix::time::timerfd_create(rustix::time::TimerfdClockId::Realtime, rustix::time::TimerfdFlags::empty())?;
-	let mut repeat : Option<(u64, char)> = None;
+	let mut repeat : Vec<char> = Vec::new();
+	let mut msec : u64 = 0;
 
 	let ref evdev = rustix::fs::open("/dev/input/event17", rustix::fs::OFlags::RDONLY, rustix::fs::Mode::empty()).unwrap();
 
@@ -126,7 +127,7 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 				use rustix::event::{PollFd,PollFlags};
 				let server = &*server.server.borrow();
 				let mut fds = vec![PollFd::new(server, PollFlags::IN), PollFd::new(trigger, PollFlags::IN), PollFd::new(evdev, PollFlags::IN)];
-				if let Some((msec, _)) = repeat {
+				if !repeat.is_empty() {
 					use rustix::time::{timerfd_settime,TimerfdTimerFlags,Itimerspec,Timespec};
 					timerfd_settime(&timerfd, TimerfdTimerFlags::ABSTIME,
 						&Itimerspec{it_interval: Timespec{tv_sec:0, tv_nsec:0}, it_value: Timespec{tv_sec:(msec/1000) as i64,tv_nsec:((msec%1000)*1000000) as i64}}
@@ -296,14 +297,15 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 					else if id == keyboard.id && opcode == keyboard::key {
 						let [_serial,UInt(_key_time),UInt(key),UInt(state)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
 						if key == 1 { return Ok(()); }
+						#[allow(non_upper_case_globals)] const usb_hid_usage_table: [char; 126] = ['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪','\u{F701}','\u{F702}','\u{F703}','\u{F704}','\u{F705}','\u{F706}','\u{F707}','\u{F708}','\u{F709}','\u{F70A}','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\u{F70B}','\u{F70C}','\0','\0','\0','\0','\0','\0','\0','\0','⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘'];
+						let key = usb_hid_usage_table[key as usize];
 						if state > 0 {
-							#[allow(non_upper_case_globals)] const usb_hid_usage_table: [char; 126] = ['\0','⎋','1','2','3','4','5','6','7','8','9','0','-','=','⌫','\t','q','w','e','r','t','y','u','i','o','p','{','}','\n','⌃','a','s','d','f','g','h','j','k','l',';','\'','`','⇧','\\','z','x','c','v','b','n','m',',','.','/','⇧','\0','⎇',' ','⇪','\u{F701}','\u{F702}','\u{F703}','\u{F704}','\u{F705}','\u{F706}','\u{F707}','\u{F708}','\u{F709}','\u{F70A}','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\0','\u{F70B}','\u{F70C}','\0','\0','\0','\0','\0','\0','\0','\0','⎙','⎄',' ','⇤','↑','⇞','←','→','⇥','↓','⇟','⎀','⌦','\u{F701}','🔇','🕩','🕪','⏻','=','±','⏯','🔎',',','\0','\0','¥','⌘'];
-							let key = usb_hid_usage_table[key as usize];
 							need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Key(key))?;
 							let rustix::time::Timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
-							repeat = Some(((tv_sec as u64*1000+tv_nsec as u64/1000000)+150, key));
+							msec = (tv_sec as u64*1000+tv_nsec as u64/1000000)+150;
+							if !repeat.contains(&key) { repeat.push(key); }
 						} else {
-							repeat = None;
+							repeat.retain(|&k| k != key);
 						}
 					}
 					else if window.callback.as_ref().is_some_and(|callback| id == callback.id) && opcode == callback::done {
@@ -350,26 +352,25 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 								if value < -4096 { match code {X => '←', Y => '↑',_=>{continue;}} }
 								else if value > 4096 { match code {X => '→', Y => '↓',_=>{continue;}} }
 								else {
-									if let Some(&(_,key)) = repeat.as_ref() {
-										if code == X && (key == '←' || key == '→') { repeat = None; }
-										if code == Y && (key == '↑' || key == '↓') { repeat = None;  }
-									}
+									if code == X { repeat.retain(|&key| key != '←' && key != '→'); }
+									if code == Y { repeat.retain(|&key| key != '↑' && key != '↓'); }
 									continue;
 								}
 							};
-							if let Some(&(_,repeat_key)) = repeat.as_ref() && repeat_key == key { continue; }
+							if repeat.contains(&key) { continue; } // Prevent analog stick moves to repeat quickly, wait for timed repeat instead
 							need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Key(key))?;
 							let rustix::time::Timespec{tv_sec,tv_nsec} = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
-							repeat = Some(((tv_sec as u64*1000+tv_nsec as u64/1000000)+150, key));
+							msec = (tv_sec as u64*1000+tv_nsec as u64/1000000)+150;
 						}
 						_ => {continue;} //unreachable!("{type}")
 					}
 					continue;
 				}
 				if events.len() > 3 && events[3] {
-					let (msec, key) = repeat.unwrap();
-					need_paint |= app.event(context, &mut commands, size, &mut EventContext{/*toplevel: &window.toplevel,*/ modifiers_state, /*cursor*/}, &Event::Key(key))?;
-					repeat = Some((msec+33, key));
+					for &key in &repeat {
+						need_paint |= app.event(context, &mut commands, size, &mut EventContext{/*toplevel: &window.toplevel,*/ modifiers_state, /*cursor*/}, &Event::Key(key))?;
+					}
+					msec += 33;
 					continue;
 				}
 				break;
