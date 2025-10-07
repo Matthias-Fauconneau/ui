@@ -6,7 +6,7 @@ impl Parallelogram {
 	pub fn translate(&mut self, offset: int2) { self.top_left += offset; self.bottom_right += offset; }
 }
 
-pub use {vector::{num::Ratio, Rect}, crate::font::{Face, GlyphId}};
+pub use {vector::{num::{zero, Ratio}, xy, Rect}, crate::font::{Face, GlyphId}};
 
 pub struct Glyph<'t> { pub top_left: int2, pub face: &'t Face<'t>, pub id: GlyphId, pub scale: Ratio, pub style: f32 }
 
@@ -23,8 +23,6 @@ pub struct Graphic<'t> {
 	parallelograms: Vec<Parallelogram>,
 	pub glyphs: Vec<Glyph<'t>>,
 }
-
-use {crate::Result, vector::{num::zero, xy, size, vec2, ifloor, ceil}, image::{Image, bgr, /*PQ10*/sRGB8}, crate::{font::rasterize, widget, Target}};
 
 impl Graphic<'_> {
 	pub fn new(scale: Ratio) -> Self { Self{scale, rects: Vec::new(), parallelograms: Vec::new(), glyphs: Vec::new()} }
@@ -54,53 +52,61 @@ pub struct View<'t> { graphic: Graphic<'t>, view: Rect }
 
 impl<'t> View<'t> { pub fn new(graphic: Graphic<'t>) -> Self { Self{view: graphic.bounds(), graphic} } }
 
+use {crate::Result, vector::{size, vec2, ifloor, ceil}, image::{Image, rgb, /*PQ10*/sRGB8, rgba}, crate::{font::rasterize, widget::{self, Context, Commands, Arc, ImageView}}};
 impl widget::Widget for View<'_> {
     fn size(&mut self, _: size) -> size { ceil(self.graphic.scale, self.view.size().unsigned()) }
-    fn paint(&mut self, target: &mut Target, size: size, _offset: int2) -> Result {
+    fn paint(&mut self, context: &Context, commands: &mut Commands, gpu_target: Arc<ImageView>, size: size, _offset: int2) -> Result {
 		let Self{graphic: Graphic{scale, rects, parallelograms, glyphs}, view: Rect{min, ..}} = &self;
+		let mut target = Image::fill(size, 0.);
 
-		let buffer = {
-			assert!(target.size == size);
-			let mut target = Image::fill(size, 0.);
+		for &(Rect{min: top_left, max: bottom_right}, style) in rects {
+			let top_left = top_left - min;
+			if top_left < (size/scale).signed() {
+				let top_left = ifloor(*scale, top_left);
+				let bottom_right : int2 = int2::enumerate().map(|i| if bottom_right[i] == i32::MAX { size[i] as _ } else { scale.ifloor(bottom_right[i]-min[i]) }).into();
+				target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| style);
+			}
+		}
+		for &Parallelogram{top_left, bottom_right, descending, vertical_thickness} in parallelograms {
+			let top_left = top_left - min;
+			if top_left < (size/scale).signed() {
+				let scale = f32::from(*scale);
+				crate::parallelogram(&mut target.as_mut(), scale*vec2::from(top_left), scale*vec2::from(bottom_right-min), descending, scale*vertical_thickness as f32, 1.);
+				//parallelogram(target, scale*vec2::from(top_left), scale*vec2::from(bottom_right.signed()-min) )
+				//target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| foreground.g);
+			}
+		}
+		for &Glyph{top_left, face, id, scale: glyph_scale, style} in glyphs {
+			let top_left = top_left - min;
+			if top_left < (size/scale).signed() {
+				let coverage = rasterize(face, *scale*glyph_scale, id, face.bbox(id).unwrap());
+				let offset = *scale*top_left;
+				let target_size = size.signed() - offset;
+				let target_offset = vector::component_wise_max(zero(), offset).unsigned();
+				let source_offset = vector::component_wise_max(zero(), -offset);
+				let source_size = coverage.size.signed() - source_offset;
+				let size = vector::component_wise_min(source_size, target_size);
+				if size.x > 0 && size.y > 0 {
+					let size = size.unsigned();
+					target.slice_mut(target_offset, size).zip_map(&coverage.slice(source_offset.unsigned(), size),
+						|target, &coverage| target + coverage*style
+					);
+				}
+			}
+		}
+		let target = target.map(|c| rgba::from(rgb::from(sRGB8(/*if dark {c} else*/ 1.-f32::min(1.,c)))));
 
-			for &(Rect{min: top_left, max: bottom_right}, style) in rects {
-				let top_left = top_left - min;
-				if top_left < (size/scale).signed() {
-					let top_left = ifloor(*scale, top_left);
-					let bottom_right : int2 = int2::enumerate().map(|i| if bottom_right[i] == i32::MAX { size[i] as _ } else { scale.ifloor(bottom_right[i]-min[i]) }).into();
-					target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| style);
-				}
-			}
-			for &Parallelogram{top_left, bottom_right, descending, vertical_thickness} in parallelograms {
-				let top_left = top_left - min;
-				if top_left < (size/scale).signed() {
-					let scale = f32::from(*scale);
-					crate::parallelogram(&mut target.as_mut(), scale*vec2::from(top_left), scale*vec2::from(bottom_right-min), descending, scale*vertical_thickness as f32, 1.);
-					//parallelogram(target, scale*vec2::from(top_left), scale*vec2::from(bottom_right.signed()-min) )
-					//target.slice_mut(top_left.unsigned(), (vector::component_wise_min(bottom_right, size.signed())-top_left).unsigned()).set(|_| foreground.g);
-				}
-			}
-			for &Glyph{top_left, face, id, scale: glyph_scale, style} in glyphs {
-				let top_left = top_left - min;
-				if top_left < (size/scale).signed() {
-					let coverage = rasterize(face, *scale*glyph_scale, id, face.bbox(id).unwrap());
-					let offset = *scale*top_left;
-					let target_size = size.signed() - offset;
-					let target_offset = vector::component_wise_max(zero(), offset).unsigned();
-					let source_offset = vector::component_wise_max(zero(), -offset);
-					let source_size = coverage.size.signed() - source_offset;
-					let size = vector::component_wise_min(source_size, target_size);
-					if size.x > 0 && size.y > 0 {
-						let size = size.unsigned();
-						target.slice_mut(target_offset, size).zip_map(&coverage.slice(source_offset.unsigned(), size),
-							|&target, &coverage| target + coverage*style
-						);
-					}
-				}
-			}
-			target
-		};
-		target.zip_map(&buffer, |_, &buffer| { let c = f32::min(1.,buffer); bgr::from(/*PQ10*/sRGB8(/*if dark {c} else*/ 1.-c)).into()});
+		use crate::vulkan::{PrimitiveTopology, image, WriteDescriptorSet, linear};
+		use crate::text::view; // FIXME: common dep
+		let mut pass = view::Pass::new(context, false, PrimitiveTopology::TriangleList, false).unwrap();
+		let image = image(context, commands, target.as_ref()).unwrap();
+		pass.begin_rendering(context, commands, gpu_target.clone(), None, true, &view::Uniforms::empty(), &[
+			WriteDescriptorSet::image_view(0, ImageView::new_default(&image).unwrap()),
+			WriteDescriptorSet::sampler(1, linear(context)),
+		]).unwrap();
+		unsafe{commands.draw(3, 1, 0, 0)}.unwrap();
+		commands.end_rendering().unwrap();
+
 		Ok(())
 	}
 }
@@ -108,5 +114,5 @@ impl widget::Widget for View<'_> {
 pub struct Widget<T>(pub T);
 impl<'t, T: Fn(size)->Result<Graphic<'t>>> widget::Widget for Widget<T> {
     fn size(&mut self, size: size) -> size { View::new(self.0(size).unwrap()).size(size) }
-    fn paint(&mut self, context: &mut Target, size: size, offset: int2) -> Result { View::new(self.0(size)?).paint(context, size, offset) }
+    fn paint(&mut self, context: &Context, commands: &mut Commands, target: Arc<ImageView>, size: size, offset: int2) -> Result { View::new(self.0(size)?).paint(context, commands, target, size, offset) }
 }

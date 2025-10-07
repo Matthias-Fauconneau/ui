@@ -115,7 +115,7 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 	let mut repeat : Vec<char> = Vec::new();
 	let mut msec : u64 = 0;
 
-	let ref evdev = rustix::fs::open("/dev/input/event17", rustix::fs::OFlags::RDONLY, rustix::fs::Mode::empty()).unwrap();
+	let ref evdev = rustix::fs::open("/dev/input/event17", rustix::fs::OFlags::RDONLY, rustix::fs::Mode::empty()).ok();
 
 	loop {
 		let mut commands = AutoCommandBufferBuilder::primary(context.command_buffer_allocator.clone(), context.queue.queue_family_index(),
@@ -126,7 +126,8 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 			let events = {
 				use rustix::event::{PollFd,PollFlags};
 				let server = &*server.server.borrow();
-				let mut fds = vec![PollFd::new(server, PollFlags::IN), PollFd::new(trigger, PollFlags::IN), PollFd::new(evdev, PollFlags::IN)];
+				let mut fds = vec![PollFd::new(server, PollFlags::IN), PollFd::new(trigger, PollFlags::IN)];
+				if let Some(evdev) = evdev.as_ref() { fds.push(PollFd::new(evdev, PollFlags::IN)); }
 				if !repeat.is_empty() {
 					use rustix::time::{timerfd_settime,TimerfdTimerFlags,Itimerspec,Timespec};
 					timerfd_settime(&timerfd, TimerfdTimerFlags::ABSTIME,
@@ -252,7 +253,8 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 						server.args({use Type::*; [UInt,UInt]});
 					}
 					else if id == pointer.id && opcode == pointer::motion {
-						let [_,Int(_),Int(_)] = server.args({use Type::*; [UInt,Int,Int]}) else {unreachable!()};
+						let [_,Int(x),Int(y)] = server.args({use Type::*; [UInt,Int,Int]}) else {unreachable!()};
+						need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Motion{position: xy{x: (x*3)>>8,y: (y*3)>>8}, buttons: 0})?;
 					}
 					else if id == pointer.id && opcode == pointer::button {
 						let [_,_,UInt(_),UInt(_)] = server.args({use Type::*; [UInt,UInt,UInt,UInt]}) else {unreachable!()};
@@ -335,7 +337,7 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 					need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &Event::Trigger).unwrap();
 					continue;
 				}
-				if events[2] {
+				if let Some(evdev) = evdev.as_ref() && events[2] {
 					#[repr(C)] #[derive(Clone, Copy, Debug)] struct timeval { sec: i64, usec: i64 }
 					#[repr(C)] #[derive(Clone, Copy, Debug)] struct input_event { time: timeval, r#type: u16, code: u16, value: i32 }
 					unsafe impl bytemuck::Zeroable for input_event {}
@@ -355,12 +357,24 @@ pub fn run_with_trigger<'t>(ref trigger: impl std::os::fd::AsFd, title: &str, ap
 							}
 						},
 						ABS => {
-							const X : u16 = 0; const Y : u16 = 1; const DX : u16 = 16; const DY : u16 = 17;
+							const X : u16 = 0; const Y : u16 = 1; const Z: u16 = 2; const RZ : u16 = 5; const DX : u16 = 16; const DY : u16 = 17;
 							let key = |threshold:i32|
 								if value < -threshold { match code {X|DX => Some(('←', true)), Y|DY => Some(('↑', true)),_=>None} }
 								else if value > threshold { match code {X|DX => Some(('→', true)), Y|DY => Some(('↓', true)),_=>None} }
 								else { match code { X|DX => Some(('↔', false)), Y|DY => Some(('↕', false)), _ => None} };
-							match code { DX|DY => key(0), X|Y => key(4096), _ => None}
+							match code { 
+								DX|DY => key(0), 
+								X|Y => key(4096), 
+								Z|RZ => {
+									need_paint |= app.event(context, &mut commands, size, &mut EventContext{modifiers_state}, &match code {
+										Z => Event::PadTrigger('←', value),
+										RZ => Event::PadTrigger('→', value),
+										_ => unreachable!()
+									})?;
+									None
+								}, 
+								_ => None
+							}
 						}
 						_ => {println!("{type}"); None } //unreachable!("{type}")
 					};

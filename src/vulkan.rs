@@ -141,7 +141,7 @@ impl<S:Shader> Pass<S> {
 pub use bytemuck;
 #[macro_export] macro_rules! shader {
 	{$name:ident} => {
-		mod $name {
+		pub(crate) mod $name {
 			use {std::sync::Arc, vulkano::{Validated, VulkanError, device::Device, shader::{ShaderModule, ShaderModuleCreateInfo}}};
 			pub use $crate::vulkan::bytemuck;
 			vulkano_spirv::shader!{$name}
